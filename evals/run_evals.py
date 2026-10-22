@@ -53,8 +53,9 @@ def score(case: dict, res: dict) -> dict:
     cause_text = " ".join(f"{f['statement']} {f['claim']}" for f in causes).lower()
     # what the investigation established: confirmed causes AND confirmed measurements (e.g. where a rise sits), plus the
     # headline. Red herrings are judged on confirmed causes only (below).
+    # confirmed document findings count too: their quotes were verified word for word
     measured = [f for f in res.get("findings", []) if v.get(f["task_id"], {}).get("status") == "confirmed"
-                and f not in causes and f.get("agent_kind") != "docs"]
+                and f not in causes]
     found_text = " ".join([cause_text] + [f"{f['statement']} {f['claim']}".lower() for f in measured]
                           + [str(res.get("headline", "")).lower()])
     groups = case["must_find"]

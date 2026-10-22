@@ -510,6 +510,30 @@ class Engine:
         return Result("text", "What customers wrote", ["term", "focus_mentions", "focus_per_1000", "ref_mentions",
                       "ref_per_1000", "ratio"], rows, summary, method, "measured", self.m.reviews_sql)
 
+    def carrier_options(self, s: Scope, carrier: str = "carrier_id", origin: str = "warehouse_id") -> Result:
+        """Prescriptive: how every carrier serving the same origin warehouses performed in the same period, so a
+        concentrated carrier problem can be compared with real alternatives."""
+        if carrier not in s.focus.columns or origin not in s.focus.columns:
+            raise ValueError("this dataset has no carrier or origin dimension")
+        origins = sorted(s.focus[origin].dropna().astype(str).unique())
+        d = self.delivered()
+        if s.period:
+            d = d[(d["purchase"] >= pd.Timestamp(s.period[0])) & (d["purchase"] < pd.Timestamp(s.period[1]))]
+        pool = d[d[origin].astype(str).isin(origins)]
+        focus_ids = set(s.focus["order_id"])
+        rows = []
+        for c, g in pool.groupby(carrier):
+            in_focus = int(g["order_id"].isin(focus_ids).sum())
+            rows.append([str(c), len(g), pct(g["late"].mean()), r1(g["t"].median()), in_focus,
+                         pct(g.loc[g["order_id"].isin(focus_ids), "late"].mean()) if in_focus else None])
+        rows.sort(key=lambda r: (r[2] if r[2] == r[2] else 999))
+        summary = {"origins": origins, "carriers": [r[0] for r in rows]}
+        method = (f"All delivered orders from the same origin ({', '.join(origins)}) in the same period, by carrier: "
+                  "volume, late rate and median transit, and how each did on the orders in question.")
+        return Result("carrier_options", "Carriers from the same origin", [carrier, "orders", "late_pct",
+                      "median_transit_days", "focus_orders", "focus_late_pct"], rows, summary, method, "measured",
+                      self.provenance())
+
     def promise_buffer(self, s: Scope, dim: str | None = None, quantile: float = 0.8) -> Result:
         """Prescriptive: how many days to add to each segment's promise so that (in the focus orders) the given
         share would have arrived on time, and how many late orders that would have avoided."""

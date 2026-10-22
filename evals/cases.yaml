@@ -1,6 +1,7 @@
 # Ground truth. The agents never see this file.
 # must_find: groups of synonyms; a group matches if any synonym appears, as a whole word or word stem, in a CONFIRMED
-#   finding (a cause or a measurement, hypothesis + claim; not documents) or the headline. min_groups defaults to all.
+#   finding (a cause, a measurement, or a document finding whose quotes were verified; hypothesis + claim) or the
+#   headline. min_groups defaults to all.
 # distractors: groups that must NOT appear in the hypothesis statement of any confirmed cause.
 # headline_must_not: regexes that must not match the headline (e.g. blaming a red herring).
 # held_out: true for real-data questions added after the prompts were last changed; prompts are not tuned on them.

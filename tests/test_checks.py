@@ -42,3 +42,13 @@ def test_eval_terms_match_whole_words_not_fragments():
     assert not matches("final report", ["port"]) and matches("the port strike", ["port"])
     assert not matches("we expedite", ["edi"]) and not matches("repair", ["air"])
     assert matches("a consolidated milk run", ["consolidat"])
+
+
+def test_key_number_on_a_row_beyond_the_stored_sample():
+    """A result stored truncated (2 of 5 rows): a key number pointing at row 4 is re-fetched, not an IndexError."""
+    full = [["2018-0%d" % m, 100 * m, 10 * m, 0.1 * m] for m in range(1, 6)]
+    ev = [{"id": "T1.Q1", "type": "sql", "columns": ["month", "orders", "late", "late_rate"], "rows": full[:2],
+           "truncated": True, "sql": "SELECT month, orders, late, late_rate FROM t"}]
+    keys = [{"value": 500, "evidence": "T1.Q1", "column": "orders", "where": {"month": "2018-05"}}]
+    c = check_claim("May had 500 orders", ev, keys, fetch=lambda table: full)
+    assert c["missing"] == [] and c["key_numbers"]["verified"] == 1

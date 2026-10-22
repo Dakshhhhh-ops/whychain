@@ -700,6 +700,25 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
         add("Escalate carrier transit performance with the carrier, with weekly transit monitoring by area",
             "Share the transit figures with the carrier, agree recovery targets, and alert when an area's weekly mean "
             "transit moves 1 day above its normal." + detail, [f["task_id"]], f["evidence_ids"] + (seg["evidence_ids"][:1] if seg else []))
+    if "transit" in stages and "carrier_id" in eng.m.dims and "warehouse_id" in eng.m.dims:
+        # a transit problem concentrated in one carrier: compare it with the carriers serving the same warehouses
+        try:
+            res_c = eng.carrier_options(build_scope(eng, primary))
+            evidence["A.A2"] = res_c.evidence("A.A2", "A", "Analysis engine")
+            used = [r for r in res_c.rows if r[4]]
+            main = max(used, key=lambda r: r[4]) if used else None
+            alts = [r for r in res_c.rows if main and r[0] != main[0] and r[1] >= 30]
+            if main and alts and main[5] is not None and alts[0][2] is not None and main[5] - alts[0][2] >= 10:
+                best = [a for a in alts if a[2] is not None and a[2] - alts[0][2] <= 2][:2]   # near-ties: name both
+                names = " or ".join(a[0] for a in best)
+                perf = "; ".join(f"{a[0]} {a[2]}% late, median transit {a[3]} days over {a[1]} orders" for a in best)
+                add(f"Switch carrier for these deliveries: from {main[0]} to an alternative carrier ({names})",
+                    f"On these orders {main[0]} was {main[5]}% late. From the same warehouses in the same period: "
+                    f"{perf}. Move the lane (or trial it first) and keep the transit monitoring in place.",
+                    [stages["transit"]["task_id"]], ["A.A2"], main[4],
+                    ["changes a carrier contract or allocation"])
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"carrier options failed: {e}"[:200])
     if "handover" in stages:
         f = stages["handover"]
         add("Enforce hand-over deadlines with the slowest senders",

@@ -153,8 +153,9 @@ def _row_matches(row: list, columns: list[str], where: dict) -> bool:
     return True
 
 
-def resolve_ref(ref: dict, tables: dict[str, Table], fetch=None) -> tuple[float | None, int | None, str]:
-    """The value of the cell a key number points at: (value, row index, problem)."""
+def resolve_ref(ref: dict, tables: dict[str, Table], fetch=None) -> tuple[float | None, list | None, str]:
+    """The value of the cell a key number points at: (value, the whole row, problem). The row may come from a
+    re-fetch of a truncated result, so it is returned itself rather than as an index into the stored sample."""
     t = tables.get(str(ref.get("evidence", "")))
     if t is None:
         return None, None, "cites a result that isn't in the evidence"
@@ -184,7 +185,7 @@ def resolve_ref(ref: dict, tables: dict[str, Table], fetch=None) -> tuple[float 
         ri = 0
     else:
         return None, None, "no row given"
-    return _to_float(rows[ri][ci]), ri, ""
+    return _to_float(rows[ri][ci]), list(rows[ri]), ""
 
 
 _UNIT_WORDS = [
@@ -257,18 +258,18 @@ def check_numbers(text: str, evidence: list[dict], key_numbers=None, fetch=None,
     for ref in key_numbers if isinstance(key_numbers, list) else []:
         if not isinstance(ref, dict) or _to_float(ref.get("value")) is None:
             continue
-        cell, ri, why = resolve_ref(ref, by_id, fetch)
+        cell, row, why = resolve_ref(ref, by_id, fetch)
         declared = Num(str(ref["value"]), float(_to_float(ref["value"])), len(str(ref["value"]).split(".")[1]) if "." in str(ref["value"]) else 0, 0, 0, True)
         if cell is not None and (_eq(declared, cell) or abs(cell - declared.value) <= max(_tol(declared.dec), 1e-6)):
             key_vals.append((cell, str(ref.get("column"))))
-            key_rows.append((by_id[str(ref["evidence"])], ri))
+            key_rows.append((by_id[str(ref["evidence"])], row))
         else:
             key_problems.append(f"{ref.get('value')} @ {ref.get('evidence')}.{ref.get('column')}: "
                                 f"{why or f'the cell holds {cell}'}")
     for t in tables:  # every number of a verified verbatim quote counts like a cited cell
         if t.columns and set(t.columns) == {"quote_number"}:
             key_vals += [(v, None) for v in _cells(t.rows)]
-    row_cells = [tc for t, ri in key_rows for tc in _typed_cells([t.rows[ri]], t.columns)]
+    row_cells = [tc for t, row in key_rows for tc in _typed_cells([row], t.columns)]
     found_cells = [tc for t in tables for tc in _typed_cells(t.rows, t.columns)]
     # numbers written in the SQL itself (a window, a threshold), not inside quoted literals like '2018-02-26'
     sql_tokens = {float(x) for t in tables
