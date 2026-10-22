@@ -29,6 +29,9 @@ from whychain.harness.base import Column, QueryResult, TableInfo, Timer, check_r
 
 PREFIX = {"olist": "", "kaveri": "kaveri_"}   # Zetaris database name = prefix + source name
 CATALOG_TTL_S = 600
+TOKEN_TTL_S = 1800
+_TOKENS: dict[tuple[str, str], tuple[str, str, float]] = {}   # (url, user) -> (token, org, issued): one login per process
+_TOKEN_LOCK = threading.Lock()
 _CATALOGS: dict[tuple[str, str], tuple[float, list[TableInfo]]] = {}
 
 
@@ -68,13 +71,32 @@ class ZetarisHarness:
         self._map = {s: zetaris_name(self.dataset.key, s) for s in self.dataset.sources}
 
     # ------------------------------------------------------------------ transport
-    def _login(self) -> None:
-        r = self.client.post(f"{self.base}/api/auth/login",
-                             json={"username": env("ZETARIS_USER"), "password": env("ZETARIS_PASSWORD")})
-        if r.status_code >= 400:
-            raise ZetarisError(f"login failed: HTTP {r.status_code}")
-        body = r.json()
-        self._token, self._org, self._token_at = body["idToken"], str(body["orgId"]), time.time()
+    def _login(self, fresh: bool = False) -> None:
+        """Log in to the local platform, sharing the token across harness instances (every investigation makes a new
+        harness). A failed login (5xx or a dropped connection) is retried twice with a short back-off."""
+        key = (self.base, env("ZETARIS_USER"))
+        with _TOKEN_LOCK:
+            hit = None if fresh else _TOKENS.get(key)
+            if hit and time.time() - hit[2] < TOKEN_TTL_S:
+                self._token, self._org, self._token_at = hit
+                return
+            last = ""
+            for attempt in range(3):
+                try:
+                    r = self.client.post(f"{self.base}/api/auth/login", timeout=60,
+                                         json={"username": env("ZETARIS_USER"), "password": env("ZETARIS_PASSWORD")})
+                    if r.status_code < 400:
+                        body = r.json()
+                        self._token, self._org, self._token_at = body["idToken"], str(body["orgId"]), time.time()
+                        _TOKENS[key] = (self._token, self._org, self._token_at)
+                        return
+                    last = f"HTTP {r.status_code}"
+                    if r.status_code < 500:
+                        break   # wrong credentials: retrying won't help
+                except httpx.HTTPError as e:
+                    last = str(e)[:160]
+                time.sleep(1 + 2 * attempt)
+            raise ZetarisError(f"login failed: {last}")
 
     def _headers(self) -> dict:
         h = {"X-Request-ID": str(uuid.uuid4()), "Content-Type": "application/json"}
@@ -98,6 +120,8 @@ class ZetarisHarness:
         r = self.client.post(url, headers=self._headers(), json=body)
         if r.status_code == 401 and self.mode == "local":  # token expired: log in again once
             self._token = None
+            with self._lock:
+                self._login(fresh=True)
             r = self.client.post(url, headers=self._headers(), json=body)
         if r.status_code >= 400:
             try:

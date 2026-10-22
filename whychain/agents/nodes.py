@@ -1300,7 +1300,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     except LLMError as e:
         ctx.tracer.event("agent_error", agent, error=str(e)[:200])
     if len(answer) < 40:
-        answer = headline + (f" {measure['claim']} {_cites(measure)}" if measure else "")
+        # no model answer (the model failed or returned nothing): the computed headline, said plainly
+        answer = (headline + (f" {_cites(measure)}" if measure else "")
+                  + " (Written by code: the language model was unavailable for this summary.)")
     md = f"## Answer\n{answer}\n\n{body}"
     rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS]
     threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
