@@ -8,7 +8,7 @@ import re
 from whychain.agents import prompts as P
 from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
 from whychain.harness.base import catalog_text
-from whychain.grounding import check_claim, is_grounded, numbers_in
+from whychain.grounding import check_numbers, figure_supported, numbers_in
 from whychain.llm import LLMError, extract_json
 
 PROFILE_COL = re.compile(r"(status|_type|channel|tier|category|region|level|warehouse|port_of_entry|service|"
@@ -361,7 +361,8 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
     checks = {}
     for f in this_round:
         if f.get("agent_kind") == "data":
-            checks[f["task_id"]] = c = check_claim(f["claim"], [evidence[e] for e in f["evidence_ids"] if e in evidence])
+            checks[f["task_id"]] = c = check_numbers(f["claim"], finding_evidence(f, evidence), f.get("key_numbers"),
+                                                     fetch=refetch(ctx))
             if c["checked"]:
                 ctx.tracer.event("numbers_check", agent, task_id=f["task_id"], checked=c["checked"], missing=c["missing"])
     # 3) skeptical review
@@ -391,8 +392,8 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
                 status, is_cause = "rejected", False
             reason = v.get("reason", "")
             c = checks.get(v["task_id"])
-            # a claim whose numbers mostly aren't in its own evidence can't be confirmed, whatever the model says
-            if status == "confirmed" and c and c["checked"] >= 3 and len(c["missing"]) * 2 > c["checked"]:
+            # a claim with more than a third of its numbers unsupported by its own evidence can't be confirmed
+            if status == "confirmed" and c and c["checked"] >= 2 and len(c["missing"]) * 3 > c["checked"]:
                 status, is_cause = "needs_more", False
                 reason += (f" [Numbers check: {len(c['missing'])} of {c['checked']} numbers in the claim are not in "
                            f"the cited rows ({', '.join(c['missing'][:5])}), so it cannot be confirmed.]")
@@ -429,17 +430,67 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
     return {"evaluations": [out], "verdicts": verdicts, "evidence": reverified}
 
 
-def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str]]:
-    """Keep an action's cost, value and order count only if each appears in (or follows in one step from) the rows it
-    cites. Zero is always allowed. Returns the cleaned figures and a list of the ones removed."""
-    from whychain.grounding import _cells, _flat
+def finding_evidence(f: dict, evidence: dict) -> list[dict]:
+    """A finding's cited evidence plus any of its own results its key numbers point at."""
+    ids = list(f.get("evidence_ids", []))
+    for k in f.get("key_numbers") or [] if isinstance(f.get("key_numbers"), list) else []:
+        if isinstance(k, dict) and k.get("evidence") in evidence and k["evidence"] not in ids:
+            ids.append(k["evidence"])
+    return [evidence[e] for e in ids if e in evidence]
 
-    cells: list[float] = []
-    for ev in evidence:
-        if ev.get("type") == "sql":
-            cells += _cells(ev.get("rows", []))
-        elif ev.get("type") == "optimization":
-            cells += [float(v) for v in _flat(ev)]
+
+_UNVERIFIED = " (unverified)"
+_CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDP]\d+)\]")
+
+
+def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: Ctx | None = None) -> tuple[str, str, dict]:
+    """Number-check the brief's own text. Each line's numbers must come from the evidence that line cites, from a
+    supported number in a finding, or from an action figure that passed its own check. Others are marked inline."""
+    evidence = state.get("evidence", {})
+    supported: list[float] = []
+    for f in state.get("findings", []):
+        c = check_numbers(f["claim"], finding_evidence(f, evidence), f.get("key_numbers"))
+        supported += [n.value for n in numbers_in(f["claim"]) if c["support"].get(n.raw, "missing") != "missing"]
+    for a in actions:
+        supported += [float(a[k]) for k in ("est_cost_inr", "value_protected_inr", "orders_protected")
+                      if isinstance(a.get(k), (int, float))]
+    checked, unverified = 0, []
+
+    def mark(line: str) -> str:
+        nonlocal checked
+        evs = [evidence[i] for i in _CITE.findall(line) if i in evidence]
+        c = check_numbers(line, evs, None, extra_values=supported)
+        nums = numbers_in(line)
+        checked += len(nums)
+        out = line
+        for n in sorted(nums, key=lambda n: -n.start):
+            if c["support"].get(n.raw) == "missing" and line[n.end:n.end + len(_UNVERIFIED)] != _UNVERIFIED:
+                end = n.end + (1 if line[n.end:n.end + 1] == "%" else 0)
+                unverified.append(n.raw + ("%" if end > n.end else ""))
+                out = out[:end] + _UNVERIFIED + out[end:]
+        return out
+
+    md2 = "\n".join(mark(line) for line in md.split("\n"))
+    head2 = mark(headline)
+    report = {"checked": checked, "unverified": unverified}
+    if ctx is not None:
+        ctx.tracer.event("brief_numbers_check", "Reporter", checked=checked, unverified=unverified)
+    return md2, head2, report
+
+
+def refetch(ctx: Ctx):
+    """Re-run a truncated cited query with a larger limit, so a key number can point at any row of it."""
+    def fetch(table):
+        if not table.sql:
+            return None
+        r = ctx.harness.query(table.sql, limit=2000)
+        return r.rows if r.ok else None
+    return fetch
+
+
+def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str]]:
+    """Keep an action's cost, value and order count only if each equals a cell in the rows it cites (no arithmetic).
+    Zero is always allowed. Returns the cleaned figures and a list of the ones removed."""
     out, removed = {}, []
     for key, alt in (("est_cost", "est_cost_inr"), ("value_protected", "value_protected_inr"), ("orders_protected", None)):
         raw = a.get(key, a.get(alt) if alt else None)
@@ -447,8 +498,7 @@ def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str
             out[key] = None
             continue
         v = _num(raw)
-        dec = len(str(raw).split(".")[1]) if "." in str(raw) else 0
-        if v == 0 or is_grounded(v, dec, cells):
+        if v == 0 or figure_supported(raw, evidence):
             out[key] = v
         else:
             out[key] = None
@@ -593,8 +643,9 @@ def report(state: dict, ctx: Ctx) -> dict:
     for c in bad:
         md = md.replace(f"[{c}]", "[citation removed]")
     headline = re.sub(r"\s*\[[^\]]*\]", "", str(out.get("headline", ""))).strip()
+    md, headline, brief_check = check_brief(md, headline, state, state.get("actions", []), ctx)
     ctx.tracer.event("agent_end", agent, headline=headline, invalid_citations_removed=bad)
-    return {"brief": md, "headline": headline, "lessons": out.get("lessons", []) or []}
+    return {"brief": md, "headline": headline, "lessons": out.get("lessons", []) or [], "brief_check": brief_check}
 
 
 def remember(state: dict, ctx: Ctx) -> dict:

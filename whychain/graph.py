@@ -47,6 +47,7 @@ class State(TypedDict, total=False):
     brief: str
     headline: str
     lessons: list
+    brief_check: dict
 
 
 def build_graph(ctx: Ctx):

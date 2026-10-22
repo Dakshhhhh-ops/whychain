@@ -217,6 +217,17 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
         <div className="border-t border-slate-100 px-6 py-5">
           <Markdown text={result.brief ?? ""} onOpen={onOpen} known={known} />
         </div>
+        {result.brief_check && result.brief_check.checked > 0 && (
+          <div
+            className={`border-t px-6 py-2.5 text-[12px] ${
+              result.brief_check.unverified.length ? "border-amber-100 bg-amber-50/60 text-amber-800" : "border-slate-100 text-slate-500"
+            }`}
+          >
+            Numbers check: {result.brief_check.checked - result.brief_check.unverified.length} of {result.brief_check.checked} numbers in this
+            brief trace to cited evidence.
+            {result.brief_check.unverified.length > 0 && ` Marked "(unverified)": ${result.brief_check.unverified.join(", ")}.`}
+          </div>
+        )}
       </Card>
 
       {actions.length > 0 && (

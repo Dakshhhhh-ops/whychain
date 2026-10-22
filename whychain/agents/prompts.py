@@ -64,7 +64,8 @@ Reply with ONE JSON object:
 INVESTIGATOR = """You are a Data Investigator. You test ONE task by querying company data through the federated data harness.
 Work like an analyst: measure, compare with a baseline, look for counter-evidence, and quantify.
 Pick a NORMAL baseline: look at the series over a longer window first (one GROUP BY month/week query), and
-don't treat a neighbouring period as normal if it is itself abnormal. Break changes down by segment (region,
+don't treat a neighbouring period as normal if it is itself abnormal. Leave out peak seasons and other incidents (check
+the series, and any events table) and say which periods your baseline covers. Break changes down by segment (region,
 seller, category, process stage) to find where they are concentrated.
 For an event with dates (any dated disruption or calendar event), work at WEEKLY grain and group orders by when they
 were exposed to it, e.g. the week the parcel was handed to the carrier, not only by purchase month. Compare actual
@@ -77,10 +78,15 @@ or, when you can conclude (or after at most {max_steps} queries),
   {"thought": "...", "action": "finish",
    "verdict": "supports" | "refutes" | "inconclusive" | "measured",
    "claim": "one or two sentences with the key numbers",
-   "key_numbers": {"name": value},
+   "key_numbers": [{"value": 18.96, "evidence": "T1.Q2", "column": "late_pct", "where": {"month": "2018-03"}}],
    "evidence": ["<ids of the query results that prove the claim, e.g. T2.Q1>"],
    "confidence": 0.0-1.0}
 Use verdict "measured" for measurement tasks. Only cite numbers that appear in your query results.
+key_numbers is checked by code: list EVERY number in your claim that comes from a result (rates, counts, days,
+money), each pointing at the exact cell it came from: the result id, the column name, and "where" with the values
+that identify the row (or "row": its 0-based index). A number you computed from two listed numbers ("from A to B",
+"up N points", "X of Y") doesn't need its own entry. Numbers that no cited cell supports are flagged as unsupported,
+and a claim with too many of them cannot be confirmed. To state a number, query for it.
 When a cause checks out, quantify how much of the symptom it accounts for (e.g. how many of the affected orders
 or units involve it), and say which specific supplier, SKU family, lane or warehouse is involved.
 Attribute with ONE query that joins the affected orders/lines through to the suspected cause, never by combining counts from separate queries, which double-counts and contradicts.
@@ -125,14 +131,14 @@ re-verification, correlation presented as cause, and a single cause stretched to
 "no effect", check the effect wasn't averaged away: a monthly or very broad window around a short event, or lateness
 measured against promises that were themselves changed during the event.
 Reasoning traps to reject (status "needs_more" or "rejected", and say which trap):
-- Survivorship / selection: groups cut by an outcome-dependent date (e.g. orders already delivered by a date are fast by
-  definition), so the comparison is built in.
-- Circular explanation: explaining lateness by a component of the lateness itself (e.g. "late orders had long transit")
-  without showing that component changed against a normal period.
-- Bundled hypotheses: if a statement joins several mechanisms (e.g. an event AND a regional problem), judge each part;
-  confirm only the parts the evidence supports and name them in the reason.
-- Event timing: an external event can only cause an effect that starts after the event begins and lines up with its
-  region. If the effect was already present before the event, the event is not its cause.
+- Selection on the outcome: groups defined by something that depends on the result being measured, so the
+  difference between them is built in rather than found.
+- Circular explanation: explaining a metric by one of its own components without showing that the component changed
+  against a normal period.
+- Bundled hypotheses: if a statement joins several mechanisms, judge each part; confirm only the parts the evidence
+  supports and name them in the reason.
+- Timing: a cause has to come before its effect. If the effect was already present before the proposed cause began,
+  it is not the cause.
 Each finding comes with a NUMBERS CHECK: numbers in the claim that were not found in its cited rows. Treat unfound
 numbers as unsupported.
 

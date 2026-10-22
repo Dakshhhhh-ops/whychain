@@ -164,6 +164,7 @@ export type RunResult = {
   dataset?: string;
   headline?: string;
   brief?: string;
+  brief_check?: { checked: number; unverified: string[] };
   symptom?: string;
   round?: number;
   harness?: string;
