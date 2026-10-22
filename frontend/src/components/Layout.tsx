@@ -124,7 +124,8 @@ export function Layout() {
             {s ? (
               <>
                 <StatusRow ok={zetaris ? s.harness.ok : null} label={zetaris ? "Zetaris" : "Local data (fallback)"} detail={zetaris ? "federated" : s.harness.erp} />
-                <StatusRow ok={s.memory.online ? true : null} label={s.memory.online ? "Meterless memory" : "Memory (local file)"} />
+                <StatusRow ok={s.memory.online ? true : null} label={s.memory.online ? "Meterless memory" : "Memory (local file)"}
+                  detail={s.memory.embedder?.includes("nemotron") ? "Nemotron embeddings" : undefined} />
                 {Object.entries(s.models)
                   .filter(([k, m]) => m.configured || (k !== "ollama" && k !== "nim-reason"))
                   .map(([k, m]) => (

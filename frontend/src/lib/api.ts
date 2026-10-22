@@ -223,7 +223,7 @@ export type TraceEvent = { seq: number; t: number; ts: string; run_id: string; k
 
 export type Status = {
   harness: { name: string; ok: boolean; notes: string[]; erp?: string; url?: string; error?: string };
-  memory: { online: boolean; backend: string; url: string; engines?: Record<string, boolean> };
+  memory: { online: boolean; backend: string; url: string; engines?: Record<string, boolean>; embedder?: string | null };
   models: Record<string, { configured: boolean; model: string }>;
   as_of: string;
   company?: string;

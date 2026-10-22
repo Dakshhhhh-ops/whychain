@@ -29,6 +29,7 @@ class Memory:
         self.http = httpx.Client(timeout=15.0)
         self.local_path = local_path or SETTINGS.runs_dir / "_local_memory.json"
         self.engines: dict = {}
+        self.embedder: str | None = None
         self.online = self._health()
         self._q: queue.Queue = queue.Queue()
         if self.online:
@@ -40,12 +41,13 @@ class Memory:
             r = self.http.get(f"{self.url}/health", timeout=3.0)
             body = r.json()
             self.engines = body.get("engines", {})
+            self.embedder = (body.get("embeddings") or {}).get("embedder")
             return r.status_code == 200 and bool(body.get("ok"))
         except Exception:
             return False
 
     def status(self) -> dict:
-        return {"online": self.online, "url": self.url, "engines": self.engines,
+        return {"online": self.online, "url": self.url, "engines": self.engines, "embedder": self.embedder,
                 "backend": "meterless" if self.online else "local-json"}
 
     # ------------------------------------------------------------------ H-MEM

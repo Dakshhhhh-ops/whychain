@@ -23,7 +23,22 @@ function fnv1a(str: string): number {
   return h >>> 0;
 }
 
+// WhyChain change (the only change to the vendored engines): a provider hook, as the comment above suggests.
+// The WhyChain bridge registers a synchronous lookup into vectors it fetched beforehand (NVIDIA Nemotron
+// embeddings). With no provider, or when the provider has no vector for a text, the mock below is used unchanged.
+let provider: ((text: string) => number[] | undefined) | null = null;
+
+export function setEmbeddingProvider(p: ((text: string) => number[] | undefined) | null): void {
+  provider = p;
+}
+
 export function embed(text: string): number[] {
+  const v = provider ? provider(text) : undefined;
+  if (v) return v;
+  return mockEmbed(text);
+}
+
+export function mockEmbed(text: string): number[] {
   const vec = new Array<number>(DIM).fill(0);
   for (const token of tokenize(text)) {
     const h = fnv1a(token);
@@ -37,6 +52,7 @@ export function embed(text: string): number[] {
 }
 
 export function cosine(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0; // WhyChain change: vectors from different embedders are not comparable
   let dot = 0;
   for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
   return dot; // both vectors are unit-length

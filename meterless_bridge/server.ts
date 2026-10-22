@@ -30,6 +30,7 @@ import type {
   RetrievedMemory,
 } from "./engines/hmem/reference/src/index.ts";
 import { WorldModel, entityIdFromName, externalId, normalizeName } from "./engines/world-model/reference/src/index.ts";
+import { NemotronEmbedder } from "./nemotronEmbed.ts";
 import type {
   Entity,
   Fact,
@@ -51,10 +52,9 @@ const WORLD_DIR = path.join(DATA_DIR, "world");
 const WORLD_NAMESPACE = "whychain";
 const SYSTEM = "whychain";
 const ACTOR = "whychain-bridge";
-// The reference embedder is a deterministic token-hash mock, so relevant
-// supply-chain matches typically score 0.2-0.4. The spec default threshold
-// (0.35) drops most of them; the bridge defaults lower. Pass min_score to
-// override per call (min_score: 0.35 reproduces the spec default exactly).
+// H-MEM's reference embedder is a deterministic token-hash mock; the bridge replaces it with NVIDIA Nemotron
+// embeddings when an NVIDIA key is available (nemotronEmbed.ts). The bridge's default recall threshold stays below
+// the spec default (0.35); pass min_score to override per call.
 const DEFAULT_MIN_SCORE = Number(process.env.METERLESS_BRIDGE_MIN_SCORE ?? 0.15);
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -74,6 +74,14 @@ try {
   hmem = new HMEM({ persistDir: HMEM_DIR, actor: ACTOR });
 } catch (err) {
   hmemError = (err as Error).message;
+}
+
+const embedder = new NemotronEmbedder(HERE);
+let embedSync: { updated: number; embedder: string } | null = null;
+if (hmem) {
+  // bring stored memories onto the active embedder before serving
+  embedSync = await embedder.reembed(hmem.store.all());
+  if (embedSync.updated) hmem.store.persist();
 }
 
 let world: WorldModel | null = null;
@@ -361,6 +369,7 @@ function memoryWrite(body: Json) {
   if (query) refs.push(`query:${query}`);
   if (doc) refs.push(`doc:${doc}`);
 
+  embedder.as("passage");
   const rec = h.add({
     content,
     type: KIND_MAP[kind].type,
@@ -401,6 +410,7 @@ function memoryRecall(body: Json) {
   let top: RetrievedMemory[];
   let context: string;
   let trace: Json;
+  embedder.as("query");
   if (!filtered) {
     // Straight engine path: hybrid 8-signal ranking, touch + "read" ledger entries, reinjection block.
     const r = h.query(query, { topN: k, threshold: minScore });
@@ -1058,6 +1068,7 @@ function health() {
     memory: hmem ? { records: hmem.store.all().length, tiers: tierCounts(hmem), ledger_entries: hmem.ledger.all().length } : null,
     world: world ? { events: world.events().length, runs: stepCount.size, audit_entries: world.audit().length } : null,
     defaults: { recall_min_score: DEFAULT_MIN_SCORE, recall_k: 5 },
+    embeddings: { ...embedder.status(), startup_reembedded: embedSync?.updated ?? 0 },
   };
 }
 
@@ -1091,10 +1102,12 @@ async function route(req: http.IncomingMessage, url: URL): Promise<[number, unkn
       return [200, health()];
     case "POST /memory/write": {
       const body = await readBody(req);
+      if (typeof body.content === "string") await embedder.prefetch([body.content], "passage");
       return [200, await serial(() => memoryWrite(body))];
     }
     case "POST /memory/recall": {
       const body = await readBody(req);
+      if (typeof body.query === "string") await embedder.prefetch([body.query], "query");
       return [200, await serial(() => memoryRecall(body))];
     }
     case "POST /memory/consolidate": {
@@ -1192,6 +1205,7 @@ for (const host of HOSTS) {
       console.log(`  H-MEM:       ${hmem ? "ok" : `FAILED (${hmemError})`}  (${HMEM_DIR})`);
       console.log(`  World Model: ${world ? "ok" : `FAILED (${worldError})`}  (${path.join(WORLD_DIR, ".world", `${WORLD_NAMESPACE}.json`)})`);
       console.log(`  engines:     ${ENGINE_SOURCE}`);
+      console.log(`  embeddings:  ${embedder.status().embedder}${embedSync?.updated ? ` (${embedSync.updated} stored memories re-embedded)` : ""}`);
     }
   });
   servers.push(server);

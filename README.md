@@ -118,8 +118,8 @@ This table separates what the code is built to do from what has actually run. Ru
 | Sponsor | Designed role | Status today |
 |---|---|---|
 | **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py`), and agents write federated Spark SQL across them. | **Connected: the local Zetaris platform (the hackathon Docker bundle).** Both datasets are registered: the order systems through a Postgres JDBC datasource, the exports as Lightning file tables read in place (26 tables, every row count matching). The engine's fact query, the agents' SQL, the catalog the Data Scout maps and the dashboard all go through it. Not used: Zetaris Cloud (the client has a cloud mode, untested). DuckDB remains as the fallback. |
-| **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines unmodified. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** H-MEM's reference embedder is a hash-based mock, so similarity recall is weak; WhyChain filters recalled findings itself (see "Known limitations"). **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
-| **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
+| **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines as libraries. H-MEM's recall uses **NVIDIA Nemotron embeddings** (`nvidia/nemotron-3-embed-1b`) in place of its reference mock embedder. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** Nemotron embeddings since 22 Oct 19:25 IST (earlier runs used the reference hash mock, so similarity recall was weak); WhyChain still filters recalled findings by question similarity. One disclosed change to the vendored H-MEM: a provider hook in `embeddings.ts`; its conformance suite still passes (13/13). **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
+| **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. **Nemotron 3 Embed** (`nvidia/nemotron-3-embed-1b`) embeds every memory and recall query for Meterless H-MEM. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
 | **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
 
 Every model call goes through one OpenAI-compatible client with role-based fallback. Providers that aren't configured are skipped, so **with today's configuration every chain runs entirely on NVIDIA's NIM endpoint**: Nemotron 3.5 Super, then a different model, Nemotron 3 Ultra. That covers one model being overloaded, which is the usual NIM failure, but not an outage of the NIM endpoint itself. Grok or Nightshift would make the chain independent.
@@ -332,6 +332,7 @@ Every language-model call goes to Nemotron through NVIDIA NIM: **Nemotron 3.5 Su
 | Agent loop: Planner, Evaluator | Plan competing hypotheses; challenge findings, ask for another round | 3.5 Super with reasoning ("thinking") on |
 | Agent loop: Data Scout, Investigators, Risk & Action, Action Executor | Map the data, write and repair SQL, call the optimizer, prepare deliverables | 3.5 Super, JSON mode |
 | Fallback | Take over when 3.5 Super returns errors or rate limits | 3 Ultra |
+| Memory (Meterless H-MEM) | Embed every finding written to memory and every recall query, so a new investigation finds related past findings by meaning, not shared words | Nemotron 3 Embed (`nemotron-3-embed-1b`, 2048 dimensions; passages and queries embedded as such) |
 
 The design choice: Nemotron reads, plans, argues and writes; it doesn't produce the numbers or the verdicts. On the real-data questions that cut model calls from 50 to 70 per question to 5 to 9, and made the answers reproducible.
 
@@ -363,7 +364,7 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 | The engine's choices are judgement calls. | The 10% cause threshold, the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
 | Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
 | No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
-| Weak memory recall. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are reused only when they come from a similar question (word overlap ≥ 0.4); memories are hints, never evidence. |
+| Memory recall is a hint, not evidence. | Recall uses Nemotron embeddings (before 22 Oct 19:25 IST, H-MEM's hash mock). Findings are still reused only when they come from a similar question (word overlap ≥ 0.4), and memories are never cited as evidence. Without an NVIDIA key, or if the embedding call fails, the bridge falls back to the mock. |
 | Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. H1–H3 are held out: added after the last prompt change, with ground truth computed with SQL before any agent ran them. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
 | Crude scoring. | Eval terms match at word boundaries; red herrings are judged on confirmed hypotheses and the headline. Keyword scoring still can't judge an argument; read the briefs. |
 
@@ -396,7 +397,7 @@ The repository was only created at 13:37 IST. So the first commits (`9b47209` to
 
 **Third-party and earlier components**
 - `optiagent-core` (installed from `github.com/Dakshhhhh-ops/Optiagent`, commit `f0b61d5`, MIT): the author's earlier verified-optimization engine (LP builder, solver, plan checks, duality certificate, sensitivity analysis). Built before the hackathon and used unmodified as a library.
-- `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied unmodified from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included).
+- `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included). One change, made in the window (22 Oct): a provider hook in `hmem/reference/src/embeddings.ts`, which the file's own comment invites, so the bridge can supply NVIDIA Nemotron embeddings; vectors of different lengths score 0 instead of failing. Everything else is unmodified.
 - Open-source libraries listed in `pyproject.toml`, `frontend/package.json` and `meterless_bridge/package.json`.
 - The Olist dataset is third-party public data (CC BY-NC-SA 4.0), downloaded by `datagen/olist.py` and not included in the repository.
 
@@ -409,7 +410,7 @@ The repository was only created at 13:37 IST. So the first commits (`9b47209` to
 - The full agent graph: Memory, Data Scout, Planner, Investigators, Document Analyst, Evaluator with revise loop, Risk & Action, Reporter, and the Action Executor.
 - The LLM client: NVIDIA NIM / Nemotron, role-based fallback chains and retries.
 - The Optiagent integration (`whychain/optimize.py`, the `optimize` action).
-- The Meterless bridge service (`meterless_bridge/server.ts`).
+- The Meterless bridge service (`meterless_bridge/server.ts`). Its Nemotron embeddings (`meterless_bridge/nemotronEmbed.ts`) were added in the window.
 - The FastAPI server with live event streaming.
 - The React app: control tower, investigation view, brief, evidence, memory, data sources, dataset switch, and the monthly chart with event markers.
 - Tooling: the Kaveri eval cases and scorer, the wiring tests, `doctor`, the CLI and `start.cmd`.
