@@ -226,13 +226,27 @@ Olist has no warehouse stock to move, so the optimizer and stock-transfer delive
 Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `evals/results.md`. A case passes "root cause found" when the expected terms appear, as whole words, in a cause the Evaluator confirmed or in the headline. Keyword scoring is crude; read the briefs too.
 
 <!-- RESULTS -->
-**Status on 22 Oct, 16:00 IST: no full evaluation of the current version has finished yet.** What exists so far:
+### Real data (Olist), analysis-engine architecture: two independent passes, 22 Oct 16:10 to 16:25 IST
 
-- **First real-data pass (14:00 IST, older version):** 2 of 3 Olist development cases passed. The truckers' strike case failed: the agents said "no measurable delay", but parcels handed to the carrier in the strike week took 10.5 days against about 8, and 15.5% were late against about 4%.
-- **Kaveri (simulated) runs at 14:48–15:20 IST:** not a valid measurement. Two eval scripts ran at once by mistake. NVIDIA rate limits (429) crashed three runs within seconds and cut the others short; one run's planner also produced no usable tasks. These failures led to the machine-wide call limit, the longer rate-limit back-off, provider cooldowns, the per-run time limit and the empty-plan fallback.
-- **March 2018 (O1) across runs:** carrier transit was always the main cause. The strike was confirmed as a partial cause in some runs and rejected in others, which the scorer now counts as a failure.
+Each pass ran all six questions on an empty memory, one after the other (`evals/run_evals.py --dataset olist`). O1 to O3 are development cases; H1 to H3 are held out (added after the last prompt change, ground truth computed with SQL before any agent ran them).
 
-Results for the current version, including repeated runs of the same questions and the "Models used" column, will be added here when they finish. Until then, treat the numbers above as development notes, not results.
+| Case | | Pass 1 | Pass 2 | Model calls | Time | What the brief says |
+|---|---|---|---|---|---|---|
+| O1 March 2018 spike | dev | ✅ 2/2, no red herring | ✅ 2/2, no red herring | 7 / 6 | 52 s / 55 s | 19.0% late vs a normal 5.6%. Carrier transit 72.7% and shorter promises 26.7% of the rise; concentrated in RJ. Strike, Carnival, Rio storm, volume and data errors ruled out. |
+| O2 Black Friday 2017 | dev | ✅ 2/2, no red herring | ✅ 2/2, no red herring | 7 / 6 | 77 s / 25 s | Yes: the effect starts with Black Friday. Volume about 2.9x the weeks before, and transit slowed with it. |
+| O3 Truckers' strike 2018 | dev | ✅ 2/2, no red herring | ✅ 2/2, no red herring | 7 / 6 | 48 s / 111 s | Yes: transit rose against the prior trend for parcels handed over during the strike (the old architecture said "no measurable delay"). |
+| H1 Carnival 2018 | held out | ✅ 1/1, no red herring | ✅ 1/1, no red herring | 5 / 6 | 68 s / 29 s | No: transit was already raised before Carnival and didn't jump with it. |
+| H2 Northeast delays | held out | ✅ 2/2, no red herring | ✅ 2/2, no red herring | 9 / 9 | 90 s / 123 s | Carrier transit is twice as long (median 14 vs 7 days); almost all orders ship from another state; longer promises offset most of it. |
+| H3 Rio security | held out | ✅ 2/2 (no red herring defined) | ✅ 2/2 | 6 / 7 | 44 s / 140 s | RJ is late more often than states at a similar distance, and transit explains it; the data can't prove theft is the cause. |
+
+- **Reproducibility:** across the two passes, **all 62 computed findings were identical** (verdict, cause share and claim), and so were all six headlines. Only the Document Analyst's reading and the short model-written answer vary.
+- **Models used:** Nemotron 3.5 Super, with Nemotron 3 Ultra taking over when NVIDIA rate-limited it (column "Models used" in `evals/results.md`). The computed findings don't depend on which model answered.
+- **Scorer change, disclosed:** pass 1 was first scored with the earlier scorer, which counted only confirmed *causes*. O1 and H2 then scored 1/2, because "where the rise sits" (RJ / interstate shipping) is reported as a measurement. The scorer now also counts confirmed measurements; red herrings are still judged on causes only. The table uses the current scorer for both passes.
+- **Earlier architecture, for comparison:** 8 to 10 minutes and 50 to 70 model calls per question. The strike verdict on O1 flipped between runs, and O3 was answered wrongly.
+
+### Simulated company (Kaveri)
+
+*(Running. Two of the five questions are about lateness and use the engine; three (stock at risk, a stock-out, a backlog) use the agent loop and the optimizer.)*
 
 ## Reliability
 
@@ -257,7 +271,7 @@ Results for the current version, including repeated runs of the same questions a
 |---|---|
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
 | Zetaris, Nightshift and Grok have never run. | All runs used the local DuckDB harness and cloud NVIDIA NIM (see the sponsor table). Model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. |
-| Results vary from run to run. | Language models at temperature 0.2 do not give identical answers: the strike verdict for March 2018 has flipped between runs. Repeated runs are planned but not yet reported (see "Results"). |
+| Results vary from run to run (agent loop). | For late-delivery questions the computed findings are identical run to run (62/62 in two passes). The agent loop for stock questions still uses language models at temperature 0.2, so its answers can vary. |
 | Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
 | The engine's choices are judgement calls. | The 10% cause threshold, the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
 | Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
