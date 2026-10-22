@@ -57,6 +57,49 @@
   expected_actions:
     - [carrier, transfer, expedite]
 
+# --- Kaveri held-out questions, added 22 Oct ~19:10 IST, after the supply engine and the stock-wait test were
+# written. Ground truth was computed with SQL (scratch queries recorded in the commit message) before any engine or
+# agent ran these questions, and the system is not changed between adding them and their first scored run.
+# The causes are still ones the author planted in the simulator, so they test new scopes and wordings of known
+# mechanisms, plus one question with a false premise.
+
+- id: KH1-chennai-powerbanks
+  held_out: true
+  question: Why are power banks out of stock at the Chennai DC?
+  # SQL: CHN's open backorders are mostly S-14 (Voltix): Power Banks 2,140 units, Chargers 2,135. Eight power-bank POs
+  # expected 12 Oct now show an ETA of 31 Oct, port of entry Chennai, where a dock strike began 9 Oct.
+  must_find:
+    - [voltix, s-14]
+    - [strike, port]
+  distractors:
+    - [diwali26, promo, promotion]
+  expected_actions:
+    - [transfer, chase, expedite, air]
+
+- id: KH2-hyderabad-september
+  held_out: true
+  question: Why did deliveries to Hyderabad get later in September?
+  # SQL: late 17.3% in September vs 3.3% in August. Hand-over rose 2.41 -> 3.21 days, transit flat (2.03 -> 2.06),
+  # same carrier (C02) and warehouse (CHN). Orders handed over after their requested ship date: 15.3% vs 2.2%, with
+  # a short line at the warehouse on that date (earbuds S-07 and S-19, keyboards S-02, ...). Not the carrier: C02's
+  # problem is the Nashik consolidation, and Hyderabad transit didn't change.
+  must_find:
+    - [hand-over, handover, dispatch]
+    - [stock, stock-out, stockout, waited]
+  distractors:
+    - [transit got slower, carrier transit, consolidat]
+  expected_actions:
+    - [stock-out, stockout, stock]
+
+- id: KH3-pune-october-false-premise
+  held_out: true
+  question: Why did late deliveries to Pune rise in October?
+  # SQL: Pune late rate by order month: Aug 11.0%, Sep 13.9%, Oct 4.4%. Lateness fell; there is no rise to explain.
+  must_find:
+    - [no cause, no rise, did not rise, nothing to explain, fell, lower than]
+  distractors:
+    - [slower, later, shorter, surge, waited for stock, duplicate, late inbound, strike]
+
 # --- Olist (REAL data). Nothing is planted: the ground truth below was established independently with SQL on the
 # raw data (weekly and per-state breakdowns) before scoring the agents. No expected actions: there is no single
 # right business action on historical data.
