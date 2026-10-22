@@ -27,9 +27,11 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 ## 3. What WhyChain does
 
 - Ask in plain English: "Why did late deliveries jump to 19% for orders placed in March 2018?"
-- It answers with: the symptom against a normal baseline; each cause's share of the problem; where it sits; what was
-  ruled out and why; what the written record says, quoted word for word; and actions sized from the data, with the
-  risky ones held for approval.
+- In about 15 seconds, a preliminary answer computed from the data; two to three minutes later, the full brief.
+- The brief opens with three lines for a manager (what happened, why, what to do, in money), then the why chain, drawn
+  from the Meterless World Model: the symptom, each cause's share, where it sits, what was ruled out (crossed out).
+- Then: what the written record says, quoted word for word; actions sized from the data, each with the value at stake,
+  the risky ones held for approval; and, folded, the medians, percentiles and counterfactuals behind every line.
 - Every number in the brief links to the cell and the SQL it came from, and is checked by code.
 - Screenshots: `docs/img/brief.png`; a citation opened: `docs/img/evidence.png` (computed table, "Data via Zetaris",
   and the federated SQL).
@@ -39,20 +41,24 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - 1,328 of 7,003 orders placed in March 2018 were late: 19.0%, against a normal 5.6%.
 - Carrier transit explains 72.7% of the rise; shorter promised windows 26.7%.
 - The Correios strike (12–13 March) is ruled out: lateness was already high in the two weeks before it.
-- Action: promise buffers per state (e.g. RJ +9 days), which would have put 255 of these late orders on time.
+- What it cost: the 1,328 late orders were worth R$ 187,138 (plus R$ 35,034 of freight); their customers gave them
+  2.1 stars on average against 4.2 on time, and 68% of their reviews were 1 or 2 stars (11% on time).
+- Actions, each with the value at stake: transit back to normal in SP, RJ, MG (593 orders, R$ 83,603); promise
+  buffers per state, e.g. RJ +9 days (255 orders, R$ 37,740, needs approval). Value at stake, not cost: the data has
+  no cost of the fix.
 - Same computed findings on every run: 62 of 62 identical across three passes, local and through Zetaris.
 
 ## 5. How it works (architecture)
 
-- Diagram (from the README's mermaid chart): question → memory recall (Meterless H-MEM) → the kind of question picks
-  the path:
+- Diagram (from the README's mermaid chart): question → **Meterless Scout Intent** (routes it, guards against prompt
+  injection, signs an execution contract) → memory recall (Meterless H-MEM) → the path Scout chose:
   - late deliveries → a fixed battery of tests in the analysis engine (baseline, stages with counterfactuals and
     Shapley shares, where it sits, events against the prior trend, volume, data quality, waiting for stock);
   - stock-outs, backlogs, orders at risk → the supply engine (inbound orders and ports, demand, reorder policy,
     duplicates, volume);
   - anything else → an agent loop (Planner, SQL Investigators, Evaluator).
-- Coded verdicts → actions sized by code (and the Optiagent optimizer) → a brief whose every number is checked →
-  memory and cause graph written back.
+- Coded verdicts → a preliminary answer in seconds → actions sized by code (and the Optiagent optimizer) → a brief
+  whose every number is checked → memory and the why chain written back to Meterless.
 - Line at the bottom: "Code computes; agents read, plan, quote and write."
 
 ## 6. The agents and where Nemotron works
@@ -75,13 +81,19 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - Same answers as a local DuckDB copy: 11 eval questions, identical computed findings.
 - Screenshot: `docs/img/sources.png` (Data sources, "Federated by Zetaris").
 
-## 8. Meterless: memory with provenance, and a cause graph
+## 8. Meterless: three engines doing real work
+
+- **Scout Intent** routes every question: WhyChain's registry (late deliveries, a shortage, an open investigation, not
+  about the data), Nemotron embeddings as its semantic stage, an injection guard, a signed execution contract. Its
+  spec ships no code; WhyChain's implementation passes the spec's own eval harness (32-example smoke set: every
+  metric 1.000, clarification rate 0.125) and routes all 48 questions WhyChain knows the way its word rules do.
 
 - H-MEM stores every confirmed and ruled-out finding with provenance (run, agent, query, document); new
   investigations recall related findings as hints, never as evidence.
 - Recall runs on NVIDIA Nemotron embeddings (one vendored file gained a provider hook; conformance 13/13 with it off
   and on). Reworded questions find the right past finding 5 times in 6, against 2 in 6 with the mock.
-- The World Model keeps the cause-effect relations across runs.
+- The World Model keeps each run's why chain (causes, shares, where, what explains them, what was ruled out); the
+  brief draws it. Screenshot: `docs/img/brief.png` (the chain under the summary).
 - Screenshot: `docs/img/memory.png` (the Memory page, or a run's Memory tab with the cause graph).
 
 ## 9. What's unique

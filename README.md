@@ -1,5 +1,7 @@
 # WhyChain
 
+[![tests](https://github.com/Dakshhhhh-ops/whychain/actions/workflows/tests.yml/badge.svg)](https://github.com/Dakshhhhh-ops/whychain/actions/workflows/tests.yml)
+
 **A team of AI agents that explains *why* a supply chain problem is happening, proves it with evidence from every system the company runs, and prescribes fixes sized from the data (proven cheapest where costs are known), ready for a manager to approve.**
 
 Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
@@ -10,7 +12,7 @@ Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
 
 WhyChain is for operations and fulfilment managers who see a problem on a dashboard and need to know *why*. Ask in plain English. It investigates the order system, the seller, payment and review exports, an events feed and news briefs, all through Zetaris, and returns each cause with its share of the problem, the red herrings it ruled out, quotes from the written record, and actions sized from the data.
 
-On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The brief sets a promise buffer per state (RJ +9 days, for example). In the final test pass, at one commit with every query through Zetaris, it found the root cause in 18 of 18 questions, five of them held out (see [Results](#results)).
+On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The 1,328 late orders were worth R$ 187,138, and their customers gave them 2.1 stars on average against 4.2 for the on-time ones. Each action says how much of that it protects: getting transit back to normal in SP, RJ and MG covers 593 of those orders, R$ 83,603 of them. A preliminary answer computed from the data appears within about 15 seconds; the written record and the written answer follow. In the final test pass, at one commit with every query through Zetaris, it found the root cause in 18 of 18 questions, five of them held out (see [Results](#results)).
 
 | Control tower | A live investigation | The brief |
 |---|---|---|
@@ -21,8 +23,8 @@ On real Olist data, orders placed in March 2018 were 19.0% late against a normal
 ### See it in five minutes
 
 1. Start it: on Windows run `start.cmd` (Docker, Zetaris, Postgres, the Meterless bridge, the app, then a warm-up), or follow [Setup](#setup-clean-machine). Open http://localhost:8000.
-2. Olist (real data): click **March 2018 delay spike** under the search box. The agents stream their work; through Zetaris it takes about two to three minutes.
-3. In the brief, click any citation chip to see the computed table and its SQL ("Data via Zetaris"); scroll to **Ruled out** for the strike.
+2. Olist (real data): click **March 2018 delay spike** under the search box. A **preliminary answer**, computed from the data, appears within about 15 seconds (after the warm-up); the full brief, with the written record and the short written answer, follows in two to three minutes.
+3. The brief opens with **In short** (what happened, why, what to do, in money) and the **why chain** drawn from the Meterless World Model. Click any citation chip to see the computed table and its SQL ("Data via Zetaris"); scroll to **Ruled out** for the strike.
 4. Switch to **Kaveri** and run **Pune orders at risk**: the proven-optimal stock transfer, then **Approve** it to get the transfer order and supplier email.
 5. Open **Memory** (findings with provenance, recall on Nemotron embeddings) and **Data sources** (federated by Zetaris).
 
@@ -61,25 +63,30 @@ A good analyst needs half a day to stitch that together. WhyChain does it in min
 
 WhyChain splits the work between **code that computes** and **agents that plan, read and write**. Numbers and verdicts come from code; language models never produce a number that reaches the brief.
 
+**Routing: Meterless Scout Intent.** Every question goes first to Scout (`meterless_bridge/scout/`), which scores it against WhyChain's intent registry (late deliveries, a shortage, an open investigation, or not a question about the data), with Nemotron embeddings as its semantic stage, checks it for prompt injection, and returns a signed execution contract. WhyChain follows Scout when it is confident and its own word rules otherwise; each run records both, and a question the guard blocks is refused before any agent sees it.
+
 **Questions about late deliveries** (the real Olist data, and lateness questions on the simulated company) run on the **analysis engine** (`whychain/analysis/`):
 
 1. **One federated query** pulls order-level facts through the data harness. That's one row per order: purchase, hand-over to the carrier, delivery, promised date, place, seller, carrier. "Late" has one definition: delivered on a later calendar date than promised.
 2. **The question becomes a fixed battery of tests** (`battery.py`). The period, places and named events are read from the question with plain rules. The same kind of question always gets the same tests:
    - **the symptom** against a *normal* baseline: the months (or weeks) before, minus any that were themselves abnormal;
+   - **the value at stake**: what the late orders were worth (order value, and freight on Olist) and how their customers rated them against the on-time orders (review stars, and the share of 1- or 2-star reviews);
    - **each delivery stage** (seller hand-over, carrier transit, the promise): counterfactual late rates where a stage takes its baseline distribution, matched like with like by area. Exact **Shapley values** split the rise, so the shares add up;
    - **waiting for stock** (datasets with stock data): were the slow hand-overs orders waiting for stock the warehouse didn't have on their requested ship date? A counterfactual gives the hand-over without those waits, and the short lines name the suppliers and any promotion behind their demand. This explains the dispatch stage rather than counting as another cause, and changes its action from "enforce hand-over deadlines" to "clear the stock-outs";
    - **where it sits**: a shift-share split of the rise by area, seller state or carrier, separating "it got worse there" from "more orders came from there";
    - **volume**: orders per day against the four weeks before (business growth is not a surge);
-   - **dated events** in or near the period: weekly transit and lateness, by the week parcels were handed to the carrier, against the **prior trend**. An event counts only if the change starts with it, and for a regional event, only if it is larger in that region;
+   - **dated events** in or near the period: weekly transit and lateness, by the week parcels were handed to the carrier, against the **prior trend**. An event counts only if the change starts with it, and for a regional event, only if it is larger in that region. An event that ended before the period asked about is not counted as a cause of it (whether its backlog carried over isn't tested);
    - **data quality and definitions**, and **what customers wrote** (review mentions per thousand orders);
    - for regional questions, a second comparison with **places at a similar distance** (similar promised times), to separate distance from everything else.
 3. **Coded verdicts.** A stage is a cause if it explains at least 10% of the rise **and** the stage itself moved the late way: its average by a quarter day or more, or its typical (median) or four-in-five (80th percentile) time by a day or more (for promises: shorter). The second condition was added after held-out case KH2: on 98 orders, transit that hadn't changed (typically 2.0 against 2.0 days) picked up 14.6% of the rise from noise in the counterfactual. An event is a cause only if the effect starts with it. Volume counts only if orders rose 25% or more and the chain slowed with it. The thresholds are in the code and the brief.
 4. **Agents** around the engine:
    - the **Document Analyst** reads the written record and must quote it verbatim. Documents are context, never a cause: dated events are judged by the event test;
-   - **actions** come from templates per confirmed cause, sized with computed tables (e.g. the promise buffer each state needs);
+   - **actions** come from templates per confirmed cause, sized with computed tables (e.g. the promise buffer each state needs). Each carries the value at stake: what exactly the orders it would have turned on time are worth, and how many of them left a 1- or 2-star review. That is not what the fix would cost, which the data doesn't hold;
    - a model writes only the brief's short answer, from the computed facts. Every number in the brief is checked against its cells and marked "(unverified)" if it isn't there.
 
-A late-delivery investigation takes 5 to 9 model calls and 25 s to about 2 minutes on the local harness (1.5 to 4 minutes through Zetaris), and gives the same numbers on every run.
+A late-delivery investigation takes 5 to 9 model calls and gives the same numbers on every run. The computed tests take seconds, so the planner runs them straight away and publishes a **preliminary answer** built by code (the summary, the causes and the sized actions) while the Document Analyst reads and the model writes; the final brief, 1.5 to 4 minutes later through Zetaris, adds the written record and the short written answer. The tables pulled through Zetaris (Olist's order facts and reviews take about a minute) are shared by all runs in the process for 15 minutes, and `scripts/warmup.py` loads them into the app before the first question.
+
+**The brief** opens with a summary written by code: what happened (with the value at stake), why (and what was ruled out), and what to do, in money. Root causes are one line each; the medians, percentiles and counterfactuals behind them sit under **How we know**, folded in the app. Above them the app draws the **why chain** (symptom, causes with their shares, what explains a cause, where it sits, what was ruled out) from the relations the run wrote to the Meterless World Model.
 
 **Stock-outs, backlogs and orders at risk** (the simulated company) run on the **supply engine** (`whychain/analysis/supply.py`), built the same way. The warehouse, product category and time window come from the question, and the same checks always run on order lines, stock, purchase orders and the external signals:
 - **inbound supply**: purchase orders overdue against their expected date, by supplier and port of entry, set against the port status feed;
@@ -100,11 +107,12 @@ A check is a cause when it is involved in at least 25% of the short units. The s
 
 The same numbers check applies to findings, actions and the brief.
 
-Both paths write confirmed and ruled-out causes, with their provenance, to **Meterless H-MEM**, and cause-effect links to the **Meterless World Model**.
+Both paths write confirmed and ruled-out causes, with their provenance, to **Meterless H-MEM** (the written record as its verified quotes only), and the why chain to the **Meterless World Model**.
 
 ```mermaid
 flowchart LR
-    Q[Question] --> M[Memory recall<br/>Meterless H-MEM]
+    Q[Question] --> SC[Meterless Scout Intent<br/>route, injection guard,<br/>signed contract]
+    SC --> M[Memory recall<br/>Meterless H-MEM]
     M --> P{Kind of<br/>question}
     P -->|late deliveries| B[Battery of tests<br/>from the question]
     P -->|stock, backlog,<br/>at risk| S[Supply checks<br/>inbound, demand, policy,<br/>duplicates, volume]
@@ -116,14 +124,15 @@ flowchart LR
     V --> A1[Actions from templates<br/>+ promise buffers]
     P -->|anything else| L[Planner -> SQL Investigators<br/>-> Evaluator, revise loop]
     L --> A2[Risk & Action<br/>+ Optiagent optimizer]
-    A1 & A2 --> R[Brief: numbers checked<br/>against their cells]
-    R --> W[Write memory +<br/>World Model graph]
+    V -. seconds .-> PR[Preliminary answer<br/>built by code]
+    A1 & A2 --> R[Brief: summary in money,<br/>numbers checked against their cells]
+    R --> W[Write memory +<br/>World Model why chain]
     AE & S & L -. Spark SQL .-> Z[(Zetaris<br/>local DuckDB as fallback)]
 ```
 
 ## Prescriptive layer: Optiagent (declared pre-existing component)
 
-WhyChain doesn't estimate the fix by hand. It reuses the author's earlier project **[Optiagent](https://github.com/Dakshhhhh-ops/Optiagent)** (MIT, pinned to commit `f0b61d5`). Optiagent is a verified-optimization engine whose rule is that *the LLM never produces the numbers*. `whychain/optimize.py` was written for WhyChain (before the build window, see "Pre-existing work"): it turns an agent's scope into a transportation problem built entirely from the data. The optimizer applies only to the simulated dataset, which has stock, lanes and freight costs; the real Olist data has no cost data, so its actions carry no computed costs (see "Known limitations").
+WhyChain doesn't estimate the fix by hand. It reuses the author's earlier project **[Optiagent](https://github.com/Dakshhhhh-ops/Optiagent)** (MIT, pinned to commit `f0b61d5`). Optiagent is a verified-optimization engine whose rule is that *the LLM never produces the numbers*. `whychain/optimize.py` was written for WhyChain (before the build window, see "Pre-existing work"): it turns an agent's scope into a transportation problem built entirely from the data. The optimizer applies only to the simulated dataset, which has stock, lanes and freight costs; the real Olist data has no cost data, so its actions carry the value at stake (what the orders they protect are worth, and their reviews) rather than a cost (see "Known limitations").
 
 | Part of the model | Where it comes from |
 |---|---|
@@ -142,7 +151,7 @@ This table separates what the code is built to do from what has actually run. Ru
 | Sponsor | Designed role | Status today |
 |---|---|---|
 | **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py`), and agents write federated Spark SQL across them. | **Connected: the local Zetaris platform (the hackathon Docker bundle).** Both datasets are registered: the order systems through a Postgres JDBC datasource, the exports as Lightning file tables read in place (26 tables, every row count matching). The engine's fact query, the agents' SQL, the catalog the Data Scout maps and the dashboard all go through it. Not used: Zetaris Cloud (the client has a cloud mode, untested). DuckDB remains as the fallback. |
-| **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines as libraries. H-MEM's recall uses **NVIDIA Nemotron embeddings** (`nvidia/nemotron-3-embed-1b`) in place of its reference mock embedder. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** Nemotron embeddings since 22 Oct 19:21 IST (earlier runs used the reference hash mock, so similarity recall was weak); WhyChain still filters recalled findings by question similarity. Exactly one vendored file changed: a provider hook in H-MEM's `embeddings.ts` (see "Pre-existing work"); H-MEM conformance passes 13/13 with the provider off and on. In a recall test with reworded questions (`scripts/recall_demo.py`), the right finding came first for 5 of 6 questions with Nemotron, 2 of 6 with the mock. **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
+| **Meterless** | Three engines, via `meterless_bridge/`: **Scout Intent** routes every question (WhyChain's implementation of the spec, which ships no code), **H-MEM** memory with provenance, and the **World Model** cause graph (the reference engines run as libraries). H-MEM's recall uses **NVIDIA Nemotron embeddings** (`nvidia/nemotron-3-embed-1b`) in place of its reference mock embedder. Nightshift would serve the Document Analyst's model locally. | **Scout Intent, H-MEM and World Model: used in every run.** Scout since 23 Oct (commit `669061f`): the spec's own eval harness (vendored unchanged, a 32-example smoke set) passes with every metric at 1.000 and a clarification rate of 0.125 (0.094 with Nemotron embeddings as its semantic stage); on all 48 questions WhyChain knows, its route equals WhyChain's word rules (`scout/test-routing.ts`). The World Model holds each run's why chain, which the brief draws. H-MEM: Nemotron embeddings since 22 Oct 19:21 IST (earlier runs used the reference hash mock, so similarity recall was weak); WhyChain still filters recalled findings by question similarity. Exactly one vendored file changed: a provider hook in H-MEM's `embeddings.ts` (see "Pre-existing work"); H-MEM conformance passes 13/13 with the provider off and on. In a recall test with reworded questions (`scripts/recall_demo.py`), the right finding came first for 5 of 6 questions with Nemotron, 2 of 6 with the mock. **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
 | **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. **Nemotron 3 Embed** (`nvidia/nemotron-3-embed-1b`) embeds every memory and recall query for Meterless H-MEM. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
 | **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
 
@@ -162,14 +171,21 @@ The Official Rules (section 6) ask for a clear explanation of four things. In br
 
 **How Zetaris is integrated.** Zetaris is the only path from WhyChain to company data. The local Zetaris platform (the hackathon's Docker bundle) federates six source systems per dataset: the order systems through a Postgres JDBC datasource, and the CSV and JSON exports as Lightning file tables read in place, so nothing is copied into a warehouse or a vector store. `scripts/register_zetaris.py` registers them and checks every table's row count against the source (26 tables, all matching). Everything queries through it: the analysis engine's order-level fact query, which joins the Postgres order system with the seller export (five tables) in one statement; the agents' own Spark SQL; the catalog the Data Scout maps; and the dashboard. Every run records `harness: zetaris`, and every cited result can be re-run through it.
 
-**How Meterless is integrated.** `meterless_bridge/` runs the Meterless reference engines as libraries behind a small HTTP service. **H-MEM** stores every confirmed and ruled-out finding with provenance (run, agent, query or document), and each new investigation recalls related past findings as hints, never as evidence. The **World Model** stores the cause-effect relations each run confirms, as a cause graph across runs. H-MEM's recall uses NVIDIA Nemotron embeddings in place of its reference mock embedder: exactly one vendored file changed, to add a provider hook (see "Pre-existing work"). Conformance passes with the provider off and on.
+**How Meterless is integrated.** `meterless_bridge/` runs three Meterless engines behind a small HTTP service. **Scout Intent** decides which part of WhyChain answers each question, guards against prompt injection and signs an execution contract; its spec ships no code, so WhyChain implements it (`meterless_bridge/scout/scout.ts`) and checks it with the spec's own eval harness and a routing test, both in CI. **H-MEM** stores every confirmed and ruled-out finding with provenance (run, agent, query or document), and each new investigation recalls related past findings as hints, never as evidence. The **World Model** stores the cause-effect relations each run confirms (the why chain the brief draws: causes with their shares, what explains them, where the problem sits, what was ruled out), as a cause graph across runs. H-MEM's recall uses NVIDIA Nemotron embeddings in place of its reference mock embedder: exactly one vendored file changed, to add a provider hook (see "Pre-existing work"). Conformance passes with the provider off and on.
 
-**How Cursor was used during development.** [FOR THE AUTHOR: how Cursor was used during development]
+**Development tools and the Meterless requirement.** The updated onboarding guide (Build section) makes Cursor optional: any AI coding tool may be used. WhyChain was developed in VS Code. The requirement that stands is to implement at least one Meterless engine in a working feature and demonstrate it with a passing test or a live demo. WhyChain uses three, each in a working feature with passing tests that run in CI on every push (`.github/workflows/tests.yml`):
+
+| Meterless engine | Working feature | Passing tests |
+|---|---|---|
+| **Scout Intent** | Routes every question to the part of WhyChain that answers it, refuses injected instructions, signs an execution contract | The spec's own eval harness (`npm run scout:evals`: every metric 1.000) and WhyChain's routing test (`npm run scout:routing`: 48/48) |
+| **H-MEM** | Memory of every confirmed and ruled-out finding with provenance, recalled by later investigations (Nemotron embeddings) | H-MEM conformance 13/13 (`npm run conformance`); recall demo, right finding first 5 times in 6 (`scripts/recall_demo.py`) |
+| **World Model** | Each run's why chain, drawn in the brief; the cause graph across runs | World Model conformance 8/8 (`npm run conformance`); `tests/test_pipeline.py` |
 
 **Where NVIDIA technology contributes.** Every language-model call runs on Nemotron through NVIDIA NIM: Nemotron 3.5 Super for the agents (document reading with verified quotes, the brief's short answer, and the agent loop's planning, SQL and evaluation, with reasoning on for planning and judging), and Nemotron 3 Ultra as the fallback when 3.5 Super is overloaded. Nemotron 3 Embed (`nvidia/nemotron-3-embed-1b`) embeds every memory and recall query for Meterless H-MEM. See "How WhyChain uses NVIDIA Nemotron".
 
 **What is unique about this use.** The sponsor technologies sit where they carry weight, not decoration:
 - Zetaris carries the one federated query that every computed number traces back to, so a judge can click any figure in a brief, see its SQL and re-run it through Zetaris.
+- Meterless Scout Intent sits in front of every question: a signed contract records which engine answered and why, and a question carrying instructions for the agents is refused before any model sees it.
 - Meterless memory is reused only under rules (a similar question, never as evidence), and its recall runs on Nemotron embeddings: a reworded question finds the right past finding 5 times in 6, against 2 in 6 with the mock (`scripts/recall_demo.py`).
 - Nemotron reads, plans, quotes and writes, but never produces a number or a verdict: those come from code and are checked against their cells. That design cut model calls per real-data question from 50 to 70 down to 5 to 9, and made the answers reproducible run to run.
 
@@ -427,7 +443,7 @@ The agent loop, then used for stock, backlog and risk questions, was slow (11 to
 
 ## Development tools
 
-The Official Rules (section 5) require teams to use **Cursor** for development, and the submission must explain how it was used (section 6). Work in the window was done in VS Code until [FOR THE AUTHOR: time development moved to Cursor]. An earlier commit (`0e6b994`) removed a note about Cursor in the mistaken belief that the event page didn't mention it; it does, in the Official Rules. How that earlier in-window work counts is to be confirmed with the organizers (hackathons@genai.works). This section will say how Cursor was used once it has been.
+The updated onboarding guide (Build section) makes Cursor optional: "You can use any AI coding tool you're comfortable with." WhyChain was developed in VS Code. The Meterless engines it implements, and the tests that show them working, are listed under "How the sponsor technologies are used".
 
 ## How WhyChain uses NVIDIA Nemotron
 
@@ -460,6 +476,7 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 | Local harness fallback | Zetaris being unreachable during a demo (the run says so, and the app re-checks Zetaris after a minute) |
 | Zetaris login renewal: a token is renewed two minutes before its own expiry, and an expired or invalidated token (HTTP 400 "Bad Request" from the platform) logs in again once | Queries failing from 15 minutes into a session. Found in the final pass (see Results); `tests/test_zetaris.py` |
 | Off-topic check | A question about nothing in the data starting an open-ended investigation: answered at once, with no model call |
+| Meterless Scout's injection guard | Instructions hidden in a question ("ignore previous instructions", role markers, requests for secrets, invisible control characters) reaching the agents: the question is refused before any model call |
 | Incomplete brief | A failed report step hiding what was found: the brief starts "Incomplete:" and lists the confirmed findings |
 | Bounded rounds (`WHYCHAIN_MAX_ROUNDS`) | Endless revise loops |
 | Deterministic escalation thresholds | Expensive actions going ahead without a human |
@@ -474,7 +491,8 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 | Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded; the same holds for the supply checks. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
 | The engine's choices are judgement calls. | The 10% cause threshold and the stage-must-move rule (a quarter day on average, or a day at the median or 80th percentile), the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
 | Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
-| No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
+| No cost data on the real dataset. | Olist actions show the value at stake (what the orders they protect are worth, and how many left a 1- or 2-star review), not what the fix would cost. Only the simulated dataset has computed (proven-optimal) costs. |
+| Scout's routing is checked on a small set. | WhyChain's registry has four intents with hand-written examples; Scout decides only when confident (on the 48 known questions, 44 by Scout and 4 by the rules without embeddings; 38 and 10 with them). The spec's eval harness is a 32-example smoke set that its own README calls too small to claim the targets, and several of its registry examples are its test prompts. |
 | Memory recall is a hint, not evidence. | Recall uses Nemotron embeddings (before 22 Oct 19:21 IST, H-MEM's hash mock). Findings are still reused only when they come from a similar question (word overlap ≥ 0.4), and memories are never cited as evidence. Without an NVIDIA key, or if the embedding call fails, the bridge falls back to the mock. The Document Analyst's one-line summary of the written record is stored as a fact, and it can over-reach: in the March 2018 runs it says the Correios strike "explains the jump", which the computed event test rules out. That summary never reaches the brief (which quotes the documents word for word) or a verdict, but it shows on the Memory tab. |
 | Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. Held-out questions get their ground truth from SQL, written into `evals/cases.yaml` before anything runs them, and become development cases as soon as their result leads to a code change: KH2 and KH3 (commit `4ae49f7`), and H2, H3 and KH5 (22 Oct 20:28 IST) have. KH1, KH4, H1, HO1 and HO2 are still held out. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
 | Crude scoring. | Eval terms match at word boundaries; red herrings are judged on confirmed hypotheses and the headline. Keyword scoring still can't judge an argument; read the briefs. |
@@ -494,7 +512,10 @@ whychain/          agents, graph (LangGraph), harness (Zetaris + local), LLM cli
 frontend/          React + TypeScript + Tailwind web app (Vite)
 datagen/           company simulator, documents, Postgres loader
 evals/             ground-truth cases and scorer
-meterless_bridge/  Node service exposing Meterless H-MEM + World Model engines over HTTP
+meterless_bridge/  Node service exposing Meterless Scout Intent, H-MEM and World Model over HTTP
+  scout/           WhyChain's Scout Intent implementation, intent registry, routing test
+  engines/         vendored Meterless engines (H-MEM, World Model) and the Scout spec + eval harness
+.github/workflows/ CI: Python tests, frontend build, bridge type check, conformance, Scout evals and routing
 scripts/           Zetaris source registration and table-by-table check
 docs/              compose override that mounts WhyChain's data into the Zetaris bundle
 tests/             end-to-end wiring test with a scripted model
@@ -508,7 +529,7 @@ The repository was only created at 13:37 IST. So the first commits (`9b47209` to
 
 **Third-party and earlier components**
 - `optiagent-core` (installed from `github.com/Dakshhhhh-ops/Optiagent`, commit `f0b61d5`, MIT): the author's earlier verified-optimization engine (LP builder, solver, plan checks, duality certificate, sensitivity analysis). Built before the hackathon and used unmodified as a library.
-- `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included). **Exactly one vendored file was changed**, in the window (22 Oct), and it carries a notice saying so, as Apache-2.0 requires: `engines/hmem/reference/src/embeddings.ts` gained a provider hook (`setEmbeddingProvider`), which the file's own comment invites, so the bridge can supply NVIDIA Nemotron embeddings, and `cosine()` returns 0 for vectors of different lengths instead of failing. Without a provider the file behaves as before. H-MEM conformance passes 13/13 with the provider off and on (`meterless_bridge/conformance-results/`). Every other vendored file is unmodified.
+- `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included). **Exactly one vendored file was changed**, in the window (22 Oct), and it carries a notice saying so, as Apache-2.0 requires: `engines/hmem/reference/src/embeddings.ts` gained a provider hook (`setEmbeddingProvider`), which the file's own comment invites, so the bridge can supply NVIDIA Nemotron embeddings, and `cosine()` returns 0 for vectors of different lengths instead of failing. Without a provider the file behaves as before. H-MEM conformance passes 13/13 with the provider off and on (`meterless_bridge/conformance-results/`). Every other vendored file is unmodified. The Scout Intent specification and eval harness (`engines/scout-intent/`, same commit) were added in the window (23 Oct), unchanged; WhyChain's implementation of it (`meterless_bridge/scout/`) was written in the window.
 - Open-source libraries listed in `pyproject.toml`, `frontend/package.json` and `meterless_bridge/package.json`.
 - The Olist dataset is third-party public data (CC BY-NC-SA 4.0), downloaded by `datagen/olist.py` and not included in the repository.
 
