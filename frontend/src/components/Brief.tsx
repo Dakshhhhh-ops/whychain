@@ -79,10 +79,19 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-wide text-slate-500">Est. cost</div>
-          <div className="text-lg font-semibold tabular-nums text-slate-900">{money(a.est_cost_inr, a.currency)}</div>
+          {a.est_cost_inr === null || a.est_cost_inr === undefined ? (
+            <div className="max-w-[140px] text-[12px] font-medium text-slate-500">Not computed: no cost data</div>
+          ) : (
+            <div className="text-lg font-semibold tabular-nums text-slate-900">{money(a.est_cost_inr, a.currency)}</div>
+          )}
         </div>
       </div>
       {a.steps && <p className="mt-2 text-[13px] leading-relaxed text-slate-600">{a.steps}</p>}
+      {!!a.unsupported_figures?.length && (
+        <p className="mt-1.5 text-[11.5px] text-amber-700">
+          Removed figures the agent stated but its cited data does not contain: {a.unsupported_figures.join(", ")}
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-[12px] sm:grid-cols-3">
         <div>
           <div className="text-slate-500">Protects</div>
@@ -146,7 +155,7 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
 
 function briefMarkdown(result: RunResult) {
   const acts = (result.actions ?? [])
-    .map((a) => `- **${a.id}. ${a.title}** · est. ${money(a.est_cost_inr, a.currency)} · ${a.needs_approval ? "needs approval" : "within limits"} · ${a.decision}\n  ${a.steps ?? ""}`)
+    .map((a) => `- **${a.id}. ${a.title}** · est. ${a.est_cost_inr === null ? "not computed" : money(a.est_cost_inr, a.currency)} · ${a.needs_approval ? "needs approval" : "within limits"} · ${a.decision}\n  ${a.steps ?? ""}`)
     .join("\n");
   return `# ${result.headline ?? "Investigation"}\n\n_Question:_ ${result.question}\n\n${result.brief ?? ""}\n\n## Actions\n${acts}\n\n_WhyChain run ${result.run_id}_\n`;
 }

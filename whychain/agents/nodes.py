@@ -8,6 +8,7 @@ import re
 from whychain.agents import prompts as P
 from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
 from whychain.harness.base import catalog_text
+from whychain.grounding import check_claim, is_grounded, numbers_in
 from whychain.llm import LLMError, extract_json
 
 PROFILE_COL = re.compile(r"(status|_type|channel|tier|category|region|level|warehouse|port_of_entry|service|"
@@ -47,8 +48,44 @@ def data_map_text(dm: dict) -> str:
 def memories_text(mems: list[dict]) -> str:
     if not mems:
         return "(no relevant memories)"
-    return "\n".join(f"- [{m.get('kind', '?')}, conf {m.get('confidence', '?')}] {m.get('content', '')[:300]}"
-                     for m in mems)
+    return "\n".join(f"- [{m.get('kind', '?')}, conf {m.get('confidence', '?')}"
+                     f"{', from: ' + repr(m['source_question'][:90]) if m.get('source_question') else ''}] "
+                     f"{m.get('content', '')[:300]}" for m in mems)
+
+
+_STOP = set("why did do does the a an to for in of and by how much what is are was were so often around on at with "
+            "from this that our we it be been has have had".split())
+
+
+def question_words(q: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9%]+", (q or "").lower()) if w not in _STOP}
+
+
+def question_similarity(a: str, b: str) -> float:
+    wa, wb = question_words(a), question_words(b)
+    return len(wa & wb) / len(wa | wb) if wa and wb else 0.0
+
+
+def source_question(ctx: Ctx, run_id: str | None, cache: dict) -> str | None:
+    """The question of the investigation a memory came from (looked up in that run's saved trace)."""
+    if not run_id or not re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{4}", str(run_id)):
+        return None
+    if run_id not in cache:
+        cache[run_id] = None
+        for name in ("result.json", "trace.jsonl"):
+            f = ctx.settings.runs_dir / run_id / name
+            if f.exists():
+                try:
+                    first = f.read_text(encoding="utf-8") if name == "result.json" else f.open(encoding="utf-8").readline()
+                    cache[run_id] = json.loads(first).get("question")
+                except (json.JSONDecodeError, OSError):
+                    pass
+                if cache[run_id]:
+                    break
+    return cache[run_id]
+
+
+SIMILAR_QUESTION = 0.4  # word overlap (Jaccard) needed to reuse another investigation's findings
 
 
 def evidence_text(ev: dict, max_rows: int = 8) -> str:
@@ -69,14 +106,22 @@ def evidence_text(ev: dict, max_rows: int = 8) -> str:
             f"    {' | '.join(ev['columns'])}\n{rows}{more}")
 
 
-def findings_text(findings: list[dict], evidence: dict, verdicts: dict | None = None, rows: int = 8) -> str:
+def findings_text(findings: list[dict], evidence: dict, verdicts: dict | None = None, rows: int = 8,
+                  checks: dict | None = None) -> str:
     out = []
     for f in findings:
         v = (verdicts or {}).get(f["task_id"])
         vtxt = f"\n  Evaluator: {v['status']} ({v.get('reason', '')})" if v else ""
+        c = (checks or {}).get(f["task_id"])
+        ctxt = ""
+        if c and c["checked"]:
+            ctxt = (f"\n  NUMBERS CHECK: all {c['checked']} numbers in the claim were found in the cited rows"
+                    if not c["missing"] else
+                    f"\n  NUMBERS CHECK: {len(c['missing'])} of {c['checked']} numbers in the claim are NOT in the cited "
+                    f"rows: {', '.join(c['missing'][:8])}")
         out.append(f"[{f['task_id']}] ({f['type']}, {f['agent_kind']}) {f['statement']}\n"
                    f"  Investigator verdict: {f['verdict']} (confidence {f.get('confidence')}): {f['claim']}"
-                   f"{vtxt}")
+                   f"{vtxt}{ctxt}")
         for eid in f["evidence_ids"]:
             if eid in evidence:
                 out.append("  " + evidence_text(evidence[eid], rows).replace("\n", "\n  "))
@@ -88,7 +133,8 @@ def findings_text(findings: list[dict], evidence: dict, verdicts: dict | None = 
 def base_context(state: dict, ctx: Ctx) -> str:
     return (f"QUESTION: {state['question']}\nTODAY: {ctx.as_of} (\"next week\" = the 7 days after today)\n\n"
             f"DATA MAP (from the Data Scout):\n{data_map_text(state.get('data_map', {}))}\n\n"
-            f"RELEVANT MEMORY (from earlier investigations, Meterless H-MEM):\n"
+            f"RELEVANT MEMORY (Meterless H-MEM: earlier investigations of similar questions. These are HINTS, not\n"
+            f"evidence: never cite them, and never rule anything out because of them; re-check with a query):\n"
             f"{memories_text(state.get('memories', []))}")
 
 
@@ -97,9 +143,25 @@ def recall(state: dict, ctx: Ctx) -> dict:
     agent = "Memory"
     ctx.tracer.event("agent_start", agent, note="Recalling earlier findings and the cached data map")
     ds_tag = [ctx.dataset.key] if getattr(ctx.dataset, "key", None) else None
-    mems = [m for m in ctx.memory.recall(state["question"], k=8, kinds=["finding", "fact", "lesson"],
-                                         exclude_run_id=ctx.tracer.run_id, tags=ds_tag)
-            if "data_map" not in (m.get("tags") or [])]
+    raw = [m for m in ctx.memory.recall(state["question"], k=12, kinds=["finding", "fact", "lesson"],
+                                        exclude_run_id=ctx.tracer.run_id, tags=ds_tag)
+           if "data_map" not in (m.get("tags") or [])]
+    # H-MEM's reference embedder is a hash mock, so recall can return findings from unrelated questions. Findings and
+    # facts are reused only when they come from a similar question; general lessons are always kept.
+    mems, dropped, qcache = [], 0, {}
+    for m in raw:
+        if m.get("kind") == "lesson":
+            mems.append(m)
+            continue
+        src = source_question(ctx, m.get("run_id"), qcache)
+        if src and question_similarity(src, state["question"]) >= SIMILAR_QUESTION:
+            mems.append({**m, "source_question": src})
+        else:
+            dropped += 1
+    mems = mems[:8]
+    if dropped:
+        ctx.tracer.event("memory_filtered", agent, kept=len(mems), dropped=dropped,
+                         note="findings from unrelated or untraceable investigations were not reused")
     fp = catalog_fingerprint(ctx)
     dm = {}
     for m in ctx.memory.recall("data map of company sources and verified joins", k=5, tags=["data_map"]):
@@ -295,11 +357,18 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
                 reverified[eid] = {**ev, "reproduced": ok}
                 ctx.tracer.event("reverify", agent, evidence_id=eid, reproduced=ok)
     evidence.update(reverified)
-    # 2) skeptical review
+    # 2) deterministic claim check: the numbers a data finding states must appear in the rows it cites
+    checks = {}
+    for f in this_round:
+        if f.get("agent_kind") == "data":
+            checks[f["task_id"]] = c = check_claim(f["claim"], [evidence[e] for e in f["evidence_ids"] if e in evidence])
+            if c["checked"]:
+                ctx.tracer.event("numbers_check", agent, task_id=f["task_id"], checked=c["checked"], missing=c["missing"])
+    # 3) skeptical review
     earlier = [f for f in state["findings"] if f["round"] < rnd]
     user = (base_context(state, ctx) + f"\n\nSYMPTOM: {state.get('symptom')}\n\n"
             f"EARLIER FINDINGS (already judged):\n{findings_text(earlier, evidence, state.get('verdicts'), 4) or '(none)'}"
-            f"\n\nNEW FINDINGS TO JUDGE (round {rnd}):\n{findings_text(this_round, evidence)}")
+            f"\n\nNEW FINDINGS TO JUDGE (round {rnd}):\n{findings_text(this_round, evidence, checks=checks)}")
     try:
         out = ctx.llm.json("reason", P.EVALUATOR, user, agent=agent, max_tokens=3000)
     except LLMError as e:
@@ -320,9 +389,16 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
             # "confirmed" on a refuted hypothesis means the refutation holds: the hypothesis is ruled out
             if status == "confirmed" and str(finding.get("verdict")).lower() == "refutes":
                 status, is_cause = "rejected", False
-            verdicts[v["task_id"]] = {"status": status, "reason": v.get("reason", ""),
+            reason = v.get("reason", "")
+            c = checks.get(v["task_id"])
+            # a claim whose numbers mostly aren't in its own evidence can't be confirmed, whatever the model says
+            if status == "confirmed" and c and c["checked"] >= 3 and len(c["missing"]) * 2 > c["checked"]:
+                status, is_cause = "needs_more", False
+                reason += (f" [Numbers check: {len(c['missing'])} of {c['checked']} numbers in the claim are not in "
+                           f"the cited rows ({', '.join(c['missing'][:5])}), so it cannot be confirmed.]")
+            verdicts[v["task_id"]] = {"status": status, "reason": reason,
                                       "is_cause": bool(is_cause), "share_of_symptom": v.get("share_of_symptom"),
-                                      "round": rnd}
+                                      "round": rnd, "numbers_check": c}
     decision = out.get("decision", "accept")
     forced = False
     if decision == "revise" and (rnd >= ctx.settings.max_rounds or not out.get("gaps")):
@@ -353,6 +429,33 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
     return {"evaluations": [out], "verdicts": verdicts, "evidence": reverified}
 
 
+def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str]]:
+    """Keep an action's cost, value and order count only if each appears in (or follows in one step from) the rows it
+    cites. Zero is always allowed. Returns the cleaned figures and a list of the ones removed."""
+    from whychain.grounding import _cells, _flat
+
+    cells: list[float] = []
+    for ev in evidence:
+        if ev.get("type") == "sql":
+            cells += _cells(ev.get("rows", []))
+        elif ev.get("type") == "optimization":
+            cells += [float(v) for v in _flat(ev)]
+    out, removed = {}, []
+    for key, alt in (("est_cost", "est_cost_inr"), ("value_protected", "value_protected_inr"), ("orders_protected", None)):
+        raw = a.get(key, a.get(alt) if alt else None)
+        if raw in (None, ""):
+            out[key] = None
+            continue
+        v = _num(raw)
+        dec = len(str(raw).split(".")[1]) if "." in str(raw) else 0
+        if v == 0 or is_grounded(v, dec, cells):
+            out[key] = v
+        else:
+            out[key] = None
+            removed.append(f"{key}={raw}")
+    return out, removed
+
+
 def act(state: dict, ctx: Ctx) -> dict:
     agent = "Risk & Action"
     confirmed = [f for f in state["findings"]
@@ -372,22 +475,30 @@ def act(state: dict, ctx: Ctx) -> dict:
                    task_id="A", max_steps=8, allow_docs=True, allow_optimize=optimizer, finish_keys=("actions",))
     f = res.final
     actions = []
+    all_ev = {**state["evidence"], **res.evidence}
     for i, a in enumerate(f.get("actions", []) or [], 1):
         if not isinstance(a, dict):
             continue
-        cost = _num(a.get("est_cost", a.get("est_cost_inr")))
+        ids = [e for e in (a.get("evidence") or []) if e in all_ev]
+        # money and counts must come from the data the action cites; a figure that doesn't is removed, not shown
+        grounded, unsupported = ground_action_numbers(a, [all_ev[e] for e in ids])
+        cost = grounded["est_cost"]
         conf = _num(a.get("confidence"), 0.5)
         reasons = []
-        if cost > threshold:
+        if cost is not None and cost > threshold:
             reasons.append(f"cost {currency} {cost:,.0f} exceeds the {currency} {threshold:,.0f} threshold")
+        if cost is None and a.get("est_cost", a.get("est_cost_inr")) not in (None, 0, "0", ""):
+            reasons.append("cost not computed from the data")
         if conf < 0.6:
             reasons.append(f"confidence {conf:.2f} is below 0.6")
         if policy_requires_approval(str(a.get("policy_notes", ""))):
             reasons.append("policy requires approval")
-        ids = [e for e in (a.get("evidence") or []) if e in res.evidence or e in state["evidence"]]
         act_ = {**a, "id": f"A{i}", "est_cost_inr": cost, "currency": currency, "confidence": conf, "evidence": ids,
-                "value_protected_inr": _num(a.get("value_protected", a.get("value_protected_inr"))),
+                "value_protected_inr": grounded["value_protected"], "orders_protected": grounded["orders_protected"],
+                "unsupported_figures": unsupported,
                 "needs_approval": bool(reasons), "approval_reasons": reasons, "decision": "pending"}
+        if unsupported:
+            ctx.tracer.event("figures_removed", agent, action_id=act_["id"], figures=unsupported)
         actions.append(act_)
         if reasons:
             ctx.tracer.event("escalation", agent, action_id=act_["id"], title=a.get("title"), reasons=reasons)

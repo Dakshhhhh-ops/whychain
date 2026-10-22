@@ -122,9 +122,10 @@ export type Action = {
   title: string;
   steps?: string;
   addresses?: string[];
-  orders_protected?: number;
-  value_protected_inr?: number;
-  est_cost_inr: number;
+  orders_protected?: number | null;
+  value_protected_inr?: number | null;
+  est_cost_inr: number | null;
+  unsupported_figures?: string[];
   time_to_effect?: string;
   confidence: number;
   policy_notes?: string;
