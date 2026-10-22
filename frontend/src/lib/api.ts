@@ -5,7 +5,7 @@ export type TaskT = {
   round: number;
   type: string; // "measure" | "hypothesis"
   statement: string;
-  agent: "data" | "docs";
+  agent: "data" | "docs" | "tool";
   checks?: string[];
   priority?: number;
   addresses_gap?: string | null;
@@ -15,11 +15,11 @@ export type Finding = {
   task_id: string;
   statement: string;
   type: string;
-  agent_kind: "data" | "docs";
+  agent_kind: "data" | "docs" | "tool";
   agent: string;
   verdict: string;
   claim: string;
-  key_numbers?: Record<string, unknown>;
+  key_numbers?: unknown;
   who_knew?: string | null;
   confidence?: number | null;
   evidence_ids: string[];
@@ -97,7 +97,24 @@ export type OptimizationEvidence = {
   harness: string;
 };
 
-export type Evidence = SqlEvidence | DocEvidence | OptimizationEvidence;
+export type AnalysisEvidence = {
+  id: string;
+  type: "analysis";
+  task_id: string;
+  agent: string;
+  tool: string;
+  title: string;
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  summary: Record<string, unknown>;
+  method: string;
+  verdict: string;
+  sql: string;
+  notes?: string[];
+};
+
+export type Evidence = SqlEvidence | DocEvidence | OptimizationEvidence | AnalysisEvidence;
 
 export type Verdict = {
   status: string; // confirmed | rejected | needs_more

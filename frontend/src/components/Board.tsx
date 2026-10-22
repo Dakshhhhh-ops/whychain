@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AlertTriangle, ArrowDown, CornerDownLeft, Database, FileText, Ruler, Scale } from "lucide-react";
+import { AlertTriangle, ArrowDown, CornerDownLeft, Database, FileText, Ruler, Scale, Sigma } from "lucide-react";
 import type { RunResult } from "../lib/api";
 import { pct } from "../lib/format";
 import type { LiveState, LiveTask } from "../lib/runState";
@@ -13,6 +13,7 @@ function TaskCard({ t, result, onOpen }: { t: LiveTask; result?: RunResult; onOp
   const claim = finding?.claim ?? t.claim;
   const evidence = finding?.evidence_ids ?? t.evidence;
   const isDocs = t.agent === "docs";
+  const isTool = t.agent === "tool";
   return (
     <div
       className={clsx(
@@ -24,9 +25,9 @@ function TaskCard({ t, result, onOpen }: { t: LiveTask; result?: RunResult; onOp
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="font-mono text-[11px] font-semibold text-slate-500">{t.id}</span>
-          <Badge tone={isDocs ? "teal" : "blue"}>
-            {isDocs ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />}
-            {isDocs ? "Documents" : "Data"}
+          <Badge tone={isDocs ? "teal" : isTool ? "indigo" : "blue"}>
+            {isDocs ? <FileText className="h-3 w-3" /> : isTool ? <Sigma className="h-3 w-3" /> : <Database className="h-3 w-3" />}
+            {isDocs ? "Documents" : isTool ? "Computed" : "Data"}
           </Badge>
           {t.type === "measure" && (
             <Badge tone="violet">

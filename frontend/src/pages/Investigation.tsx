@@ -404,7 +404,7 @@ function EvidenceTab({ result }: { result: RunResult }) {
                 <span className="truncate text-[12px] text-slate-500">{ev.agent}</span>
               </div>
               <div className="truncate text-[12.5px] text-slate-600">
-                {ev.type === "doc" ? ev.title ?? ev.doc_id : ev.purpose || task(ev.task_id)?.statement}
+                {ev.type === "doc" ? ev.title ?? ev.doc_id : ev.type === "analysis" ? ev.title : ev.purpose || task(ev.task_id)?.statement}
                 {ev.type === "optimization" ? " · proven optimal" : ""}
               </div>
             </div>

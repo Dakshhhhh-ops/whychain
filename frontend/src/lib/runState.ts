@@ -83,7 +83,7 @@ export const emptyState = (): LiveState => ({
 function stageOf(agent: string): Stage | null {
   if (agent === "Data Scout") return "scout";
   if (agent === "Planner") return "plan";
-  if (agent.startsWith("Investigator") || agent.startsWith("Doc Analyst")) return "investigate";
+  if (agent.startsWith("Investigator") || agent.startsWith("Doc Analyst") || agent.startsWith("Analysis engine")) return "investigate";
   if (agent === "Evaluator") return "evaluate";
   if (agent === "Risk & Action") return "act";
   if (agent === "Reporter") return "report";

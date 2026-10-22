@@ -54,6 +54,13 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
       );
     case "read_doc":
       return <>Read {code(e.doc_id)}</>;
+    case "analysis":
+      return (
+        <>
+          Computed {ev(e.evidence_id as string)}: {String(e.title ?? "")}
+          {e.verdict && e.verdict !== "measured" ? <span className="font-medium text-slate-800"> · {String(e.verdict)}</span> : null}
+        </>
+      );
     case "optimize":
       return e.ok ? (
         <>

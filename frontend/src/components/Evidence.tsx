@@ -1,7 +1,7 @@
 import clsx from "clsx";
-import { Calculator, Check, Copy, Database, FileText, Mail, ShieldCheck, ShieldX, X } from "lucide-react";
+import { Calculator, Check, Copy, Database, FileText, Mail, ShieldCheck, ShieldX, Sigma, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { Evidence, OptimizationEvidence, SqlEvidence } from "../lib/api";
+import type { AnalysisEvidence, Evidence, OptimizationEvidence, SqlEvidence } from "../lib/api";
 import { inr, num, pct } from "../lib/format";
 import { Badge } from "./ui";
 
@@ -191,8 +191,43 @@ function OptimizationBody({ ev }: { ev: OptimizationEvidence }) {
   );
 }
 
+const VERDICT_LABEL: Record<string, { text: string; tone: "green" | "red" | "amber" | "slate" }> = {
+  supports: { text: "Supports", tone: "green" },
+  partial: { text: "Partial: added to an existing problem", tone: "amber" },
+  refutes: { text: "Refutes", tone: "red" },
+  measured: { text: "Measured", tone: "slate" },
+};
+
+function AnalysisBody({ ev }: { ev: AnalysisEvidence }) {
+  const v = VERDICT_LABEL[ev.verdict] ?? VERDICT_LABEL.measured;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[14px] font-semibold text-slate-900">{ev.title}</span>
+        <Badge tone={v.tone}>{v.text}</Badge>
+      </div>
+      <div className="flex items-start gap-1.5 rounded-lg bg-indigo-50/70 px-3 py-2 text-[12px] leading-relaxed text-indigo-900">
+        <Sigma className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          <span className="font-semibold">Computed by the analysis engine, not a language model.</span> {ev.method}
+        </span>
+      </div>
+      <DataTable columns={ev.columns} rows={ev.rows} />
+      {ev.sql && (
+        <details className="text-[12px] text-slate-500">
+          <summary className="cursor-pointer select-none hover:text-slate-700">The federated query these numbers come from</summary>
+          <div className="mt-2">
+            <SqlBlock sql={ev.sql} />
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function EvidenceBody({ ev }: { ev: Evidence }) {
   if (ev.type === "optimization") return <OptimizationBody ev={ev} />;
+  if (ev.type === "analysis") return <AnalysisBody ev={ev} />;
   if (ev.type === "doc") {
     const isEmail = ev.doc_type === "email";
     return (
@@ -233,6 +268,7 @@ export function EvidenceBody({ ev }: { ev: Evidence }) {
 export function EvidenceChip({ id, onOpen, missing }: { id: string; onOpen: (id: string) => void; missing?: boolean }) {
   const isDoc = /\.D\d+$/.test(id);
   const isOpt = /\.P\d+$/.test(id);
+  const isAna = /\.A\d+$/.test(id);
   return (
     <button
       onClick={() => onOpen(id)}
@@ -241,6 +277,8 @@ export function EvidenceChip({ id, onOpen, missing }: { id: string; onOpen: (id:
         "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 align-baseline font-mono text-[11px] font-medium ring-1 ring-inset transition",
         isOpt
           ? "bg-violet-50 text-violet-700 ring-violet-200 hover:bg-violet-100"
+          : isAna
+            ? "bg-indigo-50 text-indigo-700 ring-indigo-200 hover:bg-indigo-100"
           : isDoc
             ? "bg-teal-50 text-teal-700 ring-teal-200 hover:bg-teal-100"
             : "bg-brand-50 text-brand-700 ring-brand-200 hover:bg-brand-100",
@@ -248,7 +286,7 @@ export function EvidenceChip({ id, onOpen, missing }: { id: string; onOpen: (id:
       )}
       title={missing ? "Evidence not available yet" : "Open evidence"}
     >
-      {isOpt ? <Calculator className="h-3 w-3" /> : isDoc ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />}
+      {isOpt ? <Calculator className="h-3 w-3" /> : isAna ? <Sigma className="h-3 w-3" /> : isDoc ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />}
       {id}
     </button>
   );
@@ -268,8 +306,8 @@ export function EvidenceDrawer({ ev, onClose }: { ev: Evidence | null; onClose: 
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-semibold text-slate-900">{ev.id}</span>
-            <Badge tone={ev.type === "doc" ? "teal" : ev.type === "optimization" ? "violet" : "brand"}>
-              {ev.type === "doc" ? "Document" : ev.type === "optimization" ? "Optimal plan" : "SQL query"}
+            <Badge tone={ev.type === "doc" ? "teal" : ev.type === "optimization" ? "violet" : ev.type === "analysis" ? "indigo" : "brand"}>
+              {ev.type === "doc" ? "Document" : ev.type === "optimization" ? "Optimal plan" : ev.type === "analysis" ? "Analysis" : "SQL query"}
             </Badge>
             <span className="text-xs text-slate-500">{ev.agent}</span>
           </div>

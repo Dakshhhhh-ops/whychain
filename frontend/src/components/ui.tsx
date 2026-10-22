@@ -1,20 +1,5 @@
 import clsx from "clsx";
-import {
-  BookOpen,
-  Brain,
-  CheckCircle2,
-  CircleDashed,
-  Compass,
-  FileText,
-  Loader2,
-  Map,
-  PenLine,
-  Scale,
-  Search,
-  ShieldAlert,
-  Wrench,
-  XCircle,
-} from "lucide-react";
+import { BookOpen, Brain, CheckCircle2, CircleDashed, Compass, FileText, Loader2, Map, PenLine, Scale, Search, ShieldAlert, Sigma, Wrench, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
@@ -45,6 +30,7 @@ const TONES = {
   blue: "bg-sky-50 text-sky-700 ring-sky-200",
   violet: "bg-violet-50 text-violet-700 ring-violet-200",
   teal: "bg-teal-50 text-teal-700 ring-teal-200",
+  indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200",
 } as const;
 export type Tone = keyof typeof TONES;
 
@@ -163,6 +149,7 @@ const AGENTS: { match: (a: string) => boolean; icon: ReactNode; color: string; l
   { match: (a) => a === "Planner", icon: <Compass className="h-3.5 w-3.5" />, color: "bg-violet-100 text-violet-700" },
   { match: (a) => a.startsWith("Investigator"), icon: <Search className="h-3.5 w-3.5" />, color: "bg-sky-100 text-sky-700" },
   { match: (a) => a.startsWith("Doc Analyst"), icon: <FileText className="h-3.5 w-3.5" />, color: "bg-teal-100 text-teal-700" },
+  { match: (a) => a.startsWith("Analysis engine"), icon: <Sigma className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700" },
   { match: (a) => a === "Evaluator", icon: <Scale className="h-3.5 w-3.5" />, color: "bg-fuchsia-100 text-fuchsia-700" },
   { match: (a) => a === "Data Scout", icon: <Map className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700" },
   { match: (a) => a === "Risk & Action", icon: <Wrench className="h-3.5 w-3.5" />, color: "bg-amber-100 text-amber-800" },
