@@ -17,6 +17,7 @@ import re
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import sqlglot
@@ -27,6 +28,8 @@ from whychain.datasets import Dataset, get_dataset
 from whychain.harness.base import Column, QueryResult, TableInfo, Timer, check_read_only, pin_today
 
 PREFIX = {"olist": "", "kaveri": "kaveri_"}   # Zetaris database name = prefix + source name
+CATALOG_TTL_S = 600
+_CATALOGS: dict[tuple[str, str], tuple[float, list[TableInfo]]] = {}
 
 
 class ZetarisError(RuntimeError):
@@ -140,33 +143,46 @@ class ZetarisHarness:
         return self._run(sql, 1000)
 
     def catalog(self) -> list[TableInfo]:
+        """Tables, columns and row counts of the dataset's registered sources. Built with parallel requests and
+        shared across harness instances for a few minutes, since every investigation starts by reading it."""
         if self._catalog is not None:
             return self._catalog
-        out: list[TableInfo] = []
-        for src in self.dataset.sources:
-            zname = self._map[src]
+        key = (self.base, self.dataset.key)
+        hit = _CATALOGS.get(key)
+        if hit and time.time() - hit[0] < CATALOG_TTL_S:
+            self._catalog = hit[1]
+            return self._catalog
+
+        def tables_of(src: str) -> list[tuple[str, str]]:
             try:
-                cols, rows = self._run(f"SHOW TABLES IN {zname}", 500)
+                _, rows = self._run(f"SHOW TABLES IN {self._map[src]}", 500)
             except (httpx.HTTPError, ZetarisError, ValueError):
-                continue
-            for r in rows:
-                ident = str(r[0])
-                table = ident.split(".", 1)[1] if "." in ident else ident
-                columns = []
-                try:
-                    _, drows = self._run(f"DESCRIBE {zname}.{table}", 500)
-                    columns = [Column(str(d[0]), str(d[1]) if len(d) > 1 else "") for d in drows
-                               if d and d[0] and not str(d[0]).startswith("#")]
-                except (httpx.HTTPError, ZetarisError, ValueError):
-                    pass
-                n = None
-                try:
-                    _, crows = self._run(f"SELECT COUNT(*) FROM {zname}.{table}", 1)
-                    n = int(float(crows[0][0]))
-                except (httpx.HTTPError, ZetarisError, ValueError, IndexError):
-                    pass
-                out.append(TableInfo(src, table.lower(), columns, n))
+                return []
+            return [(src, str(r[0]).split(".", 1)[-1]) for r in rows]
+
+        def describe(st: tuple[str, str]) -> TableInfo:
+            src, table = st
+            zname = self._map[src]
+            columns, n = [], None
+            try:
+                _, drows = self._run(f"DESCRIBE {zname}.{table}", 500)
+                columns = [Column(str(d[0]), str(d[1]) if len(d) > 1 else "") for d in drows
+                           if d and d[0] and not str(d[0]).startswith("#")]
+            except (httpx.HTTPError, ZetarisError, ValueError):
+                pass
+            try:
+                _, crows = self._run(f"SELECT COUNT(*) FROM {zname}.{table}", 1)
+                n = int(float(crows[0][0]))
+            except (httpx.HTTPError, ZetarisError, ValueError, IndexError):
+                pass
+            return TableInfo(src, table.lower(), columns, n)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            pairs = [p for ps in pool.map(tables_of, self.dataset.sources) for p in ps]
+            out = list(pool.map(describe, pairs))
         self._catalog = out
+        if out:
+            _CATALOGS[key] = (time.time(), out)
         return out
 
     def status(self) -> dict:

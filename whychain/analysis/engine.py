@@ -71,7 +71,6 @@ class Scope:
         return self.focus["late"].mean() - self.ref["late"].mean() if len(self.focus) and len(self.ref) else float("nan")
 
 
-_CACHE: dict[tuple, "Engine"] = {}
 _LOCK = threading.Lock()
 
 
@@ -80,11 +79,14 @@ def get_engine(harness) -> "Engine | None":
     model = fact_model(getattr(ds, "key", ""))
     if model is None:
         return None
-    key = (harness.name, model.dataset, id(harness))
+    # Kept on the harness itself (not in a module-level cache), so the order-level facts are freed with the
+    # harness when a run ends; long-lived harnesses (the dashboard's) keep theirs.
     with _LOCK:
-        if key not in _CACHE:
-            _CACHE[key] = Engine(harness, model, getattr(harness, "as_of", None))
-        return _CACHE[key]
+        eng = getattr(harness, "_analysis_engine", None)
+        if eng is None or eng.m.dataset != model.dataset:
+            eng = Engine(harness, model, getattr(harness, "as_of", None))
+            harness._analysis_engine = eng
+        return eng
 
 
 class Engine:
@@ -96,6 +98,7 @@ class Engine:
         self._events: pd.DataFrame | None = None
         self._reviews: pd.DataFrame | None = None
         self._lock = threading.Lock()
+        self.memo: dict[tuple, "Result"] = {}  # battery results by (tool, scope, params), see battery._run
 
     # ------------------------------------------------------------------ data
     def facts(self) -> pd.DataFrame:

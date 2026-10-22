@@ -217,11 +217,9 @@ def _duration(ev: pd.DataFrame, eid: str) -> int | None:
 
 
 # ---------------------------------------------------------------------- running a test
-_MEMO: dict[tuple, Result] = {}
-
-
 def _run(engine: Engine, tool: str, spec: dict, **params) -> Result:
-    key = (id(engine), tool, json.dumps(spec, sort_keys=True, default=str), json.dumps(params, sort_keys=True))
+    _MEMO = engine.memo
+    key = (tool, json.dumps(spec, sort_keys=True, default=str), json.dumps(params, sort_keys=True))
     if key not in _MEMO:
         s = build_scope(engine, spec)
         if tool == "measure":

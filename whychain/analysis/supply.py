@@ -71,6 +71,7 @@ class SupplyEngine:
         self.as_of = pd.Timestamp(getattr(harness, "as_of", None) or date.today())
         self._cache: dict[str, pd.DataFrame] = {}
         self._lock = threading.Lock()
+        self.memo: dict[tuple, Result] = {}  # check results by (tool, scope, params), see _run
 
     def _df(self, key: str, sql: str) -> pd.DataFrame:
         with self._lock:
@@ -399,13 +400,11 @@ def plan_supply(question: str, eng: SupplyEngine) -> dict:
     return {"spec": spec, "tasks": tasks}
 
 
-_MEMO: dict[tuple, Result] = {}
-
-
 def _run(eng: SupplyEngine, tool: str, spec: dict, **params) -> Result:
     import json
 
-    key = (id(eng), tool, json.dumps(spec, sort_keys=True), json.dumps(params, sort_keys=True))
+    _MEMO = eng.memo
+    key = (tool, json.dumps(spec, sort_keys=True), json.dumps(params, sort_keys=True))
     if key not in _MEMO:
         fn = {"supply_measure": eng.measure, "inbound": eng.inbound, "port": eng.inbound, "demand": eng.demand,
               "policy": eng.policy_check, "duplicates": eng.duplicates, "volume_orders": eng.order_volume}
@@ -525,16 +524,18 @@ def run_supply_task(eng: SupplyEngine, task: dict, eid_prefix: str) -> tuple[dic
                                               "reason": reason}}, evidence)
 
 
-_ENGINES: dict[int, SupplyEngine] = {}
+_ENGINE_LOCK = threading.Lock()
 
 
 def get_supply_engine(harness) -> SupplyEngine | None:
-    """A supply engine for datasets that have order lines, stock and purchase orders (the simulated company)."""
+    """A supply engine for datasets that have order lines, stock and purchase orders (the simulated company).
+    Kept on the harness, so its tables are freed with the harness when a run ends."""
     if getattr(getattr(harness, "dataset", None), "key", "") != "kaveri":
         return None
-    if id(harness) not in _ENGINES:
-        _ENGINES[id(harness)] = SupplyEngine(harness)
-    return _ENGINES[id(harness)]
+    with _ENGINE_LOCK:
+        if getattr(harness, "_supply_engine", None) is None:
+            harness._supply_engine = SupplyEngine(harness)
+        return harness._supply_engine
 
 
 SUPPLY_TOOLS = {"supply_measure", "shortage", "inbound", "port", "demand", "policy", "duplicates", "volume_orders"}
