@@ -123,6 +123,8 @@ def check(ds: Dataset) -> int:
 
 
 def main() -> None:
+    from whychain.config import utf8_output
+    utf8_output()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", choices=sorted(DATASETS), default=None, help="default: both")
     ap.add_argument("--print", action="store_true", help="print the statements instead of running them")

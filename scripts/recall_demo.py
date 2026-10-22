@@ -65,6 +65,8 @@ def stop(p: subprocess.Popen) -> None:
 
 
 def main() -> None:
+    from whychain.config import utf8_output
+    utf8_output()
     tmp = Path(tempfile.mkdtemp(prefix="recall-demo-"))
     procs, ports = {}, {"mock": 18911, "nvidia": 18912}
     ranks: dict[str, dict[str, int | None]] = {"mock": {}, "nvidia": {}}

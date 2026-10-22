@@ -84,6 +84,8 @@ def score(case: dict, res: dict) -> dict:
 
 
 def main() -> None:
+    from whychain.config import utf8_output
+    utf8_output()
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--dataset", choices=["olist", "kaveri"], default=None, help="only this dataset's cases")

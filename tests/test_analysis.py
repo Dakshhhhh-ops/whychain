@@ -207,3 +207,77 @@ def test_a_stage_whose_distribution_did_not_change_is_ruled_out():
     verdict = {st: run_task(e, {"tool": "stage", "statement": st, "scope": spec, "params": {"stage": st}}, "T")[0]["fixed"]
                for st in ("handover", "transit")}
     assert not verdict["transit"]["is_cause"] and verdict["handover"]["is_cause"]
+
+
+def test_an_events_normal_level_leaves_out_abnormal_weeks():
+    """Truckers' strike (O3): the 'normal' transit before it (11.8 days) included the Nov 2017 to Mar 2018 spike.
+    Abnormal weeks (late rate well above the typical week's) are now left out of the normal level."""
+    rnd = random.Random(41)
+    ev = [{"event_id": "strike", "name": "Strike", "type": "strike", "start_date": "2018-05-21",
+           "end_date": "2018-06-01", "region": "Brazil"}]
+
+    def shift(d, a):
+        if date(2017, 11, 10) <= d < date(2018, 4, 5):   # a long earlier spike: most of the 26 weeks before
+            return (0, 7, 0)
+        if date(2018, 5, 18) <= d < date(2018, 6, 1):    # the strike itself
+            return (0, 5, 0)
+        return (0, 0, 0)
+
+    e = engine(make_orders(date(2016, 12, 1), date(2018, 8, 1), rnd, per_day=25, p=(10, 14), shift=shift), ev)
+    r = e.event("strike")
+    assert r.summary["normal_weeks_left_out"] >= 15
+    assert r.summary["normal_transit_days"] < 8.5          # the base transit is 5 to 9 days (7 on average)
+    assert r.verdict == "supports" and not r.summary["elevated_before"]
+
+
+def test_an_event_that_ended_before_the_period_is_not_a_cause_of_it():
+    """HO2 (December 2017): Black Friday (23 to 27 Nov) was listed among December's causes. An event that ended
+    before the period asked about is not counted as a cause of the period (carry-over isn't tested)."""
+    from whychain.analysis.battery import run_task
+
+    rnd = random.Random(42)
+    ev = [{"event_id": "bf", "name": "Black Friday", "type": "peak", "start_date": "2017-11-23",
+           "end_date": "2017-11-27", "region": "Brazil"}]
+
+    def shift(d, a):
+        if date(2017, 11, 20) <= d < date(2017, 12, 31):   # parcels slowed from Black Friday into December
+            return (0, 5, 0)
+        return (0, 0, 0)
+
+    e = engine(make_orders(date(2017, 3, 1), date(2018, 3, 1), rnd, per_day=25, p=(10, 14), shift=shift), ev)
+    task = {"tool": "event", "statement": "Black Friday delayed deliveries", "params": {"event_id": "bf"}}
+    dec = {"mode": "time", "label": "orders placed December 2017", "start": "2017-12-01", "end": "2018-01-01"}
+    nov = {"mode": "time", "label": "orders placed November 2017", "start": "2017-11-01", "end": "2017-12-01"}
+    assert e.event("bf").verdict == "supports"                         # it did delay parcels handed over during it
+    in_dec = run_task(e, {**task, "scope": dec}, "T")[0]["fixed"]
+    assert not in_dec["is_cause"] and in_dec["status"] == "rejected" and "ended before" in in_dec["reason"]
+    in_nov = run_task(e, {**task, "scope": nov}, "T")[0]["fixed"]   # inside its own period it still counts
+    assert in_nov["is_cause"]
+
+
+def test_a_comparison_between_groups_explains_a_gap_not_a_rise():
+    """H2 (Northeast vs the other orders, same period): shares are of the gap between the groups."""
+    from whychain.analysis.battery import run_task
+
+    rnd = random.Random(43)
+    orders = make_orders(date(2017, 6, 1), date(2018, 1, 1), rnd, per_day=40, p=(10, 14),
+                         shift=lambda d, a: (0, 4, 0) if a == "north" else (0, 0, 0))
+    e = engine(orders)
+    spec = {"mode": "segment", "label": "orders to north", "filters": {"area": ["north"]}}
+    f = run_task(e, {"tool": "stage", "statement": "Carrier transit takes longer", "scope": spec,
+                     "params": {"stage": "transit"}}, "T")[0]
+    assert f["fixed"]["is_cause"]
+    assert "gap" in f["claim"] and " rise" not in f["claim"] and "of the gap" in f["fixed"]["reason"]
+
+
+def test_where_it_happened_is_left_out_when_nothing_rose():
+    """O3: when the late rate did not rise, 'where the rise sits' listed segments with zero or negative shares."""
+    from whychain.analysis.battery import run_task
+
+    rnd = random.Random(44)
+    e = engine(make_orders(date(2017, 6, 1), date(2018, 3, 1), rnd, per_day=40, p=(10, 14)))
+    spec = {"mode": "time", "label": "orders placed February 2018", "start": "2018-02-01", "end": "2018-03-01"}
+    f = run_task(e, {"tool": "segments", "statement": "The rise is concentrated in some places", "scope": spec,
+                     "params": {"dim": "area"}}, "T")[0]
+    assert f["fixed"]["status"] != "confirmed" and f["fixed"]["reason"].startswith("Not applicable")
+    assert "of the rise from" not in f["claim"]

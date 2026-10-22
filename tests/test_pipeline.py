@@ -125,3 +125,26 @@ def test_an_off_topic_question_is_answered_at_once_without_a_model(tmp_path):
     res = investigate("purple elephant banana tuesday?", ctx=ctx)
     assert res["headline"].startswith("Not a question about this data")
     assert not res["llm"].get("calls")
+
+
+def test_the_written_record_is_remembered_as_its_quotes_not_the_models_summary(tmp_path):
+    """O1: the Document Analyst's summary said the strike 'explains the jump', which the computed event test rules
+    out, and memory stored it as CONFIRMED. A context reading is now stored as its verified quotes only."""
+    import json
+
+    from whychain.agents.nodes import remember
+
+    ctx = make_ctx(tmp_path)
+    quote = "Correios workers began an open-ended national strike on Monday 12 March 2018."
+    state = {"question": "Why did late deliveries jump in March 2018?", "lessons": [],
+             "verdicts": {"T13": {"status": "confirmed", "is_cause": False}},
+             "evidence": {"T13.D1": {"id": "T13.D1", "type": "doc", "doc_id": "D7", "title": "Correios strike",
+                                     "sent_at": "2018-03-12", "quote": quote}},
+             "findings": [{"task_id": "T13", "statement": "What the written record says about the period",
+                           "type": "hypothesis", "agent_kind": "docs", "context_only": True,
+                           "claim": "The strike explains the jump to 19% late deliveries.", "evidence_ids": ["T13.D1"]}]}
+    remember(state, ctx)
+    items = json.loads((tmp_path / "memory.json").read_text(encoding="utf-8"))
+    texts = [i.get("content") or i.get("text") or json.dumps(i) for i in items]
+    assert any(t.startswith("WRITTEN RECORD") and quote in t for t in texts)
+    assert not any("explains the jump" in t for t in texts)

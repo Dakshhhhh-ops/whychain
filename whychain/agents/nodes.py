@@ -276,8 +276,8 @@ def plan_with_battery(state: dict, ctx: Ctx, eng) -> dict | None:
                     "params": t["params"], "checks": [f"analysis engine: {t['tool']}"], "priority": 1,
                     "addresses_gap": None})
     new.append({"id": f"T{len(new) + 1}", "round": 1, "type": "hypothesis", "agent": "docs", "context_only": True,
-                "statement": "The written record (news briefs, contracts, email) explains the symptom or describes "
-                             "events around it",
+                "statement": "What the written record (news briefs, contracts, email) says about the period, places "
+                             "and events in question",
                 "checks": ["search docs.documents and signals.events for the period and places in question"],
                 "priority": 2, "addresses_gap": None})
     p = b["primary"]
@@ -305,7 +305,7 @@ def plan_with_supply(state: dict, ctx: Ctx, seng) -> dict | None:
             "checks": [f"analysis engine: {t['tool']}"], "priority": 1, "addresses_gap": None}
            for i, t in enumerate(b["tasks"], 1)]
     new.append({"id": f"T{len(new) + 1}", "round": 1, "type": "hypothesis", "agent": "docs", "context_only": True,
-                "statement": "The written record (contracts, policies, email) explains the shortage",
+                "statement": "What the written record (contracts, policies, email) says about the shortage",
                 "checks": ["search docs.documents for the suppliers, SKUs, places and dates in question"],
                 "priority": 2, "addresses_gap": None})
     spec = b["spec"]
@@ -441,6 +441,10 @@ def investigate(payload: dict, ctx: Ctx) -> dict:
     ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"])
     brief = (base_context(payload, ctx) + f"\n\nYOUR TASK [{t['id']}] ({t['type']}): {t['statement']}\n"
              f"Checks to make: {t.get('checks')}\n\nCATALOG:\n{ctx.catalog_text}")
+    if t.get("context_only"):
+        brief += ("\n\nThis is a context task. Your claim must say what the documents report (who, what, where, "
+                  "when), not whether it explains or caused the symptom: computed tests decide causes, and an event "
+                  "in the documents can turn out to be a red herring.")
     system = fill(P.DOC_ANALYST if docs else P.INVESTIGATOR, 5 if docs else 6)
     res = run_loop(ctx, agent=agent, role="local" if docs else "work", system=system, brief=brief,
                    task_id=t["id"], max_steps=5 if docs else 6, allow_docs=docs,
@@ -1149,11 +1153,14 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
                     key=lambda f: -(v[f["task_id"]].get("share_of_symptom") or 0) if isinstance(
                         v[f["task_id"]].get("share_of_symptom"), float) else 1)
     ruled = [f for f in fs if v.get(f["task_id"], {}).get("status") == "rejected" and f.get("agent_kind") == "tool"]
-    where = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "segments" and not v.get(f["task_id"], {}).get("is_cause")]
+    where = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "segments"
+             and not v.get(f["task_id"], {}).get("is_cause") and v.get(f["task_id"], {}).get("status") == "confirmed"]
     context = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "text"]
     quotes = [state["evidence"][e] for f in fs if f.get("agent_kind") == "docs" for e in f["evidence_ids"]
               if state["evidence"].get(e, {}).get("type") == "doc"]
     named = state.get("analysis", {}).get("named_events") or []
+    # what the shares are shares of: a rise over time, or a gap between two groups in the same period
+    word = "gap" if (state.get("analysis", {}).get("primary") or {}).get("mode") == "segment" else "rise"
     event_f = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "event"
                and tasks[f["task_id"]].get("params", {}).get("event_id") in named]
 
@@ -1165,8 +1172,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
             # not a share of the short units: the copies' own units, measured against the shortage
             return f" (the extra copies order units equal to {round(100 * sh, 1)}% of the shortage)"
         if not supply and sh > 1:
-            return f" ({round(100 * sh, 1)}% of the rise: more than all of it, because other factors offset part)"
-        return f" ({round(100 * sh, 1)}% {'of the short units' if supply else 'of the rise'})"
+            return f" ({round(100 * sh, 1)}% of the {word}: more than all of it, because other factors offset part)"
+        return f" ({round(100 * sh, 1)}% {'of the short units' if supply else 'of the ' + word})"
 
     # A disrupted port is why inbound orders are late, and waiting for stock is why dispatch slowed: each is shown
     # under the cause it explains, not as a second cause beside it.
@@ -1259,8 +1266,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         headline = ("There is no shortage to explain: " + measure["claim"].split(":")[0][0].lower()
                     + measure["claim"].split(":")[0][1:] + ".")
     elif measure and not supply and _no_rise(state, measure):
-        headline = "It did not rise: " + measure["claim"].split(":")[0][0].lower() + measure["claim"].split(":")[0][1:] + \
-            ". There is no rise to explain."
+        lead, tail = (("It did not rise: ", ". There is no rise to explain.") if word == "rise" else
+                      ("They are not late more often: ", ". There is no gap to explain."))
+        headline = lead + measure["claim"].split(":")[0][0].lower() + measure["claim"].split(":")[0][1:] + tail
     else:
         headline = "No cause could be confirmed from the data."
     if untested:
@@ -1313,11 +1321,11 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     else:
         lines += ["", "## How sure we are",
               (f"- The confirmed stages ({' and '.join(f'{x}%' for x in stage_sh)}) together explain "
-               f"{round(sum(stage_sh), 1)}% of the measured rise"
+               f"{round(sum(stage_sh), 1)}% of the measured {word}"
                + ("; the rest is mix and interactions." if sum(stage_sh) <= 100 else
                   " (more than all of it: other effects, such as the mix of orders, offset part of it).")
                if len(stage_sh) > 1 else
-               f"- The confirmed stage explains {stage_sh[0]}% of the measured rise." if stage_sh else
+               f"- The confirmed stage explains {stage_sh[0]}% of the measured {word}." if stage_sh else
                "- No single delivery stage explains the symptom in this scope."),
               "- Every number above was computed by the analysis engine from the cited results, and checked against "
               "their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
@@ -1433,6 +1441,18 @@ def remember(state: dict, ctx: Ctx) -> dict:
                 "doc": ev[0].get("doc_id") if ev and ev[0]["type"] == "doc" else None,
                 "evidence_ids": f["evidence_ids"], "question": state["question"]}
         is_cause = v.get(f["task_id"], {}).get("is_cause", True)
+        if f.get("context_only"):
+            # the written record, as context: keep only what was verified (the quotes), not the model's summary
+            quotes = [e for e in ev if e.get("type") == "doc" and e.get("quote")]
+            if not quotes:
+                continue
+            text = f"WRITTEN RECORD ({ctx.as_of}): " + " | ".join(
+                f"{q.get('title') or q.get('doc_id')}" + (f" ({str(q.get('sent_at'))[:10]})" if q.get("sent_at") else "")
+                + f": \"{q['quote']}\"" for q in quotes[:4])
+            ctx.memory.write(run_id, agent, "fact", text, prov, float(f.get("confidence") or 0.6),
+                             ["investigation", "written record"] + ds_tags)
+            n += 1
+            continue
         label = ("MEASURED" if f["type"] == "measure" else "CONFIRMED CAUSE" if st == "confirmed" and is_cause
                  else "CONFIRMED" if st == "confirmed" else "RULED OUT")
         text = f"{label} ({ctx.as_of}): {f['statement']} -> {f['claim']}"

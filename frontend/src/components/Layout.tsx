@@ -25,14 +25,26 @@ export function Logo() {
   );
 }
 
-function StatusRow({ ok, label, detail }: { ok: boolean | null; label: string; detail?: ReactNode }) {
+function StatusRow({ ok, label, detail, below }: { ok: boolean | null; label: string; detail?: ReactNode; below?: boolean }) {
+  if (below) {
+    // a longer detail goes on its own line under the label, so neither is cut off in the narrow sidebar
+    return (
+      <div className="py-1">
+        <div className="flex items-center gap-2 text-[12px] text-slate-700">
+          <span className="flex shrink-0"><LiveDot tone={ok === null ? "amber" : ok ? "green" : "red"} /></span>
+          <span className="whitespace-nowrap">{label}</span>
+        </div>
+        {detail && <div className="pl-4 text-[11px] text-slate-400">{detail}</div>}
+      </div>
+    );
+  }
   return (
     <div className="flex items-center justify-between gap-2 py-1">
-      <div className="flex items-center gap-2 text-[12px] text-slate-700">
-        <LiveDot tone={ok === null ? "amber" : ok ? "green" : "red"} />
-        {label}
+      <div className="flex min-w-0 items-center gap-2 text-[12px] text-slate-700">
+        <span className="flex shrink-0"><LiveDot tone={ok === null ? "amber" : ok ? "green" : "red"} /></span>
+        <span className="truncate whitespace-nowrap">{label}</span>
       </div>
-      {detail && <div className="truncate text-[11px] text-slate-400">{detail}</div>}
+      {detail && <div className="shrink-0 whitespace-nowrap text-[11px] text-slate-400">{detail}</div>}
     </div>
   );
 }
@@ -88,7 +100,7 @@ function DatasetSwitch() {
   );
 }
 
-const MODEL_LABEL: Record<string, string> = { xai: "Grok", nim: "Nemotron (fast)", "nim-reason": "Nemotron (reasoning)", nightshift: "Nightshift", ollama: "Ollama" };
+const MODEL_LABEL: Record<string, string> = { xai: "Grok", nim: "Nemotron (fast)", "nim-reason": "Nemotron (reasoning)", "nim-backup": "Nemotron Ultra (backup)", nightshift: "Nightshift", ollama: "Ollama" };
 
 export function Layout() {
   const s = useStatus();
@@ -125,11 +137,12 @@ export function Layout() {
               <>
                 <StatusRow ok={zetaris ? s.harness.ok : null} label={zetaris ? "Zetaris" : "Local data (fallback)"} detail={zetaris ? "federated" : s.harness.erp} />
                 <StatusRow ok={s.memory.online ? true : null} label={s.memory.online ? "Meterless memory" : "Memory (local file)"}
-                  detail={s.memory.embedder?.includes("nemotron") ? "Nemotron" : undefined} />
+                  detail={s.memory.embedder?.includes("nemotron") ? "Nemotron embeddings" : undefined} below />
+                {/* only the model providers this install actually uses; optional ones that aren't set are not listed */}
                 {Object.entries(s.models)
-                  .filter(([k, m]) => m.configured || (k !== "ollama" && k !== "nim-reason"))
-                  .map(([k, m]) => (
-                    <StatusRow key={k} ok={m.configured ? true : null} label={MODEL_LABEL[k] ?? k} detail={m.configured ? undefined : "not set"} />
+                  .filter(([, m]) => m.configured)
+                  .map(([k]) => (
+                    <StatusRow key={k} ok={true} label={MODEL_LABEL[k] ?? k} />
                   ))}
               </>
             ) : (

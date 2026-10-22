@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type Action, type RunResult } from "../lib/api";
 import { money } from "../lib/dataset";
-import { CITATION, pct } from "../lib/format";
+import { CITATION } from "../lib/format";
 import { EvidenceChip } from "./Evidence";
 import { Badge, Button, Card, CardHeader } from "./ui";
 
@@ -58,8 +58,8 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
         a.decision === "rejected" && "border-slate-200 bg-slate-50 opacity-80",
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-semibold text-slate-500">{a.id}</span>
             {a.needs_approval ? (
@@ -73,11 +73,10 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
                 Within limits
               </Badge>
             )}
-            <Badge>{pct(a.confidence)} confidence</Badge>
           </div>
           <div className="mt-1.5 text-[14px] font-semibold text-slate-900">{a.title}</div>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="text-[11px] uppercase tracking-wide text-slate-500">Est. cost</div>
           {a.est_cost_inr === null || a.est_cost_inr === undefined ? (
             <div className="max-w-[140px] text-[12px] font-medium text-slate-500">Not computed: no cost data</div>

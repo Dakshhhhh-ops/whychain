@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Check } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { TraceEvent } from "../lib/api";
+import { plural } from "../lib/format";
 import { STAGES, type LiveState } from "../lib/runState";
 import { AgentAvatar, Spinner } from "./ui";
 
@@ -28,7 +29,7 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
       if (e.task_id) return <span className="text-slate-600">{e.statement}</span>;
       return null;
     case "agent_end":
-      if (e.agent === "Memory") return <>Recalled {e.memories} memories{e.data_map_cached ? ", plus a cached data map" : ""}</>;
+      if (e.agent === "Memory") return <>Recalled {plural(e.memories as number, "memory", "memories")}{e.data_map_cached ? ", plus a cached data map" : ""}</>;
       if (e.agent === "Data Scout") return <>Mapped {e.sources} sources, verified {e.joins_verified} joins</>;
       return null;
     case "agent_skip":
@@ -43,7 +44,7 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
         </>
       );
     case "plan":
-      return <>Planned {(e.tasks ?? []).length} tasks for round {e.round}</>;
+      return <>Planned {plural((e.tasks ?? []).length, "task", "tasks")} for round {e.round}</>;
     case "query":
       return e.ok ? (
         <>
@@ -97,7 +98,7 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
     case "llm_fallback":
       return <span className="text-amber-700">Model {code(e.provider)} failed; fell back to the next provider</span>;
     case "memory_write":
-      return <>Saved {e.items} memories{e.consolidation?.promoted ? `, promoted ${e.consolidation.promoted} to long-term` : ""}</>;
+      return <>Saved {plural(e.items as number, "memory", "memories")}{e.consolidation?.promoted ? `, promoted ${e.consolidation.promoted} to long-term` : ""}</>;
     case "run_error":
     case "agent_error":
       return <span className="text-rose-600">{String(e.error ?? "").slice(0, 200)}</span>;

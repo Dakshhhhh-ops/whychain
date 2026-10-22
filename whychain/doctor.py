@@ -16,6 +16,8 @@ def line(ok: bool | None, name: str, detail: str) -> None:
 
 
 def main() -> None:
+    from whychain.config import utf8_output
+    utf8_output()
     print(f"WhyChain doctor · harness preference: {SETTINGS.harness}\n")
     # data: each dataset's files, and its live tables in Postgres
     from whychain.datasets import DATASETS, default_key

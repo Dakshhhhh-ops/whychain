@@ -36,6 +36,8 @@ def wait(what: str, ok, timeout_s: int = 600) -> bool:
 
 
 def main() -> None:
+    from whychain.config import utf8_output
+    utf8_output()
     print("Warm-up")
     if SETTINGS.harness == "zetaris":
         from whychain.analysis import get_engine

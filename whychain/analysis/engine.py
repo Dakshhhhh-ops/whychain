@@ -24,6 +24,7 @@ from whychain.analysis.stats import diff_ci, quantile_map, shapley, shift_share,
 
 MIN_SEGMENT = 30          # fewest reference orders to compare a segment like with like
 CAUSE_SHARE = 0.10        # a mechanism must explain at least this share of the rise to count as a cause
+NORMAL_WEEKS = 52         # an event test's normal level: weeks 52 to 7 before it, minus abnormal weeks
 
 
 def pct(x: float, nd: int = 1) -> float:
@@ -332,7 +333,8 @@ class Engine:
                   "contributions add up; 'other' is what no stage explains. 'stage_moved': the stage itself got "
                   "slower (promises: shorter) by a quarter day on average, or a day in its typical or four-in-five "
                   "time.")
-        return Result("stages", "Which delivery stage explains the rise", cols, rows, summary, method, "measured",
+        return Result("stages", f"Which delivery stage explains the {'rise' if s.mode == 'time' else 'gap'}", cols, rows,
+                      summary, method, "measured",
                       self.provenance())
 
     def segments(self, s: Scope, dim: str, top: int = 8) -> Result:
@@ -358,7 +360,8 @@ class Engine:
                 "share_of_rise_pct", "share_of_focus_orders_pct"]
         method = ("Shift-share decomposition: rate effect = average weight x change in the segment's late rate; mix "
                   "effect = average rate x change in its share of orders. They add up exactly to the overall change.")
-        return Result("segments", f"Where the rise sits, by {self.m.dims.get(dim, dim)}", cols, rows, summary,
+        return Result("segments", f"Where the {'rise' if s.mode == 'time' else 'gap'} sits, by "
+                      f"{self.m.dims.get(dim, dim)}", cols, rows, summary,
                       method, "measured", self.provenance())
 
     def event(self, event_id: str, s: Scope | None = None) -> Result:
@@ -376,7 +379,7 @@ class Engine:
         d = self.delivered()
         region = str(e["region"] or "")
         regional = bool(self.m.region_map) and region in set(self.m.region_map)
-        weeks = pd.date_range(wk0 - pd.Timedelta(weeks=26), end + pd.Timedelta(weeks=4), freq="W-MON")
+        weeks = pd.date_range(wk0 - pd.Timedelta(weeks=NORMAL_WEEKS), end + pd.Timedelta(weeks=4), freq="W-MON")
         g = d[d["handover_week"].isin(weeks)].groupby("handover_week").agg(n=("t", "size"), transit=("t", "mean"),
                                                                            late=("late", "mean"))
         g = g.reindex(weeks)
@@ -387,7 +390,20 @@ class Engine:
             go = d[(d["handover_week"].isin(weeks)) & (d[self.m.region_source] != region)].groupby("handover_week")
             g["rest_transit"] = go["t"].mean().reindex(weeks)
         rel = ((g.index - wk0).days // 7).astype(int)
-        normal = g[(rel >= -26) & (rel <= -7)]
+        # the normal level: weeks 26 to 7 before, minus weeks that were themselves abnormal, so that an earlier spike
+        # doesn't inflate "normal". Abnormal = a late rate above 1.5x that of the typical week in the data (and at
+        # least 2 points above it). The yardstick is the whole data's median week, not the window's own median,
+        # because the window itself can be mostly abnormal (Nov 2017 to Mar 2018 on Olist).
+        weekly = d.groupby("handover_week").agg(n=("t", "size"), late=("late", "mean"))
+        weekly = weekly[weekly["n"] >= 20]
+        typical_late = float(weekly["late"].median()) if len(weekly) else float("nan")
+        window = g[(rel >= -NORMAL_WEEKS) & (rel <= -7)].dropna(subset=["late"])
+        normal = window
+        if typical_late == typical_late:
+            kept = window[window["late"] <= max(1.5 * typical_late, typical_late + 0.02) + 1e-9]
+            if len(kept) >= 6:
+                normal = kept
+        abnormal_weeks = len(window) - len(normal)
         pre = g[(rel >= -6) & (rel <= -2)]
         post = g[(rel >= -1) & (g.index <= end)]
         normal_t, normal_l = float(normal["transit"].median()), float(normal["late"].median())
@@ -418,7 +434,9 @@ class Engine:
             verdict = "refutes"
         show = g[(rel >= -8) & (g.index <= end + pd.Timedelta(weeks=3))]
         pad = [None, None] if regional else []
-        rows = [["normal level (weeks 26 to 7 before)", None, "summary", None, r1(normal_t), pct(normal_l)] + pad,
+        normal_label = ("normal level (weeks 26 to 7 before" + (f", {abnormal_weeks} abnormal weeks left out)"
+                                                                if abnormal_weeks else ")"))
+        rows = [[normal_label, None, "summary", None, r1(normal_t), pct(normal_l)] + pad,
                 ["just before (2 weeks)", None, "summary", None, r1(level_t), pct(level_l)] + pad,
                 ["change with the event, vs prior trend", None, "summary", None, r1(jump_t), pct(jump_l)] + pad]
         for w, r in show.iterrows():
@@ -433,12 +451,14 @@ class Engine:
             cols += [f"{region}_mean_transit_days", "rest_mean_transit_days"]
         summary = {"event": event_id, "name": str(e["name"]), "start": str(start.date()), "end": str(end.date()),
                    "region": region, "normal_transit_days": r1(normal_t), "pre_event_transit_days": r1(level_t),
+                   "normal_weeks_left_out": int(abnormal_weeks),
                    "normal_late_pct": pct(normal_l), "pre_event_late_pct": pct(level_l),
                    "elevated_before": bool(elevated), "transit_jump_vs_trend_days": r1(jump_t),
                    "late_jump_vs_trend_pp": pct(jump_l), "effect_with_event": bool(effect),
                    "region_aligned": aligned}
         method = ("Weeks are the week a parcel was handed to the carrier. 'Normal' = median of weeks 26 to 7 before the "
-                  "event; 'before' = the two weeks before the in-flight week. The jump is measured against the trend of "
+                  "event, leaving out abnormal weeks (late rate above 1.5x that of the data's typical week, and at "
+                  f"least 2 points above it: {pct(typical_late)}% typical); 'before' = the two weeks before the in-flight week. The jump is measured against the trend of "
                   "weeks 6 to 2 before, extrapolated, so a change that was already under way doesn't count. Supports: "
                   "a jump of at least 1 day (or 10%) of transit, or 5 points of late rate, starting with the event"
                   + (", larger in the event's region than elsewhere" if regional else "")

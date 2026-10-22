@@ -254,7 +254,8 @@
 
 - id: HO2-december-2017
   dataset: olist
-  held_out: true
+  held_out: false  # development case since 22 Oct 23:20 IST: its brief (Black Friday, 23-27 Nov, listed among December's causes) led to the rule that an event ending before the period is not a cause of it
+  held_out_run: 20261022-212439-d02f   # its first, held-out run (pass, on the DuckDB copy)
   question: Why did late deliveries rise in December 2017?
   # SQL: Dec 2017 late 7.5% vs Aug-Oct 2017 2.9-4.4%. Mean transit 11.70 days vs 8.05-8.64; promised days 28.31 vs
   # 23.07-24.11 (LONGER); hand-over 3.61 vs 2.97-3.32 (+0.3 to +0.6 day); orders 5,513 vs 7,289 in November (fewer).

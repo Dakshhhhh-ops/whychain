@@ -187,7 +187,7 @@ export function Investigation() {
           <div className="mt-1 break-words font-mono text-[12px] text-rose-800">{failure.slice(0, 400)}</div>
           {/provider|model|api key|connection/i.test(failure) && (
             <div className="mt-2 text-[13px] text-rose-900">
-              No AI model could be reached. Add <span className="font-mono">NVIDIA_API_KEY</span> or <span className="font-mono">XAI_API_KEY</span> to the{" "}
+              No AI model could be reached. Add <span className="font-mono">NVIDIA_API_KEY</span> to the{" "}
               <span className="font-mono">.env</span> file, restart the app, then run the investigation again.
             </div>
           )}
@@ -204,7 +204,7 @@ export function Investigation() {
             hint={state.sqlErrors ? `${state.sqlErrors} repaired` : (result?.harness ?? state.harness) === "zetaris" ? "via Zetaris" : "via data harness"}
           />
           <Stat label="Evidence" value={result ? Object.keys(evidence).length : "—"} hint={evidenceHint(evidence, state.reverified)} />
-          <Stat label="Model calls" value={num(state.llmCalls)} hint={state.fallbacks ? `${state.fallbacks} fallbacks` : "no fallbacks"} />
+          <Stat label="Model calls" value={num(state.llmCalls)} hint={state.fallbacks ? `${state.fallbacks} fallback${state.fallbacks === 1 ? "" : "s"}` : "no fallbacks"} />
           <Stat label="Escalations" value={state.escalations.length} hint="need approval" />
         </div>
       </Card>

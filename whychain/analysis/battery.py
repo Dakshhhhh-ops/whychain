@@ -276,6 +276,10 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
     fi, ri = _row(m_res, "focus"), _row(m_res, "reference")
     focus_rate, ref_rate = m_res.rows[fi][3], m_res.rows[ri][3]
     rise = round(focus_rate - ref_rate, 1) if focus_rate is not None and ref_rate is not None else None
+    # what is being explained: a rise over time, or a gap between two groups in the same period
+    word = "rise" if spec["mode"] == "time" else "gap"
+    no_rise = ("Not applicable: the late rate did not rise in this scope." if word == "rise" else
+               "Not applicable: these orders are not late more often than the ones they are compared with.")
     if tool != "measure":
         evidence[mid] = m_res.evidence(mid, eid_prefix, "Analysis engine")
         cite.append(mid)
@@ -305,33 +309,35 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
                 "in places at a similar distance" if spec.get("compare_with") else "for the other orders")
         claim = (f"{r[1].capitalize()}: {_vs('typically', r[2], r[3], then)}; "
                  f"{_vs('four in five orders within', r[4], r[5], then)}. "
-                 + (f"Had this stage stayed as it was {then}, {sh}% of the {rise}-point rise "
-                                       f"(from {ref_rate}% to {focus_rate}% late) would not have happened."
-                                       if sh is not None and sh > 0 else
-                                       f"This stage moved the other way (share of the {rise}-point rise, from "
-                                       f"{ref_rate}% to {focus_rate}% late: {sh}%)."))
+                 + ((f"Had this stage stayed as it was {then}, {sh}% of the {rise}-point rise "
+                     f"(from {ref_rate}% to {focus_rate}% late) would not have happened." if word == "rise" else
+                     f"Had this stage been as it is {then}, {sh}% of the {rise}-point gap "
+                     f"(from {ref_rate}% to {focus_rate}% late) would close.")
+                    if sh is not None and sh > 0 else
+                    f"This stage {'moved' if word == 'rise' else 'pulls'} the other way (share of the {rise}-point "
+                    f"{word}, from {ref_rate}% to {focus_rate}% late: {sh}%)."))
         if rise is None or rise <= 0.5:
             verdict, kind = "inconclusive", "hypothesis"
             claim = (f"{r[1].capitalize()}: {_vs('typically', r[2], r[3], then)}; "
-                     f"{_vs('four in five orders within', r[4], r[5], then)}. There is no rise to explain in this scope "
-                     f"({focus_rate}% vs {ref_rate}% late).")
+                     f"{_vs('four in five orders within', r[4], r[5], then)}. There is no {word} to explain in this "
+                     f"scope ({focus_rate}% vs {ref_rate}% late).")
             keys = [k for k in keys if k["column"] != "share_of_rise_pct"]
-            share, reason = None, "Not applicable: the late rate did not rise in this scope."
+            share, reason = None, no_rise
         elif share is not None and share >= CAUSE_SHARE and "stage_moved" in res.columns \
                 and not r[res.columns.index("stage_moved")]:
             verdict = "refutes"
             reason = (f"The stage itself barely changed ({_vs('typically', r[2], r[3], then)}; "
-                      f"{_vs('four in five within', r[4], r[5], then)}), so its {sh}% share of the rise is noise in the "
+                      f"{_vs('four in five within', r[4], r[5], then)}), so its {sh}% share of the {word} is noise in the "
                       "counterfactual, not a cause.")
         elif share is not None and share >= CAUSE_SHARE:
             verdict, status, is_cause = "supports", "confirmed", True
-            reason = f"Explains {sh}% of the rise (cause threshold: {int(CAUSE_SHARE * 100)}%)."
+            reason = f"Explains {sh}% of the {word} (cause threshold: {int(CAUSE_SHARE * 100)}%)."
         elif share is not None and share < 0:
             verdict = "refutes"
-            reason = f"Went the other way (share of the rise: {sh}%)."
+            reason = f"Went the other way (share of the {word}: {sh}%)."
         else:
             verdict = "refutes"
-            reason = f"Explains only {sh}% of the rise (cause threshold: {int(CAUSE_SHARE * 100)}%)."
+            reason = f"Explains only {sh}% of the {word} (cause threshold: {int(CAUSE_SHARE * 100)}%)."
     elif tool == "segments":
         s = res.summary
         conc = s["concentrated_in"]
@@ -344,22 +350,30 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
             keys = keys[:2]
             claim = (f"All of these orders share one {label}" + (f" ({top[0][0]})" if top else "")
                      + ": there is nothing to compare within it.")
+        elif rise is None or rise <= 0.5:
+            keys = keys[:2]
+            claim = f"There is no {word} to locate by {label} in this scope ({focus_rate}% vs {ref_rate}% late)."
         else:
-            parts = "; ".join(f"{r[0]}: {r[7]}% of the rise from {r[8]}% of the orders ({r[4]}% -> {r[3]}% late)"
+            parts = "; ".join(f"{r[0]}: {r[7]}% of the {word} from {r[8]}% of the orders ({r[4]}% -> {r[3]}% late)"
                               for r in top)
-            claim = f"Where the rise sits, by {label}: {parts}."
+            claim = f"Where the {word} sits, by {label}: {parts}."
         mix = s.get("mix_share_pct")
-        keys.append(_ref(eid, res, len(res.rows) - 1, "share_of_rise_pct"))
-        if mix is not None and mix >= 25:
+        if rise is not None and rise > 0.5:
+            keys.append(_ref(eid, res, len(res.rows) - 1, "share_of_rise_pct"))
+        if rise is None or rise <= 0.5:
+            # nothing rose, so there is nothing to locate (shares of a near-zero change are noise)
+            verdict, kind, reason = "inconclusive", "hypothesis", no_rise
+        elif mix is not None and mix >= 25:
             share, is_cause, verdict, status = mix / 100, True, "supports", "confirmed"
             reason = f"A change in where orders came from (the mix) explains {mix}% of the gap."
             claim += f" Change in the mix of orders by {label}: {mix}% of the gap."
         elif conc:
             verdict, status, kind = "measured", "confirmed", "measure"
-            reason = f"Concentrated in {', '.join(conc)} (share of the rise at least 1.5x share of orders). This says where, not why."
+            reason = (f"Concentrated in {', '.join(conc)} (share of the {word} at least 1.5x share of orders). "
+                      "This says where, not why.")
         else:
             verdict, status, kind = "measured", "confirmed", "measure"
-            reason = "Spread broadly: no segment's share of the rise is well above its share of orders."
+            reason = f"Spread broadly: no segment's share of the {word} is well above its share of orders."
     elif tool == "volume":
         s = res.summary
         keys += [_ref(eid, res, 0, "orders_per_day"), _ref(eid, res, 1, "orders_per_day"),
@@ -421,7 +435,7 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         status = "confirmed" if res.verdict == "supports" else "rejected"
         is_cause = res.verdict == "supports"
         reason = ("Anomalies exceed 2% of delivered orders." if is_cause else
-                  f"Anomalies are {s['anomaly_share_pct']}% of orders: too few to explain the rise.")
+                  f"Anomalies are {s['anomaly_share_pct']}% of orders: too few to explain the {word}.")
     elif tool == "text":
         kind = "measure"
         keys += [_ref(eid, res, k, c) for k in range(len(res.rows)) for c in ("focus_per_1000", "ref_per_1000")]
@@ -437,7 +451,16 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         if s.get("region_aligned") is not None:
             claim += f" Larger in {s['region']} than elsewhere: {'yes' if s['region_aligned'] else 'no'}."
         verdict = {"supports": "supports", "partial": "supports", "refutes": "refutes"}[res.verdict]
-        if res.verdict == "supports":
+        before_period = bool(spec["mode"] == "time" and spec.get("start") and s.get("end")
+                             and str(s["end"]) < str(spec["start"]))
+        if before_period and res.verdict in ("supports", "partial"):
+            # it delayed parcels handed over during it, but it ended before the orders in question were placed:
+            # whether its backlog carried into the period isn't tested, so it isn't counted as a cause of the period
+            verdict = "inconclusive"
+            reason = (f"It ended before the period asked about (orders placed from {spec['start']}). It did delay "
+                      "parcels handed over during it, but whether that carried into the period isn't tested, so it "
+                      "isn't counted as a cause of the period.")
+        elif res.verdict == "supports":
             status, is_cause, reason = "confirmed", True, "The effect starts with the event and wasn't there before."
         elif res.verdict == "partial":
             status, is_cause, reason = "confirmed", True, ("It added to a problem that was already there before it "

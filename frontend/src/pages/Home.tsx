@@ -131,8 +131,8 @@ export function Home() {
         <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-[13px] text-amber-900">
           <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <span className="font-semibold">No AI model is set up yet.</span> Add <span className="font-mono text-[12px]">NVIDIA_API_KEY</span> or{" "}
-            <span className="font-mono text-[12px]">XAI_API_KEY</span> to the <span className="font-mono text-[12px]">.env</span> file and restart to run
+            <span className="font-semibold">No AI model is set up yet.</span> Add <span className="font-mono text-[12px]">NVIDIA_API_KEY</span> to the{" "}
+            <span className="font-mono text-[12px]">.env</span> file and restart to run
             investigations. Everything else on this page is live.
           </div>
         </div>

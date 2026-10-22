@@ -47,10 +47,12 @@ def show(ev: dict) -> None:
     elif kind in ("agent_start", "agent_skip"):
         console.print(f"{t} {ev.get('note') or ev.get('statement') or 'started'}")
     elif kind == "run_end":
-        console.print(f"{t} done: {ev['calls']} model calls {ev['by_provider']}, {ev['fallbacks']} fallbacks")
+        console.print(f"{t} done: {ev['calls']} model calls {ev['by_provider']}, {ev['fallbacks']} fallback{'' if ev['fallbacks'] == 1 else 's'}")
 
 
 def main(argv=None) -> int:
+    from whychain.config import utf8_output
+    utf8_output()
     ap = argparse.ArgumentParser(description="WhyChain: explain why supply chain problems happen")
     ap.add_argument("question")
     ap.add_argument("--harness", choices=["zetaris", "local"], default=None)

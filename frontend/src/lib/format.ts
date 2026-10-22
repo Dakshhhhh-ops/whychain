@@ -6,6 +6,8 @@ export const inr = (v?: number | null) =>
 export const num = (v?: number | null) => (v === undefined || v === null ? "—" : new Intl.NumberFormat("en-IN").format(v));
 
 export const pct = (v?: number | null) => (v === undefined || v === null ? "—" : `${Math.round(v * 100)}%`);
+/** "1 memory", "3 memories" */
+export const plural = (n: number | undefined | null, one: string, many: string) => `${n ?? 0} ${n === 1 ? one : many}`;
 
 export function duration(s?: number | null) {
   if (s === undefined || s === null) return "—";

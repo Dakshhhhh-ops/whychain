@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 
+def utf8_output() -> None:
+    """Command-line tools print UTF-8 (names like São Paulo, the "·" separator) even when Windows pipes their output
+    in its legacy code page (Git Bash then showed mojibake). The Windows console itself is unaffected."""
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
