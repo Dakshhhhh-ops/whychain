@@ -62,6 +62,11 @@ class Settings:
                                    env("NVIDIA_API_KEY"),
                                    env("NIM_REASON_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
                                    thinking=env("NIM_REASON_THINKING", "true").lower() == "true"),
+            # a DIFFERENT model on the same NVIDIA endpoint: covers one model being overloaded (the usual NIM
+            # failure), not an outage of the whole endpoint
+            "nim-backup": Provider("nim-backup", env("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+                                   env("NVIDIA_API_KEY"), env("NIM_BACKUP_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
+                                   thinking=False),
             "nightshift": Provider("nightshift", env("NIGHTSHIFT_BASE_URL"), env("NIGHTSHIFT_API_KEY"),
                                    env("NIGHTSHIFT_MODEL", "meterless/local")),
             "ollama": Provider("ollama", env("OLLAMA_BASE_URL", "http://localhost:11434/v1"), "ollama",

@@ -20,11 +20,11 @@ from openai import APIConnectionError, APITimeoutError, InternalServerError, Ope
 from whychain.config import SETTINGS, Provider
 
 ROLE_CHAINS = {
-    "reason": ["xai", "nim-reason", "nim", "nightshift", "ollama"],
-    "work": ["nim", "xai", "nim-reason", "nightshift", "ollama"],
-    "local": ["nightshift", "nim", "ollama", "xai"],
+    "reason": ["xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
+    "work": ["nim", "nim-backup", "xai", "nim-reason", "nightshift", "ollama"],
+    "local": ["nightshift", "nim", "nim-backup", "ollama", "xai"],
 }
-JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason"}
+JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup"}
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
 ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
 
@@ -81,7 +81,9 @@ class LLM:
         if not chain:
             raise LLMError("No model provider is configured. Set XAI_API_KEY / NVIDIA_API_KEY or run Ollama.")
         errors = []
-        for p in chain:
+        for i, p in enumerate(chain):
+            # with a backup model behind it, give up on a struggling provider sooner
+            attempts = ATTEMPTS if i == len(chain) - 1 else 2
             msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
             if p.name == "ollama" and p.model.startswith("qwen3"):
                 msgs[-1]["content"] += "\n/no_think"
@@ -94,7 +96,7 @@ class LLM:
                     kwargs["max_tokens"] = max(max_tokens, 12000)
             t0 = time.perf_counter()
             try:
-                resp = self._create(p, kwargs, agent)
+                resp = self._create(p, kwargs, agent, attempts)
                 text = strip_thinking(resp.choices[0].message.content or "")
                 usage = resp.usage
                 res = LLMResult(text, p.name, p.model, int((time.perf_counter() - t0) * 1000),
@@ -112,13 +114,13 @@ class LLM:
                 self._trace("llm_fallback", agent, provider=p.name, error=errors[-1]["error"])
         raise LLMError(f"All providers failed for role '{role}': {errors}")
 
-    def _create(self, p: Provider, kwargs: dict, agent: str):
+    def _create(self, p: Provider, kwargs: dict, agent: str, attempts: int = ATTEMPTS):
         """Call one provider, retrying transient failures (5xx, rate limits, timeouts) with back-off."""
-        for attempt in range(1, ATTEMPTS + 1):
+        for attempt in range(1, attempts + 1):
             try:
                 return self._client(p).chat.completions.create(**kwargs)
             except TRANSIENT as e:
-                if attempt == ATTEMPTS:
+                if attempt == attempts:
                     raise
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, error=f"{type(e).__name__}: {str(e)[:120]}")
                 time.sleep(2.5 * attempt)
