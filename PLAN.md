@@ -36,7 +36,6 @@
 2. Add `NVIDIA_API_KEY` and `XAI_API_KEY` to `.env`, run `python -m whychain.doctor`, then `python -m evals.run_evals`. Tune prompts on the failures.
 3. Zetaris: sign up, install locally (needs about 8 GB RAM for Docker, so it may need the AWS option), put the API key and org id in `.env`, then run `python scripts/register_zetaris.py --apply`.
 4. Install Meterless Nightshift and put its proxy token in `.env`.
-5. Install Cursor and do the remaining work in it.
 6. Connect the GitHub repo (user will send the URL). No commits or pushes until then.
 
 ---
@@ -124,7 +123,6 @@ Why judges should see this as strong rather than a pipeline: the planner dispatc
 | **Zetaris** | The only way agents touch company data. All 5 sources are registered in Zetaris, and agents run federated SQL that joins Postgres, CSV and JSON in one query. The Data Scout uses the Zetaris catalog to work out how the sources connect. | Every claim in the brief cites the exact Zetaris query behind it, so the explanation is checkable. No data is copied into a vector DB or a warehouse. |
 | **Meterless** | H-MEM for shared, compounding memory. World Model for the event trace. Nightshift serves a local model on the GPU for reading documents. | Contracts and supplier emails never leave the machine, which suits sensitive commercial terms. Memory improves answers across runs. |
 | **NVIDIA** | NIM API (Llama / Nemotron) for the investigator agents. Local GPU (CUDA) runs Nightshift. NIM embeddings for document search. | Cloud and local NVIDIA compute, each used where it fits. |
-| **Cursor** | Development environment for the whole build. Use Cursor's agent for real tasks so the slides can describe it accurately. | — |
 
 Reliability fallbacks (agents keep working during judging):
 - Model calls: Grok → NIM → local Nightshift, in that order.
@@ -180,7 +178,6 @@ Reliability fallbacks (agents keep working during judging):
 ## 7. Tonight's checklist (only you can do these)
 
 - [ ] **Register** on hackathon.genai.works / HackOS if not done (closes 22 Oct 23:45 UTC = 23 Oct 05:15 IST). Pick Track 2. Select "happy to build solo".
-- [ ] **Install Cursor** (cursor.com) and open this folder in it.
 - [ ] **Sign up for Zetaris Cloud**: cloud.enterprise.zetaris.com/register
 - [ ] **Install Meterless Nightshift** for Windows (meterless.ai). Check that it detects your NVIDIA GPU.
 - [ ] **NVIDIA NIM key** from build.nvidia.com

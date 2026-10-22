@@ -244,9 +244,45 @@ Each pass ran all six questions on an empty memory, one after the other (`evals/
 - **Scorer change, disclosed:** pass 1 was first scored with the earlier scorer, which counted only confirmed *causes*. O1 and H2 then scored 1/2, because "where the rise sits" (RJ / interstate shipping) is reported as a measurement. The scorer now also counts confirmed measurements; red herrings are still judged on causes only. The table uses the current scorer for both passes.
 - **Earlier architecture, for comparison:** 8 to 10 minutes and 50 to 70 model calls per question. The strike verdict on O1 flipped between runs, and O3 was answered wrongly.
 
-### Simulated company (Kaveri)
+### Simulated company (Kaveri), one pass, 22 Oct 16:25 to 17:08 IST
 
-*(Running. Two of the five questions are about lateness and use the engine; three (stock at risk, a stock-out, a backlog) use the agent loop and the optimizer.)*
+| Case | Path | Root cause found | Right action | Model calls | Time | Notes |
+|---|---|---|---|---|---|---|
+| A Pune orders at risk | agent loop | ❌ 1/2 | ❌ | 49 | 14 min | Found the delayed inbound supply, but not the supplier (Voltix, S-14). It never proposed the stock transfer from Mumbai. |
+| B Nashik late | engine | ✅ 2/2 | ❌ | 8 | 69 s | Transit explains 106% of the rise, concentrated in carrier C02. The contract change comes from the verified documents. The switch-carrier action was added after this run. |
+| C Mumbai earbuds | agent loop | ❌ crashed | ❌ | 60 | 11 min | A bug in the numbers check (a key number pointing past a truncated result), since fixed and tested. |
+| D Chennai backlog | agent loop | ❌ 0/1 | ❌ | 86 | 16 min | Missed the duplicate EDI orders. Earlier runs found them, but the prompts then contained the hint "duplicates"; with the hints removed, it doesn't. |
+| E On-time drop | engine | ✅ 3/3 | ✅ | 9 | 68 s | Transit (46.6%) and warehouse dispatch; the documents name the port strike and the promotion. |
+
+**Reading this honestly:** the engine path answers what, where and how much reliably, and a minute is enough. The agent loop, used for stock, backlog and risk questions, is slow (11 to 16 minutes, mostly NVIDIA rate limits) and found the planted cause in none of its three cases. A and B pass "found" partly through document findings, which the scorer counts since 17:11 IST. The stock-and-supply questions are the next thing to move onto computed tests.
+
+## Hackathon tracks
+
+WhyChain is one product; this is how it maps to each track, with what is real today.
+
+| Track | What WhyChain shows | Evidence | Gap |
+|---|---|---|---|
+| 1 Fragmented intelligence | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs. The Data Scout maps the sources and tests every join. | Join tests in every run; the engine's fact query joins five sources | Runs use the local DuckDB harness until Zetaris is connected (in progress) |
+| 2 The agent that explains why | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, and red herrings are ruled out with reasons. | Results above: 6/6 real-data cases twice, 62/62 findings identical | Stock and backlog questions (agent loop) are weak |
+| 3 Reasoning architecture | Code computes and agents reason. Coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, and memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
+| Wildcard | An existing project, Optiagent, extended with Zetaris and Meterless. | Meterless H-MEM and World Model in every run | Zetaris integration not yet live |
+| NVIDIA Nemotron prize | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
+
+Whether one project may be entered in several tracks is not stated on the public event page; the author is checking with the organizers.
+
+## How WhyChain uses NVIDIA Nemotron
+
+Every language-model call goes to Nemotron through NVIDIA NIM: **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`), with **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) as the backup model when the first is overloaded.
+
+| Where | Nemotron's job | Mode |
+|---|---|---|
+| Document Analyst | Find and quote the written record (news briefs, contracts, email); quotes are verified word for word | 3.5 Super, JSON mode |
+| Brief | Phrase the short answer from computed facts only; every number is then checked | 3.5 Super |
+| Agent loop: Planner, Evaluator | Plan competing hypotheses; challenge findings, ask for another round | 3.5 Super with reasoning ("thinking") on |
+| Agent loop: Data Scout, Investigators, Risk & Action, Action Executor | Map the data, write and repair SQL, call the optimizer, prepare deliverables | 3.5 Super, JSON mode |
+| Fallback | Take over when 3.5 Super returns errors or rate limits | 3 Ultra |
+
+The design choice: Nemotron reads, plans, argues and writes; it doesn't produce the numbers or the verdicts. On the real-data questions that cut model calls from 50 to 70 per question to 5 to 9, and made the answers reproducible.
 
 ## Reliability
 
