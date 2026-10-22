@@ -136,6 +136,11 @@ class LLM:
             except ValueError as e:
                 last = str(e)
                 self._trace("json_repair", agent, attempt=attempt + 1, error=last)
+                p = self.providers.get(res.provider)
+                if p is not None and p.thinking and role != "work":
+                    # a reasoning model that spent its budget thinking: retry without thinking, in fast JSON mode
+                    role = "work"
+                    self._trace("json_fallback", agent, from_provider=res.provider, to_role="work")
                 prompt = (f"{user}\n\nYour previous reply was not valid JSON ({last}). "
                           "Reply again with ONE valid JSON object only, no prose, no code fences.")
         raise LLMError(f"{agent}: model did not return valid JSON after {retries + 1} tries ({last})")
@@ -174,8 +179,8 @@ def extract_json(text: str) -> dict:
             if depth == 0:
                 chunk = t[start:i + 1]
                 try:
-                    return json.loads(chunk)
+                    return json.loads(chunk, strict=False)  # strict=False: raw newlines inside strings are fine
                 except json.JSONDecodeError:
                     # common small-model slip: trailing commas
-                    return json.loads(re.sub(r",\s*([}\]])", r"\1", chunk))
+                    return json.loads(re.sub(r",\s*([}\]])", r"\1", chunk), strict=False)
     raise ValueError("unbalanced JSON object")

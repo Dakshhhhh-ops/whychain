@@ -20,6 +20,21 @@ class FakeLLM:
         return {"fake": True}
 
     def chat(self, role, system, user, *, agent, json_mode=False, temperature=0.2, max_tokens=2500):
+        if agent == "Reporter":  # the Reporter writes plain markdown
+            self.calls.append(agent)
+            if self.tracer:
+                self.tracer.event("llm_call", agent, provider="fake", model="fake", ms=1)
+            return LLMResult(
+                "HEADLINE: Pune orders are at risk because the Chennai port strike stranded Voltix stock\n\n"
+                "## Answer\nStrike [T2.Q2] [T3.D1]. Bogus cite [T9.Q9]. The Chennai port strike held Voltix (S-14) "
+                "pre-build purchase orders at the port, so Pune ran dry while Mumbai held surplus stock.\n\n"
+                "## Root causes\n1. Port strike stranding Voltix POs [T2.Q2], about 74% of at-risk orders.\n\n"
+                "## Ruled out\nWeather [T5.Q2]: the rain alert did not affect deliveries.\n\n"
+                "## Recommended actions\n| Action | Protects | Cost | Approval |\n|---|---|---|---|\n"
+                "| Transfer stock from Mumbai to Pune | 26 orders | 41,000 | Yes |\n\n"
+                "## Confidence and open questions\nHigh.\n\n"
+                "LESSONS:\n- Check port status for suppliers consolidating through a single port\n",
+                "fake", "fake", 1)
         return LLMResult("{}", "fake", "fake", 1)
 
     def json(self, role, system, user, *, agent, retries=2, temperature=0.2, max_tokens=2500) -> dict:

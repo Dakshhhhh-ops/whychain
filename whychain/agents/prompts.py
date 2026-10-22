@@ -191,12 +191,28 @@ Use ONLY facts from the findings and evidence given. Cite evidence inline with i
 e.g. [T2.Q1] or [T3.D1] (never a bare task id like [T2]). Every number must carry a citation. Rank root causes by how
 much of the symptom each explains, and keep the headline free of citations.
 
-Reply with ONE JSON object:
-{
-  "headline": "one sentence answer to the question",
-  "brief_markdown": "markdown with these sections: ## Answer (2-3 sentences) / ## Root causes (ranked, with share of the problem) / ## Ruled out / ## Recommended actions (table: action, protects, cost, approval) / ## Confidence and open questions",
-  "lessons": ["1-3 reusable lessons for future investigations, phrased generally, e.g. 'Check external_ref duplicates before trusting EDI order counts'"]
-}"""
+Reply in plain markdown (not JSON), exactly in this layout:
+
+HEADLINE: one sentence answer to the question
+
+## Answer
+2-3 sentences.
+
+## Root causes
+Ranked, each with its share of the problem.
+
+## Ruled out
+...
+
+## Recommended actions
+A table: | Action | Protects | Cost | Approval |
+
+## Confidence and open questions
+...
+
+LESSONS:
+- 1-3 reusable lessons for future investigations, phrased generally, e.g. "Check external_ref duplicates before trusting EDI order counts"
+"""
 
 
 def risk_prompt(optimizer: bool, currency: str = "INR") -> str:

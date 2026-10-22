@@ -8,7 +8,7 @@ import re
 from whychain.agents import prompts as P
 from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
 from whychain.harness.base import catalog_text
-from whychain.llm import LLMError
+from whychain.llm import LLMError, extract_json
 
 PROFILE_COL = re.compile(r"(status|_type|channel|tier|category|region|level|warehouse|port_of_entry|service|"
                          r"carrier_id|supplier_id|promo_code|lane_id|dest_city)$", re.I)
@@ -415,6 +415,33 @@ def tidy_brief(md: str, headline: str) -> tuple[str, str]:
     return "".join(kept).strip(), headline.strip()
 
 
+def parse_brief(text: str) -> dict:
+    """Split the Reporter's markdown into headline, brief and lessons. Accepts a JSON reply too."""
+    t = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+    t = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", t)
+    if t.startswith("{"):
+        try:
+            j = extract_json(t)
+            return {"headline": str(j.get("headline", "")), "brief_markdown": str(j.get("brief_markdown", "")),
+                    "lessons": [str(x) for x in j.get("lessons") or []]}
+        except ValueError:
+            pass
+    headline, lessons = "", []
+    m = re.search(r"(?im)^\s*\**HEADLINE\**\s*:\s*\**(.+?)\**\s*$", t)
+    if m:
+        headline = m.group(1).strip()
+        t = t[:m.start()] + t[m.end():]
+    m = re.search(r"(?im)^\s*\**LESSONS\**\s*:?\s*\**\s*$", t)
+    if m:
+        lessons = [re.sub(r"^\s*[-*\d.]+\s*", "", ln).strip() for ln in t[m.end():].splitlines()]
+        lessons = [ln.strip('"') for ln in lessons if ln][:3]
+        t = t[:m.start()]
+    if not headline:  # fall back to the first sentence of the answer
+        ans = re.search(r"(?is)##\s*Answer\s*\n+(.+?)(?:\n\n|\Z)", t)
+        headline = re.split(r"(?<=[.!?])\s", ans.group(1).strip())[0] if ans else ""
+    return {"headline": headline, "brief_markdown": t.strip(), "lessons": lessons}
+
+
 def report(state: dict, ctx: Ctx) -> dict:
     agent = "Reporter"
     ctx.tracer.event("agent_start", agent)
@@ -432,11 +459,19 @@ def report(state: dict, ctx: Ctx) -> dict:
             f"RISKS: {json.dumps(state.get('risks', []), default=str)}\n\n"
             f"EVALUATOR'S FINAL VIEW: explained={last.get('symptom_explained')}, {last.get('summary')}\n\n"
             f"Money amounts are in {currency}.")
-    try:
-        # writing up needs no deep reasoning, and the fast JSON mode keeps the output well-formed
-        out = ctx.llm.json("work", P.REPORTER, user, agent=agent, max_tokens=4500, temperature=0.3)
-    except LLMError as e:
-        out = {"headline": "Report generation failed", "brief_markdown": f"Reporter unavailable: {e}", "lessons": []}
+    out = {"headline": "Report generation failed", "brief_markdown": "", "lessons": []}
+    # plain markdown, not JSON: long markdown inside a JSON string is where models slip. Writing needs no deep
+    # reasoning, so the fast role goes first; a too-short brief is retried once with the reasoning role.
+    for role in ("work", "reason"):
+        try:
+            res = ctx.llm.chat(role, P.REPORTER, user, agent=agent, max_tokens=4500, temperature=0.3)
+        except LLMError as e:
+            out["brief_markdown"] = f"Reporter unavailable: {e}"
+            continue
+        out = parse_brief(res.text)
+        if len(out["brief_markdown"]) >= 400 and "## " in out["brief_markdown"]:
+            break
+        ctx.tracer.event("report_retry", agent, chars=len(out["brief_markdown"]), provider=res.provider)
     md, raw_headline = tidy_brief(str(out.get("brief_markdown", "")), str(out.get("headline", "")))
     out["headline"] = raw_headline
     # a bare task citation like [T2] becomes that task's evidence ids, so it stays clickable
