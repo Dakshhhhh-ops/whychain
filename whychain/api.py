@@ -391,6 +391,26 @@ def get_overview(dataset: str | None = None) -> dict:
     return v
 
 
+_regions_cache: dict = {}
+
+
+@app.get("/api/regions")
+def get_regions(dataset: str | None = None, month: str | None = None) -> dict:
+    """Late deliveries by customer state (marketplace data), for one purchase month vs the six months before."""
+    from whychain.overview import olist_regions
+
+    ds = get_dataset(dataset)
+    if ds.key != "olist":
+        raise HTTPException(404, "regions are available for the marketplace dataset")
+    if month and not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", month):
+        raise HTTPException(400, "month must look like 2018-03")
+    key = (ds.key, month)
+    if key not in _regions_cache:
+        harness, _ = shared_harness(ds.key)
+        _regions_cache[key] = olist_regions(harness, month)
+    return _regions_cache[key]
+
+
 @app.get("/api/sources")
 def sources(dataset: str | None = None) -> dict:
     from types import SimpleNamespace

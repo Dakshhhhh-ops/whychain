@@ -271,6 +271,45 @@ GROUP BY c.customer_state HAVING COUNT(*) >= 300 ORDER BY late_pct DESC"""
 OLIST_EVENTS_SQL = """SELECT event_id, name, type, start_date, end_date, region, summary, source_urls
 FROM signals.events ORDER BY start_date"""
 
+OLIST_REGIONS_SQL = """
+WITH o AS (SELECT c.customer_state AS state, date_format(o.order_purchase_timestamp, 'yyyy-MM') AS month,
+             CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END AS late,
+             datediff(o.order_delivered_customer_date, o.order_delivered_carrier_date) AS transit
+           FROM oms.orders o JOIN oms.customers c ON c.customer_id = o.customer_id
+           WHERE o.order_status = 'delivered' AND o.order_delivered_customer_date IS NOT NULL
+             AND date_format(o.order_purchase_timestamp, 'yyyy-MM') BETWEEN '{base_start}' AND '{month}')
+SELECT state,
+       SUM(CASE WHEN month = '{month}' THEN 1 ELSE 0 END) AS orders,
+       ROUND(100.0 * AVG(CASE WHEN month = '{month}' THEN late END), 1) AS late_pct,
+       ROUND(100.0 * AVG(CASE WHEN month < '{month}' THEN late END), 1) AS base_late_pct,
+       ROUND(AVG(CASE WHEN month = '{month}' THEN transit END), 1) AS transit_days,
+       ROUND(AVG(CASE WHEN month < '{month}' THEN transit END), 1) AS base_transit_days
+FROM o GROUP BY state ORDER BY state"""
+
+
+def _shift_month(month: str, n: int) -> str:
+    y, m = map(int, month.split("-"))
+    i = y * 12 + (m - 1) + n
+    return f"{i // 12:04d}-{i % 12 + 1:02d}"
+
+
+def olist_regions(h: DataHarness, month: str | None = None) -> dict:
+    """Late deliveries by customer state: for one purchase month against the six months before it, or all time."""
+    if not month:
+        rows = _rows(h, OLIST_STATES_SQL.replace("HAVING COUNT(*) >= 300", "HAVING COUNT(*) >= 50"), limit=40)
+        return {"month": None, "baseline": None,
+                "states": [{"state": r["state"], "name": BR_STATES.get(r["state"], r["state"]), "orders": int(_f(r["orders"])),
+                            "late_pct": _f(r["late_pct"]), "base_late_pct": None, "transit_days": None,
+                            "base_transit_days": None} for r in rows]}
+    base_start = _shift_month(month, -6)
+    rows = _rows(h, OLIST_REGIONS_SQL.format(month=month, base_start=base_start), limit=40)
+    states = [{"state": r["state"], "name": BR_STATES.get(r["state"], r["state"]), "orders": int(_f(r["orders"])),
+               "late_pct": _f(r["late_pct"], None), "base_late_pct": _f(r["base_late_pct"], None),
+               "transit_days": _f(r["transit_days"], None), "base_transit_days": _f(r["base_transit_days"], None)}
+              for r in rows if _f(r["orders"]) > 0]
+    return {"month": month, "baseline": f"{_month_name(base_start)} to {_month_name(_shift_month(month, -1))}",
+            "states": states}
+
 
 def olist_overview(h: DataHarness) -> dict:
     monthly = _rows(h, OLIST_MONTHLY_SQL, limit=100)

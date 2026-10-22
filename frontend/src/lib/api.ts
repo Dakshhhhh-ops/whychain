@@ -361,3 +361,16 @@ export type Deliverables = {
 
 export const getDeliverables = (runId: string, actionId: string) =>
   request<Deliverables>(`/api/runs/${runId}/actions/${actionId}/deliverables`);
+
+export type RegionRow = {
+  state: string;
+  name: string;
+  orders: number;
+  late_pct: number | null;
+  base_late_pct: number | null;
+  transit_days: number | null;
+  base_transit_days: number | null;
+};
+export type Regions = { month: string | null; baseline: string | null; states: RegionRow[] };
+export const getRegions = (ds: string, month?: string | null) =>
+  request<Regions>(`/api/regions?dataset=${encodeURIComponent(ds)}${month ? `&month=${month}` : ""}`);

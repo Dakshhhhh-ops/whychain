@@ -8,7 +8,8 @@ import { BriefView } from "../components/Brief";
 import { EvidenceBody, EvidenceDrawer } from "../components/Evidence";
 import { AgentAvatar, Badge, Bar, Button, Card, CardHeader, EmptyState, LiveDot, Spinner, Stat, Tabs } from "../components/ui";
 import { highlightFromText, MapLegend, NetworkMap } from "../components/NetworkMap";
-import { api, getOverview, subscribe, type Evidence, type Overview, type RunResult, type TraceEvent, type WorldState } from "../lib/api";
+import { BrazilMap, monthIn, statesIn, type MapMode } from "../components/BrazilMap";
+import { api, getOverview, getRegions, subscribe, type Regions, type Evidence, type Overview, type RunResult, type TraceEvent, type WorldState } from "../lib/api";
 import { duration, num, pct, runDate } from "../lib/format";
 import { applyEvent, emptyState, foldEvents, type LiveState } from "../lib/runState";
 
@@ -199,7 +200,7 @@ export function Investigation() {
             tabs={[
               { key: "brief", label: "Brief", disabled: !result || result.status !== "ok" },
               { key: "board", label: "Investigation", count: Object.keys(state.tasks).length },
-              { key: "network", label: "Network", disabled: (result?.dataset ?? state.dataset) === "olist" },
+              { key: "network", label: (result?.dataset ?? state.dataset) === "olist" ? "Regions" : "Network" },
               { key: "evidence", label: "Evidence", count: result ? Object.keys(evidence).length : undefined, disabled: !result },
               { key: "memory", label: "Memory & graph", disabled: !result },
               { key: "trace", label: "Trace", count: state.events.length },
@@ -209,7 +210,12 @@ export function Investigation() {
           <div className="mt-4">
             {tab === "brief" && result && <BriefView result={result} onOpen={setOpenEv} onDecided={() => loadResult()} />}
             {tab === "board" && <Board state={state} result={result} onOpen={setOpenEv} />}
-            {tab === "network" && <NetworkTab state={state} result={result} />}
+            {tab === "network" &&
+              ((result?.dataset ?? state.dataset) === "olist" ? (
+                <RegionsTab state={state} result={result} question={question} />
+              ) : (
+                <NetworkTab state={state} result={result} />
+              ))}
             {tab === "evidence" && result && <EvidenceTab result={result} />}
             {tab === "memory" && result && <MemoryTab result={result} />}
             {tab === "trace" && <TraceTab events={state.events} onOpen={setOpenEv} />}
@@ -231,13 +237,9 @@ export function Investigation() {
   );
 }
 
-function NetworkTab({ state, result }: { state: LiveState; result?: RunResult }) {
-  const [ov, setOv] = useState<Overview | null>(null);
-  useEffect(() => {
-    getOverview(result?.dataset ?? state.dataset ?? "kaveri").then(setOv).catch(() => {});
-  }, []);
-  // text of every confirmed cause (final verdicts if we have them, live verdicts otherwise)
-  const causeText = Object.values(state.tasks)
+/** Text of every confirmed cause: final verdicts if we have them, live verdicts otherwise. */
+function confirmedCauseText(state: LiveState, result?: RunResult): string {
+  return Object.values(state.tasks)
     .filter((t) => {
       const v = result?.verdicts?.[t.id];
       return v ? v.status === "confirmed" && v.is_cause !== false && t.type !== "measure" : t.evalStatus === "confirmed" && t.type !== "measure";
@@ -248,6 +250,83 @@ function NetworkTab({ state, result }: { state: LiveState; result?: RunResult })
       return [t.statement, f?.claim ?? t.claim ?? "", ...quotes].join(" ");
     })
     .join(" ");
+}
+
+function RegionsTab({ state, result, question }: { state: LiveState; result?: RunResult; question: string }) {
+  const month = monthIn(result?.question ?? question);
+  const [data, setData] = useState<Regions | null>(null);
+  const [mode, setMode] = useState<MapMode>(month ? "change" : "level");
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    getRegions("olist", month).then(setData).catch((e) => setErr(String(e)));
+  }, [month]);
+  const causeText = confirmedCauseText(state, result);
+  const hl = statesIn(causeText);
+  if (err) return <Card><EmptyState title="Regions unavailable">{err}</EmptyState></Card>;
+  if (!data)
+    return (
+      <Card className="flex justify-center p-10">
+        <Spinner />
+      </Card>
+    );
+  const label = data.month ? new Date(`${data.month}-15`).toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "";
+  const worst = [...data.states]
+    .filter((s) => s.orders >= 30 && s.late_pct !== null)
+    .sort((a, b) => (mode === "change" && b.base_late_pct !== null && a.base_late_pct !== null
+      ? b.late_pct! - b.base_late_pct - (a.late_pct! - a.base_late_pct)
+      : b.late_pct! - a.late_pct!))
+    .slice(0, 5);
+  return (
+    <Card>
+      <CardHeader
+        title={data.month ? `Late deliveries by state, ${label}` : "Late deliveries by state, all orders"}
+        subtitle={
+          data.month
+            ? `Orders placed in ${label}, against the six months before (${data.baseline}). ${causeText ? "States named in the confirmed causes are outlined." : "Outlines appear once the Evaluator confirms a cause."}`
+            : "No month in the question, so this shows every delivered order."
+        }
+        right={
+          data.month ? (
+            <div className="flex rounded-lg bg-slate-100 p-0.5 text-[11.5px]">
+              {(["change", "level"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={clsx("whitespace-nowrap rounded-md px-2.5 py-1 font-medium", mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}
+                >
+                  {m === "change" ? "Change" : "Late %"}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
+      />
+      <div className="px-5 py-4">
+        <BrazilMap rows={data.states} mode={data.month ? mode : "level"} highlight={hl} />
+      </div>
+      {worst.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-5 py-3 text-[12px]">
+          <span className="text-slate-500">{mode === "change" && data.month ? "Biggest rises:" : "Most often late:"}</span>
+          {worst.map((s) => (
+            <Badge key={s.state} tone={hl.has(s.state) ? "brand" : "slate"}>
+              {s.name}
+              <span className="tabular-nums opacity-70">
+                {mode === "change" && s.base_late_pct !== null ? `${s.base_late_pct}% → ${s.late_pct}%` : `${s.late_pct}%`}
+              </span>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function NetworkTab({ state, result }: { state: LiveState; result?: RunResult }) {
+  const [ov, setOv] = useState<Overview | null>(null);
+  useEffect(() => {
+    getOverview(result?.dataset ?? state.dataset ?? "kaveri").then(setOv).catch(() => {});
+  }, []);
+  const causeText = confirmedCauseText(state, result);
   if (!ov)
     return (
       <Card className="flex justify-center p-10">
