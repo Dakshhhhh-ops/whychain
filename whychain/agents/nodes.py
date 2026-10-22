@@ -611,7 +611,7 @@ def finding_evidence(f: dict, evidence: dict) -> list[dict]:
 
 
 _UNVERIFIED = " (unverified)"
-RULE_CONSTANTS = [10.0, 25.0, 1.5, 2.0, 5.0, 80.0]   # thresholds named in coded verdicts and action steps
+RULE_CONSTANTS = [10.0, 25.0, 1.5, 2.0, 5.0, 80.0, 14.0]   # thresholds and windows named in coded verdicts and steps
 _CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]")
 
 
@@ -882,7 +882,7 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                 add(f"Switch carrier for these deliveries: from {main[0]} to an alternative carrier ({names})",
                     f"On these orders {main[0]} was {main[5]}% late. From the same warehouses in the same period: "
                     f"{perf}. Move the lane (or trial it first) and keep the transit monitoring in place.",
-                    [stages["transit"]["task_id"]], ["A.A2"], main[4],
+                    [stages["transit"]["task_id"]], ["A.A2"], None,   # how many it would protect isn't computable
                     ["changes a carrier contract or allocation"])
         except Exception as e:
             ctx.tracer.event("agent_error", agent, error=f"carrier options failed: {e}"[:200])
@@ -1130,6 +1130,13 @@ def _no_rise(state: dict, measure: dict) -> bool:
         return False
 
 
+def _no_shortage(state: dict, measure: dict) -> bool:
+    """A supply question whose scope has no order on backorder (the question's premise doesn't hold)."""
+    ev = state["evidence"].get((measure.get("evidence_ids") or [""])[0], {})
+    rows = {str(r[0]): r[1] for r in ev.get("rows", []) if r}
+    return rows.get("orders with a backordered line") == 0
+
+
 def report_battery(state: dict, ctx: Ctx) -> dict:
     """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer."""
     agent = "Reporter"
@@ -1212,23 +1219,52 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
             causes = [g for g in causes if g is not f]
             also.setdefault(main["task_id"], []).append(("Against places at a similar distance", f))
 
+    # named conditions the battery can't test as dated events (long-running, e.g. a year of cargo theft)
+    untested = ""
+    ctx_ids = state.get("analysis", {}).get("context_events") or []
+    if ctx_ids and not event_f and not supply:
+        try:
+            evs = engine_for(ctx).events()
+            names = [str(evs[evs["event_id"] == x].iloc[0]["name"]) for x in ctx_ids if (evs["event_id"] == x).any()]
+            names = [n[0].lower() + n[1:] if len(n) > 1 and n[1].islower() else n for n in names]
+        except Exception:
+            names = []
+        if names:
+            untested = (f"The data can't test {' or '.join(names)} directly: it is a long-running condition, not a "
+                        "dated event. What the data shows:")
+
     # headline, in code
     if event_f:
+        # a question about a dated event: say yes or no, and how much (or why not), from the event test's own numbers
         e = event_f[0]
         st = v[e["task_id"]]["status"]
         name = e["statement"].split(" (")[0]
-        headline = (f"{'Yes' if st == 'confirmed' else 'No'}: {name} "
-                    f"{'delayed deliveries' if st == 'confirmed' else 'did not cause the delays'}. {v[e['task_id']]['reason']}")
+        es = state["evidence"].get((e.get("evidence_ids") or [""])[0], {}).get("summary", {})
+        if st == "confirmed":
+            headline = (f"Yes: {name} delayed deliveries. For parcels handed over during it, carrier transit rose "
+                        f"{es.get('transit_jump_vs_trend_days')} days and the late rate "
+                        f"{es.get('late_jump_vs_trend_pp')} points against the trend before it.")
+        elif es.get("elevated_before"):
+            headline = (f"No: {name} did not cause the delays. They were already there: carrier transit was "
+                        f"{es.get('pre_event_transit_days')} days just before it, against a normal "
+                        f"{es.get('normal_transit_days')}.")
+        else:
+            headline = f"No: {name} did not cause the delays. {v[e['task_id']]['reason']}"
     elif causes:
         top = (", and " if held_by else " and ").join(cause_txt(f) for f in causes[:2])
         headline = f"Main causes: {top}."
         if measure:
             headline = measure["claim"].split(":")[0] + f". {headline}"
+    elif measure and supply and not causes and _no_shortage(state, measure):
+        headline = ("There is no shortage to explain: " + measure["claim"].split(":")[0][0].lower()
+                    + measure["claim"].split(":")[0][1:] + ".")
     elif measure and not supply and _no_rise(state, measure):
         headline = "It did not rise: " + measure["claim"].split(":")[0][0].lower() + measure["claim"].split(":")[0][1:] + \
             ". There is no rise to explain."
     else:
         headline = "No cause could be confirmed from the data."
+    if untested:
+        headline = f"{untested} {headline}"
 
     lines = ["## Root causes"]
     if causes:
@@ -1287,7 +1323,18 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
               "their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
     body = "\n".join(lines)
 
-    facts = "\n".join([f"HEADLINE: {headline}"] + ([f"SYMPTOM: {measure['claim']} {_cites(measure)}"] if measure else [])
+    if event_f:
+        # the event test (by the week parcels were handed over) answers the question; the late rate of orders placed
+        # in the event's window is context, and can even fall while the event delays parcels already in transit
+        e = event_f[0]
+        lead = [f"EVENT TEST (answers the question): {e['statement']}: {e['claim']} {_cites(e)}"]
+        sym = ([f"CONTEXT, orders placed during the window (by purchase date, not the event test): {measure['claim']} "
+                f"{_cites(measure)}"] if measure else [])
+    else:
+        lead, sym = [], ([f"SYMPTOM: {measure['claim']} {_cites(measure)}"] if measure else [])
+    if untested:
+        lead.append(f"NOTE: {untested} The answer should say so first.")
+    facts = "\n".join([f"HEADLINE: {headline}"] + lead + sym
                       + [f"CAUSE: {f['statement']}{share_txt(f)}: {f['claim']} {_cites(f)}"
                          + (f" WHY: {held_by[f['task_id']]['claim']} {_cites(held_by[f['task_id']])}"
                             if f["task_id"] in held_by else "") for f in causes[:3]]
@@ -1304,7 +1351,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         answer = (headline + (f" {_cites(measure)}" if measure else "")
                   + " (Written by code: the language model was unavailable for this summary.)")
     md = f"## Answer\n{answer}\n\n{body}"
-    rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS]
+    # the answer may repeat rule thresholds and the numbers in the code-written ruled-out reasons it was given
+    rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS] + \
+        [n.value for f in ruled[:5] for n in numbers_in(str(v[f["task_id"]].get("reason", "")))]
     threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
     md, headline, brief_check = check_brief(md, headline, state, acts, ctx, answer_rules=rules,
                                             policy=[float(threshold)] if threshold else None)
