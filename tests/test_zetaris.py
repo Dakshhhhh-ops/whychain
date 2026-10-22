@@ -44,3 +44,49 @@ def test_registration_keeps_leading_zero_codes_as_text(tmp_path):
     plain.write_text("order_id,price,qty\nx,0.50,3\ny,10.0,0\n", encoding="utf-8")
     assert reg.infer_types(zips) is False   # 01310 would become 1310
     assert reg.infer_types(plain) is True   # 0.50 and 0 are ordinary numbers
+
+
+def _jwt(lifetime: int) -> str:
+    import base64
+    import json
+
+    def part(d):
+        return base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+    return f"{part({'alg': 'none'})}.{part({'iat': 1_000_000, 'exp': 1_000_000 + lifetime})}.sig"
+
+
+def test_a_login_token_is_renewed_before_it_expires_not_after_30_minutes():
+    from whychain.harness.zetaris import TOKEN_TTL_S, is_auth_failure, token_expiry
+
+    assert token_expiry(_jwt(900), 5_000.0) == 5_900.0      # the platform's 15-minute tokens, on this machine's clock
+    assert token_expiry("not-a-jwt", 5_000.0) == 5_000.0 + TOKEN_TTL_S
+    # the local platform answers an expired or invalid token with HTTP 400 and a bare message; SQL errors say more
+    assert is_auth_failure(400, "Bad Request") and is_auth_failure(400, "Not Allowed") and is_auth_failure(401, "")
+    assert not is_auth_failure(400, "[TABLE_OR_VIEW_NOT_FOUND] The table or view `x`.`y` cannot be found.")
+    assert not is_auth_failure(500, "Bad Request")
+
+
+def test_an_expired_token_is_replaced_and_the_query_retried(monkeypatch):
+    import httpx
+
+    from whychain.harness import zetaris as zmod
+
+    monkeypatch.setenv("ZETARIS_USER", "tester")
+    monkeypatch.setenv("ZETARIS_PASSWORD", "pw")
+    monkeypatch.setenv("ZETARIS_URL", "http://zetaris.test")
+    monkeypatch.setattr(zmod, "_TOKENS", {})
+    logins, tokens = [], iter([_jwt(900) + "1", _jwt(900) + "2"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/auth/login":
+            logins.append(1)
+            return httpx.Response(200, json={"idToken": next(tokens), "orgId": 7})
+        if request.headers["Authorization"].endswith("1"):          # the first token has been invalidated
+            return httpx.Response(400, json={"msg": "Bad Request"})
+        return httpx.Response(200, json={"headers": ["ok"], "data": [["1"]]})
+
+    z = zmod.ZetarisHarness(dataset="olist")
+    assert z.mode == "local"
+    z.client = httpx.Client(transport=httpx.MockTransport(handler))
+    res = z.query("SELECT 1 AS ok")
+    assert res.ok and res.rows == [[1]] and len(logins) == 2

@@ -13,6 +13,8 @@ names agents use (signals.port_status) to the registered ones (kaveri_signals.po
 """
 from __future__ import annotations
 
+import base64
+import json
 import re
 import threading
 import time
@@ -29,8 +31,11 @@ from whychain.harness.base import Column, QueryResult, TableInfo, Timer, check_r
 
 PREFIX = {"olist": "", "kaveri": "kaveri_"}   # Zetaris database name = prefix + source name
 CATALOG_TTL_S = 600
-TOKEN_TTL_S = 1800
-_TOKENS: dict[tuple[str, str], tuple[str, str, float]] = {}   # (url, user) -> (token, org, issued): one login per process
+TOKEN_TTL_S = 600        # only when a token's own lifetime can't be read (the local platform issues 15-minute tokens)
+TOKEN_MARGIN_S = 120     # log in again this long before a token expires
+# The local platform answers a request with an expired or invalid token with HTTP 400 and a bare message, not 401.
+AUTH_FAILURES = {"bad request", "not allowed", "unauthorized", "forbidden"}
+_TOKENS: dict[tuple[str, str], tuple[str, str, float, float]] = {}   # (url, user) -> (token, org, issued, expires)
 _TOKEN_LOCK = threading.Lock()
 _CATALOGS: dict[tuple[str, str], tuple[float, list[TableInfo]]] = {}
 
@@ -52,6 +57,29 @@ def zetaris_name(dataset_key: str, source: str) -> str:
     return f"{PREFIX.get(dataset_key, dataset_key + '_')}{source}"
 
 
+def token_expiry(token: str, issued: float) -> float:
+    """When a login token expires, on this machine's clock: the token's own lifetime (JWT exp - iat) after it was
+    issued, else TOKEN_TTL_S."""
+    try:
+        part = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        lifetime = float(claims["exp"]) - float(claims.get("iat", claims["exp"] - TOKEN_TTL_S))
+        return issued + max(60.0, lifetime)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return issued + TOKEN_TTL_S
+
+
+def is_auth_failure(status: int, msg: str) -> bool:
+    return status in (401, 403) or (status == 400 and str(msg).strip().lower() in AUTH_FAILURES)
+
+
+def _msg(r: httpx.Response) -> str:
+    try:
+        return (r.json() or {}).get("msg") or r.text
+    except (ValueError, AttributeError):
+        return r.text
+
+
 class ZetarisHarness:
     name = "zetaris"
     dialect = "spark"
@@ -65,7 +93,7 @@ class ZetarisHarness:
         self.client = httpx.Client(timeout=timeout)
         self._token: str | None = None
         self._org: str | None = SETTINGS.zetaris_org_id or None
-        self._token_at = 0.0
+        self._token_exp = 0.0
         self._lock = threading.Lock()
         self._catalog: list[TableInfo] | None = None
         self._map = {s: zetaris_name(self.dataset.key, s) for s in self.dataset.sources}
@@ -73,12 +101,13 @@ class ZetarisHarness:
     # ------------------------------------------------------------------ transport
     def _login(self, fresh: bool = False) -> None:
         """Log in to the local platform, sharing the token across harness instances (every investigation makes a new
-        harness). A failed login (5xx or a dropped connection) is retried twice with a short back-off."""
+        harness) until shortly before it expires. A failed login (5xx or a dropped connection) is retried twice with
+        a short back-off."""
         key = (self.base, env("ZETARIS_USER"))
         with _TOKEN_LOCK:
             hit = None if fresh else _TOKENS.get(key)
-            if hit and time.time() - hit[2] < TOKEN_TTL_S:
-                self._token, self._org, self._token_at = hit
+            if hit and time.time() < hit[3] - TOKEN_MARGIN_S:
+                self._token, self._org, _, self._token_exp = hit
                 return
             last = ""
             for attempt in range(3):
@@ -86,9 +115,10 @@ class ZetarisHarness:
                     r = self.client.post(f"{self.base}/api/auth/login", timeout=60,
                                          json={"username": env("ZETARIS_USER"), "password": env("ZETARIS_PASSWORD")})
                     if r.status_code < 400:
-                        body = r.json()
-                        self._token, self._org, self._token_at = body["idToken"], str(body["orgId"]), time.time()
-                        _TOKENS[key] = (self._token, self._org, self._token_at)
+                        body, now = r.json(), time.time()
+                        self._token, self._org = body["idToken"], str(body["orgId"])
+                        self._token_exp = token_expiry(self._token, now)
+                        _TOKENS[key] = (self._token, self._org, now, self._token_exp)
                         return
                     last = f"HTTP {r.status_code}"
                     if r.status_code < 500:
@@ -102,7 +132,7 @@ class ZetarisHarness:
         h = {"X-Request-ID": str(uuid.uuid4()), "Content-Type": "application/json"}
         if self.mode == "local":
             with self._lock:
-                if not self._token or time.time() - self._token_at > 1800:
+                if not self._token or time.time() > self._token_exp - TOKEN_MARGIN_S:
                     self._login()
             h["Authorization"] = f"Bearer {self._token}"
         else:
@@ -118,17 +148,14 @@ class ZetarisHarness:
             url = f"{self.base}/sql-editor/sqls/run"
             body = {"queryId": str(uuid.uuid4()), "sql": sql, "source": "SqlEditor", "limit": limit}
         r = self.client.post(url, headers=self._headers(), json=body)
-        if r.status_code == 401 and self.mode == "local":  # token expired: log in again once
+        if self.mode == "local" and is_auth_failure(r.status_code, _msg(r)):
+            # the token expired or was invalidated (e.g. Zetaris restarted): log in again once
             self._token = None
             with self._lock:
                 self._login(fresh=True)
             r = self.client.post(url, headers=self._headers(), json=body)
         if r.status_code >= 400:
-            try:
-                msg = r.json().get("msg") or r.text
-            except ValueError:
-                msg = r.text
-            raise ZetarisError(f"HTTP {r.status_code}: {str(msg)[:400]}")
+            raise ZetarisError(f"HTTP {r.status_code}: {str(_msg(r))[:400]}")
         return r.json()
 
     def _run(self, sql: str, limit: int) -> tuple[list[str], list[list]]:
