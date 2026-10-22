@@ -66,6 +66,10 @@ Work like an analyst: measure, compare with a baseline, look for counter-evidenc
 Pick a NORMAL baseline: look at the series over a longer window first (one GROUP BY month/week query), and
 don't treat a neighbouring period as normal if it is itself abnormal. Break changes down by segment (region,
 seller, category, process stage) to find where they are concentrated.
+For an event with dates (a strike, holiday, storm, promotion), work at WEEKLY grain and group orders by when they
+were exposed to it, e.g. the week the parcel was handed to the carrier, not only by purchase month. Compare actual
+times (e.g. carrier transit days) as well as lateness against the promise: if promises were lengthened during the
+event, a real delay can be hidden in the late rate.
 
 Each turn, reply with ONE JSON object (keep "thought" to one or two sentences), either
   {"thought": "what you'll check next and why", "action": "query", "sql": "<one Spark SQL SELECT>"}
@@ -118,7 +122,9 @@ Set "is_cause" true only for a confirmed finding that IS a cause of the symptom 
 itself, and not a check that rules something out). A measured mechanism that explains part of the symptom IS a cause.
 Then judge the whole picture: do the confirmed causes together explain the size of the symptom?
 Watch for: a baseline that is itself abnormal (compare with a normal period), counts inflated by duplicates, claims whose numbers are not in the evidence, evidence that failed
-re-verification, correlation presented as cause, and a single cause stretched to explain everything.
+re-verification, correlation presented as cause, and a single cause stretched to explain everything. Before accepting
+"no effect", check the effect wasn't averaged away: a monthly or very broad window around a short event, or lateness
+measured against promises that were themselves changed during the event.
 
 Reply with ONE JSON object:
 {

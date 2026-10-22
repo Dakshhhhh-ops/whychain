@@ -79,8 +79,10 @@
 - id: O3-truckers-strike-2018
   dataset: olist
   question: Did the May 2018 truckers' strike delay deliveries, and by how much?
-  # orders placed 14-20 May (in transit when highways were blocked 21 May-1 Jun) were 16% late vs ~4-5%;
-  # orders placed during the strike week fell by about half
+  # parcels handed to the carrier in the strike week (21-27 May) took 10.5 days vs ~8 and were 15.5% late vs ~4%;
+  # orders placed 14-20 May (already in the pipeline) were 16% late. Orders placed during the strike fell by about
+  # half and got much longer promises (about 20 -> 37 days), so late-vs-promise for them looks normal: the effect
+  # is hidden unless orders are grouped by when they were exposed (weekly, by carrier hand-over date).
   min_groups: 2
   must_find:
     - [strike, trucker, caminhoneiro]
