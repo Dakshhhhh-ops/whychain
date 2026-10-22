@@ -1,0 +1,52 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install WhyChain
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # the real Olist data is downloaded and rebuilt (CC BY-NC-SA 4.0: not stored in the repository); cached
+      - name: Cache the Olist data
+        uses: actions/cache@v4
+        with:
+          path: data/olist
+          key: olist-${{ hashFiles('datagen/olist.py') }}
+
+      - name: Build the data
+        run: |
+          python -m datagen.generate
+          if [ ! -f data/olist/generated/manifest.json ]; then python -m datagen.olist --no-postgres; fi
+
+      # no API keys and no Postgres: models are scripted, the order system is read from its CSV copy
+      - name: Python tests
+        run: python -m pytest -q tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend type check and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
