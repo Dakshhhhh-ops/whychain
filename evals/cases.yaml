@@ -1,6 +1,9 @@
-# Ground truth for the planted scenarios. The agents never see this file.
-# Each group in must_find is a list of synonyms; a group matches if any synonym appears in a
-# CONFIRMED cause (statement + claim) or the headline. min_groups defaults to all groups.
+# Ground truth. The agents never see this file.
+# must_find: groups of synonyms; a group matches if any synonym appears, as a whole word or word stem, in a CONFIRMED
+#   cause (hypothesis + claim) or the headline. min_groups defaults to all groups.
+# distractors: groups that must NOT appear in the hypothesis statement of any confirmed cause.
+# headline_must_not: regexes that must not match the headline (e.g. blaming a red herring).
+# held_out: true for real-data questions added after the prompts were last changed; prompts are not tuned on them.
 
 - id: A-pune-at-risk
   question: Why are so many Pune orders at risk of missing their promised date next week?
@@ -66,6 +69,12 @@
   must_find:
     - [transit, carrier]
     - [rio, rj, northeast, nordeste, ceará, maranhão]
+  # the strike was 12-13 Mar but lateness was already high before it. "correios" alone is not a distractor: Correios
+  # is the carrier, so a correct transit cause names it.
+  distractors:
+    - [strike, greve]
+  headline_must_not:
+    - "(due to|because of|caused by|triggered by|driven by|after)\\s+(the\\s+)?(correios\\s+)?(national\\s+)?(postal\\s+)?strike"
 
 - id: O2-black-friday-2017
   dataset: olist
@@ -75,6 +84,8 @@
   must_find:
     - [volume, surge, black friday, peak, more orders, order spike]
     - [transit, carrier]
+  distractors:
+    - [data quality, data-quality, duplicate, artefact, artifact]
 
 - id: O3-truckers-strike-2018
   dataset: olist
@@ -87,3 +98,54 @@
   must_find:
     - [strike, trucker, caminhoneiro]
     - [transit, in-transit, in flight, carrier, week before, 14 may, mid-may]
+  distractors:
+    - [volume surge, demand surge, order surge]
+  headline_must_not:
+    - "^\\s*no\\b"
+    - "\\b(did not|didn't|had no|no)\\s+(measurabl\\w*\\s+|significant\\s+|material\\s+)?(delay|effect|impact)\\b"
+
+# --- Held-out real-data questions (added 22 Oct after the last prompt change; prompts are not tuned on them).
+# Ground truth computed with SQL on the raw data BEFORE any agent ran these questions.
+
+- id: H1-carnival-2018
+  dataset: olist
+  held_out: true
+  question: Did Carnival 2018 (12-14 February) delay deliveries?
+  # Carnival week: carrier hand-overs dipped ~20% (1,338 vs ~1,700/week) but transit did not jump (12.3 days vs 12.6
+  # the week before). Transit had been rising since late January (10.1 -> 12.6) and kept rising to 15.6 in early
+  # March. Carnival is not the explanation for February's lateness; the carrier slowdown is a longer trend.
+  min_groups: 1
+  must_find:
+    - [transit, carrier]
+  distractors:
+    - [carnival, carnaval, holiday]
+  headline_must_not:
+    - "(due to|because of|caused by|triggered by|driven by)\\s+(the\\s+)?(carnival|carnaval|holiday)"
+    - "^yes\\b"
+
+- id: H2-northeast-delays
+  dataset: olist
+  held_out: true
+  question: Why are deliveries to Northeast states like Maranhão and Ceará late so often?
+  # Northeast: 12.7% late vs 6.2% elsewhere; carrier transit 16.6 vs 8.6 days; promises 30.7 vs 23.0 days (the extra
+  # promise covers about the extra transit, with no margin for its variability); 71% of items ship from SP sellers and
+  # 99% of Northeast orders cross state lines. Seller hand-over is the same (3.4 vs 3.2 days): a red herring.
+  min_groups: 2
+  must_find:
+    - [transit, distance, long-haul, far, interstate]
+    - [são paulo, sao paulo, sp, southeast, sudeste, out-of-state, other state, other states, seller location, sellers located]
+  distractors:
+    - [hand-over, handover, hand over, shipping_limit, shipping limit, seller delay, sellers delay, seller-side]
+
+- id: H3-rio-security
+  dataset: olist
+  held_out: true
+  question: Did cargo theft in Rio de Janeiro slow deliveries there?
+  # RJ: 12.1% late vs 4.6% (MG) and 4.0% (PR), states a similar distance from the SP sellers; transit 12.0 vs 8.8 days;
+  # worse in nearly every month. Consistent with the documented security problems (record cargo theft 2017,
+  # restricted-delivery areas, a Correios surcharge citing violence), but the order data cannot prove theft is the
+  # cause. A good answer compares RJ with similar-distance states and says what the data can't show.
+  min_groups: 2
+  must_find:
+    - [transit, slower, longer, late]
+    - [mg, minas, pr, paraná, parana, similar distance, comparable, neighbour, neighbor, other southeast, espírito, espirito]

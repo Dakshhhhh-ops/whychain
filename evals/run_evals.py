@@ -42,13 +42,19 @@ def score(case: dict, res: dict) -> dict:
     groups = case["must_find"]
     hit = [matches(found_text, g) for g in groups]
     need = case.get("min_groups", len(groups))
-    distractor_confirmed = any(matches(cause_text, g) for g in case.get("distractors", []))
+    # a red herring counts only if a confirmed cause's HYPOTHESIS names it (a claim may mention it to rule it out),
+    # or the headline blames it
+    statements = " ".join(f["statement"] for f in causes).lower()
+    distractor_confirmed = any(matches(statements, g) for g in case.get("distractors") or [])
+    headline = str(res.get("headline", ""))
+    blamed = [rx for rx in case.get("headline_must_not") or [] if re.search(rx, headline, re.I)]
+    herring_checked = bool(case.get("distractors") or case.get("headline_must_not"))
     actions_text = " ".join(f"{a.get('title', '')} {a.get('steps', '')}" for a in res.get("actions", [])).lower()
     expected = case.get("expected_actions") or []
     action_ok = all(matches(actions_text, g) for g in expected) if expected else None
     rejected = [f["task_id"] for f in res.get("findings", []) if v.get(f["task_id"], {}).get("status") == "rejected"]
     return {"root_cause": sum(hit) >= need, "groups_hit": f"{sum(hit)}/{len(groups)}",
-            "red_herring_avoided": not distractor_confirmed, "action_ok": action_ok, "rejected_tasks": rejected,
+            "red_herring_avoided": (not distractor_confirmed and not blamed) if herring_checked else None, "action_ok": action_ok, "rejected_tasks": rejected,
             "rounds": res.get("round"), "tasks": len(res.get("tasks", [])),
             "evidence": len(res.get("evidence", {})), "model_calls": res.get("llm", {}).get("calls"),
             "fallbacks": res.get("llm", {}).get("fallbacks"), "status": res.get("status"),
@@ -71,22 +77,26 @@ def main() -> None:
         t0 = time.time()
         res = investigate(c["question"], args.harness, dataset=c.get("dataset", "kaveri"))
         s = score(c, res)
-        s.update(id=c["id"], dataset=c.get("dataset", "kaveri"), run_id=res["run_id"], seconds=round(time.time() - t0), harness=res.get("harness"),
+        s.update(id=c["id"], dataset=c.get("dataset", "kaveri"), held_out=bool(c.get("held_out")), run_id=res["run_id"], seconds=round(time.time() - t0), harness=res.get("harness"),
                  providers=res.get("llm", {}).get("by_provider"))
         rows.append(s)
         print(f"{c['id']:<20} cause={'PASS' if s['root_cause'] else 'FAIL'} ({s['groups_hit']}) "
               f"herring_avoided={s['red_herring_avoided']} action={s['action_ok']} rounds={s['rounds']} "
               f"{s['seconds']}s  {s['headline'][:80]}")
     (HERE / "results.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
-    md = ["| Case | Dataset | Root cause found | Red herring avoided | Right action | Rounds | Evidence | Model calls | Time | Run |",
-          "|---|---|---|---|---|---|---|---|---|---|"]
+    md = ["| Case | Dataset | Held out | Root cause found | Red herring avoided | Right action | Rounds | Evidence | Model calls | Time | Run |",
+          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for s in rows:
-        md.append(f"| {s['id']} | {s['dataset']} | {'✅' if s['root_cause'] else '❌'} {s['groups_hit']} | "
-                  f"{'✅' if s['red_herring_avoided'] else '❌'} | {'—' if s['action_ok'] is None else '✅' if s['action_ok'] else '❌'} | {s['rounds']} | "
+        md.append(f"| {s['id']} | {s['dataset']} | {'yes' if s['held_out'] else ''} | {'✅' if s['root_cause'] else '❌'} {s['groups_hit']} | "
+                  f"{'—' if s['red_herring_avoided'] is None else '✅' if s['red_herring_avoided'] else '❌'} | {'—' if s['action_ok'] is None else '✅' if s['action_ok'] else '❌'} | {s['rounds']} | "
                   f"{s['evidence']} | {s['model_calls']} | {s['seconds']}s | `{s['run_id']}` |")
     n = len(rows) or 1
+    held = [r for r in rows if r["held_out"]]
+    if held:
+        md.append(f"\nHeld-out questions: root cause found in {sum(r['root_cause'] for r in held)}/{len(held)}.")
     md.append(f"\nRoot cause found in {sum(r['root_cause'] for r in rows)}/{n} cases; red herring avoided in "
-              f"{sum(r['red_herring_avoided'] for r in rows)}/{n}; right action in "
+              f"{sum(bool(r['red_herring_avoided']) for r in rows)}/{sum(r['red_herring_avoided'] is not None for r in rows)} "
+              f"cases that define one; right action in "
               f"{sum(bool(r['action_ok']) for r in rows)}/{sum(r['action_ok'] is not None for r in rows)} cases that have one.")
     (HERE / "results.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
