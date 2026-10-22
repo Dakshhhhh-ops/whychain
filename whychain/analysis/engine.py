@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
@@ -74,6 +75,36 @@ class Scope:
 
 _LOCK = threading.Lock()
 
+# The tables the engines pull through the data harness (the order-level facts, reviews, events, stock, order lines),
+# shared by all runs in this process for TABLE_TTL_S. Pulling Olist's facts and reviews through Zetaris takes about a
+# minute; with the tables kept, a question's computed tests take seconds. Every run gets its own copy.
+TABLE_TTL_S = 900
+_TABLES: dict[tuple, tuple[float, pd.DataFrame]] = {}
+_TABLES_LOCK = threading.Lock()
+
+
+def shared_table(harness, sql: str, limit: int = 500_000) -> pd.DataFrame:
+    """The result of `sql` through `harness`, from the shared cache if it was pulled in the last TABLE_TTL_S seconds
+    through the same kind of harness for the same dataset."""
+    if not getattr(harness, "shared_tables", False):   # only harnesses over a dataset's fixed sources opt in
+        r = harness.query(sql, limit=limit)
+        if not r.ok:
+            raise RuntimeError(f"fact query failed: {r.error}")
+        return pd.DataFrame(r.rows, columns=r.columns)
+    key = (getattr(harness, "name", ""), getattr(getattr(harness, "dataset", None), "key", ""),
+           str(getattr(harness, "as_of", "")), sql, limit)
+    with _TABLES_LOCK:
+        hit = _TABLES.get(key)
+    if hit and time.time() - hit[0] < TABLE_TTL_S:
+        return hit[1].copy()
+    r = harness.query(sql, limit=limit)
+    if not r.ok:
+        raise RuntimeError(f"fact query failed: {r.error}")
+    df = pd.DataFrame(r.rows, columns=r.columns)
+    with _TABLES_LOCK:
+        _TABLES[key] = (time.time(), df)
+    return df.copy()
+
 
 def get_engine(harness) -> "Engine | None":
     ds = getattr(harness, "dataset", None)
@@ -111,10 +142,7 @@ class Engine:
             return self._facts
 
     def _query_df(self, sql: str, limit: int = 500_000) -> pd.DataFrame:
-        r = self.h.query(sql, limit=limit)
-        if not r.ok:
-            raise RuntimeError(f"fact query failed: {r.error}")
-        return pd.DataFrame(r.rows, columns=r.columns)
+        return shared_table(self.h, sql, limit)
 
     def _load(self) -> pd.DataFrame:
         df = self._query_df(self.m.sql)

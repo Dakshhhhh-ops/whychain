@@ -8,6 +8,7 @@ import { api, type Action, type RunResult } from "../lib/api";
 import { money } from "../lib/dataset";
 import { CITATION } from "../lib/format";
 import { EvidenceChip } from "./Evidence";
+import { WhyChain } from "./WhyChain";
 import { Badge, Button, Card, CardHeader } from "./ui";
 
 export function Markdown({ text, onOpen, known }: { text: string; onOpen: (id: string) => void; known: Record<string, unknown> }) {
@@ -243,6 +244,7 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
             <Markdown text={parts.summary} onOpen={onOpen} known={known} />
           </div>
         )}
+        <WhyChain result={result} />
         <div className="border-t border-slate-100 px-6 py-5">
           <Markdown text={parts.main} onOpen={onOpen} known={known} />
           {parts.how && (

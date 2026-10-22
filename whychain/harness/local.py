@@ -28,6 +28,7 @@ def _jsonable(v):
 
 class LocalHarness:
     name = "local-duckdb"
+    shared_tables = True   # the analysis engines may share the tables pulled through it (whychain.analysis.engine)
     dialect = "spark"
 
     def __init__(self, dataset: str | Dataset | None = None, use_postgres: bool = True, data_dir: Path | None = None):

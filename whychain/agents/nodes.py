@@ -1200,6 +1200,40 @@ def _no_shortage(state: dict, measure: dict) -> bool:
     return rows.get("orders with a backordered line") == 0
 
 
+def why_chain(state: dict, ctx: Ctx, causes: list, held_by: dict, where: list, ruled: list, v: dict) -> None:
+    """Write the chain of 'why' to the Meterless World Model as relations: each confirmed cause of the symptom (with
+    its share), what explains a cause (a disrupted port, orders waiting for stock), where the problem sits, and what
+    was ruled out. The app draws the chain from the World Model. Only links the tests confirmed are written."""
+    symptom = {"type": "symptom", "name": str(state.get("symptom") or state["question"])[:160]}
+    analysis = state.get("analysis", {})
+    of = ("of the short units" if analysis.get("kind") == "supply" else
+          "of the gap" if (analysis.get("primary") or {}).get("mode") == "segment" else "of the rise")
+    rel = []
+    for f in causes:
+        node = {"type": "cause", "name": f["statement"][:160]}
+        sh = v[f["task_id"]].get("share_of_symptom")
+        share = sh if isinstance(sh, float) else None
+        rel.append({"from": node, "type": "causes", "to": symptom, "confidence": share,
+                    "attrs": {"share_of_symptom": share, "share_of": of, "why_chain": True}})
+        if f["task_id"] in held_by:
+            rel.append({"from": {"type": "cause", "name": held_by[f["task_id"]]["statement"][:160]}, "type": "explains",
+                        "to": node})
+    names = getattr(engine_for(ctx), "m", None)
+    place_names = getattr(names, "place_names", {}) or {}
+    dims = getattr(names, "dims", {}) or {}
+    for f in where:
+        summ = state["evidence"].get((f.get("evidence_ids") or [""])[0], {}).get("summary", {})
+        label = dims.get(summ.get("dimension"), summ.get("dimension") or "segment")
+        for x in (summ.get("concentrated_in") or [])[:3]:
+            nm = f"{x} ({place_names[x]})" if x in place_names else str(x)
+            rel.append({"from": symptom, "type": "concentrated_in", "to": {"type": "place", "name": f"{label}: {nm}"}})
+    for f in ruled[:8]:
+        rel.append({"from": {"type": "hypothesis", "name": f["statement"][:160]}, "type": "ruled_out_for",
+                    "to": symptom})
+    if rel:
+        ctx.tracer.event("why_chain", "Reporter", relations=rel)
+
+
 def _money(cur: str, v) -> str:
     return f"R$ {v:,.0f}" if cur == "BRL" else f"{cur} {v:,.0f}"
 
@@ -1458,6 +1492,8 @@ def report_battery(state: dict, ctx: Ctx, preliminary: bool = False) -> dict:
         "Nothing: there is no problem to fix." if why.startswith("Nothing to explain") else
         "No action could be sized from the data.")
     summary = f"- **What happened:** {what}\n- **Why:** {why}\n- **What to do:** {todo_txt}"
+    if not preliminary:
+        why_chain(state, ctx, causes, held_by, where, ruled, v)
     if preliminary:
         threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
         md_p, head_p, chk = check_brief(f"## Summary\n{summary}", headline, state, acts, None,

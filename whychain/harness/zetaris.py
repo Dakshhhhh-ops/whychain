@@ -82,6 +82,7 @@ def _msg(r: httpx.Response) -> str:
 
 class ZetarisHarness:
     name = "zetaris"
+    shared_tables = True   # the analysis engines may share the tables pulled through it (whychain.analysis.engine)
     dialect = "spark"
 
     def __init__(self, dataset: str | Dataset | None = None, timeout: float = 600.0):

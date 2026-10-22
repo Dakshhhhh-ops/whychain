@@ -301,3 +301,21 @@ def test_the_value_at_stake_is_the_late_orders_own_value_and_reviews():
     for row in pb.rows:
         avoided = row[5] - row[6]
         assert (row[vi] > 0) == (avoided > 0) and 0 <= row[li] <= avoided
+
+
+def test_runs_share_the_tables_pulled_through_the_harness():
+    """A second run on the same dataset reuses the fact table the first pulled (Olist's takes about a minute through
+    Zetaris), as its own copy. Harnesses that don't opt in (the synthetic one above) are always queried."""
+    from whychain.analysis import get_engine
+    from whychain.analysis.engine import _TABLES
+    from whychain.harness.local import LocalHarness
+
+    _TABLES.clear()
+    calls = []
+    h1, h2 = LocalHarness("kaveri"), LocalHarness("kaveri")
+    for h in (h1, h2):
+        h.query = (lambda orig: lambda sql, limit=200: (calls.append(sql), orig(sql, limit))[1])(h.query)
+    f1 = get_engine(h1).facts()
+    f2 = get_engine(h2).facts()
+    assert len(calls) == 1 and f1.equals(f2) and f1 is not f2
+    assert not getattr(FakeHarness([]), "shared_tables", False)

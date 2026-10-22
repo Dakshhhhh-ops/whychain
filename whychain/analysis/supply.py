@@ -28,7 +28,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from whychain.analysis.engine import Result, pct, r1
+from whychain.analysis.engine import Result, pct, r1, shared_table
 
 SUPPLY_SHARE = 0.25
 
@@ -76,10 +76,10 @@ class SupplyEngine:
     def _df(self, key: str, sql: str) -> pd.DataFrame:
         with self._lock:
             if key not in self._cache:
-                r = self.h.query(sql, limit=500_000)
-                if not r.ok:
-                    raise RuntimeError(f"{key} query failed: {r.error}")
-                self._cache[key] = pd.DataFrame(r.rows, columns=r.columns)
+                try:
+                    self._cache[key] = shared_table(self.h, sql)
+                except RuntimeError as e:
+                    raise RuntimeError(f"{key} query failed: {e}") from None
             return self._cache[key]
 
     def genuine_lines(self) -> pd.DataFrame:

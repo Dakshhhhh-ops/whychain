@@ -57,6 +57,9 @@ def main() -> None:
     else:
         print(f"  harness is {SETTINGS.harness!r}, not zetaris: nothing to warm there")
     if wait("web app", lambda: httpx.get(f"{APP}/api/status", timeout=60).status_code == 200):
+        for ds in ("olist", "kaveri"):   # the analysis tables, inside the app's own process
+            r = httpx.post(f"{APP}/api/warm?dataset={ds}", timeout=600)
+            print(f"  app analysis tables ({ds}): {r.json() if r.status_code == 200 else f'HTTP {r.status_code}'}")
         for ds in ("olist", "kaveri"):
             for page in ("overview", "sources", "regions" if ds == "olist" else None):
                 if page:

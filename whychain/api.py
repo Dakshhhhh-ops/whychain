@@ -382,6 +382,28 @@ def memory(limit: int = 200, dataset: str | None = None) -> dict:
     return {"status": m.status(), **out}
 
 
+@app.post("/api/warm")
+def warm(dataset: str | None = None) -> dict:
+    """Load a dataset's analysis tables into this process (scripts/warmup.py calls it), so the first question's
+    computed tests, and its preliminary answer, take seconds instead of a minute."""
+    from whychain.analysis import get_engine
+    from whychain.analysis.supply import get_supply_engine
+
+    h, _ = shared_harness(dataset)
+    t0 = time.time()
+    eng = get_engine(h)
+    rows = len(eng.facts()) if eng else 0
+    if eng is not None:
+        eng.reviews()
+        eng.events()
+        eng.stock_lines()
+    seng = get_supply_engine(h)
+    if seng is not None:
+        for load in (seng.lines, seng.pos, seng.suppliers, seng.ports, seng.policy, seng.warehouses):
+            load()
+    return {"dataset": get_dataset(dataset).key, "harness": h.name, "orders": rows, "seconds": round(time.time() - t0, 1)}
+
+
 @app.get("/api/overview")
 def get_overview(dataset: str | None = None) -> dict:
     key = get_dataset(dataset).key
