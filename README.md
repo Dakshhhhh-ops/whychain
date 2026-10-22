@@ -54,9 +54,18 @@ WhyChain splits the work between **code that computes** and **agents that plan, 
    - **actions** come from templates per confirmed cause, sized with computed tables (e.g. the promise buffer each state needs);
    - a model writes only the brief's short answer, from the computed facts. Every number in the brief is checked against its cells and marked "(unverified)" if it isn't there.
 
-A late-delivery investigation takes about a minute and about 5 model calls, and gives the same numbers on every run.
+A late-delivery investigation takes 5 to 9 model calls and 25 s to about 2 minutes on the local harness (1.5 to 4 minutes through Zetaris), and gives the same numbers on every run.
 
-**Other questions** (stock-outs, backlogs, orders at risk next week) use the **agent loop**:
+**Stock-outs, backlogs and orders at risk** (the simulated company) run on the **supply engine** (`whychain/analysis/supply.py`), built the same way. The warehouse, product category and time window come from the question, and the same checks always run on order lines, stock, purchase orders and the external signals:
+- **inbound supply**: purchase orders overdue against their expected date, by supplier and port of entry, set against the port status feed;
+- **demand**: units ordered against the reorder baseline, naming the promotions behind a spike;
+- **reorder policy**: reorder points below what current demand needs, and when they were last reviewed;
+- **duplicate orders**: orders repeated under the same external reference, judged by the units the extra copies order (they are counted once in every other check);
+- **order volume** against the weeks before.
+
+A check is a cause when it is involved in at least 25% of the short units. The shares overlap (one SKU can be both late inbound and under a stale reorder point), and a disrupted port is reported as the reason purchase orders are late, not as a separate cause. Actions come from the same numbers: the Optiagent stock-transfer plan, which purchase orders to chase, which reorder points to raise, which duplicates to cancel.
+
+**Any other question** uses the **agent loop**:
 - the Data Scout maps and join-tests the sources;
 - the Planner sets competing hypotheses;
 - Data Investigators write SQL;
@@ -71,18 +80,20 @@ Both paths write confirmed and ruled-out causes, with their provenance, to **Met
 ```mermaid
 flowchart LR
     Q[Question] --> M[Memory recall<br/>Meterless H-MEM]
-    M --> P{Late-delivery<br/>question?}
-    P -->|yes| B[Battery of tests<br/>from the question]
+    M --> P{Kind of<br/>question}
+    P -->|late deliveries| B[Battery of tests<br/>from the question]
+    P -->|stock, backlog,<br/>at risk| S[Supply checks<br/>inbound, demand, policy,<br/>duplicates, volume]
+    S --> V
     B --> AE[Analysis engine<br/>baseline, stages, segments,<br/>events, volume, data, text]
     B --> D[Doc Analyst<br/>verbatim quotes]
     AE --> V[Coded verdicts]
     D --> V
     V --> A1[Actions from templates<br/>+ promise buffers]
-    P -->|no| L[Planner -> SQL Investigators<br/>-> Evaluator, revise loop]
+    P -->|anything else| L[Planner -> SQL Investigators<br/>-> Evaluator, revise loop]
     L --> A2[Risk & Action<br/>+ Optiagent optimizer]
     A1 & A2 --> R[Brief: numbers checked<br/>against their cells]
     R --> W[Write memory +<br/>World Model graph]
-    AE & L -. SQL .-> Z[(Data harness<br/>Zetaris by design;<br/>local DuckDB today)]
+    AE & S & L -. Spark SQL .-> Z[(Zetaris<br/>local DuckDB as fallback)]
 ```
 
 ## Prescriptive layer: Optiagent (declared pre-existing component)
@@ -101,11 +112,11 @@ Optiagent builds the LP, solves it (OR-Tools GLOP), re-checks the plan against t
 
 ## Sponsor technology: designed role and actual status
 
-This table separates what the code is built to do from what has actually run. Every saved run so far used the **local DuckDB harness** and **NVIDIA NIM** only.
+This table separates what the code is built to do from what has actually run. Runs before 22 Oct 18:03 IST used the local DuckDB harness; runs since then go through the **local Zetaris platform**. Every model call so far has gone to **NVIDIA NIM**.
 
 | Sponsor | Designed role | Status today |
 |---|---|---|
-| **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py --dataset olist`), and agents write federated Spark SQL across them. | **Not yet connected.** The REST client in `whychain/harness/zetaris.py` has never talked to a live instance, and its response parser is a best guess at the format. Until it is connected, agents query the same table names through the local DuckDB harness (`WHYCHAIN_HARNESS=local`), which the UI labels "local-duckdb". |
+| **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py`), and agents write federated Spark SQL across them. | **Connected: the local Zetaris platform (the hackathon Docker bundle).** Both datasets are registered: the order systems through a Postgres JDBC datasource, the exports as Lightning file tables read in place (26 tables, every row count matching). The engine's fact query, the agents' SQL, the catalog the Data Scout maps and the dashboard all go through it. Not used: Zetaris Cloud (the client has a cloud mode, untested). DuckDB remains as the fallback. |
 | **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines unmodified. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** H-MEM's reference embedder is a hash-based mock, so similarity recall is weak; WhyChain filters recalled findings itself (see "Known limitations"). **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
 | **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
 | **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
@@ -140,14 +151,18 @@ python -m datagen.load_postgres
 # 4. Meterless engines bridge (separate terminal)
 cd meterless_bridge && npm install && npm start  # http://localhost:8787
 
-# 5. Zetaris: register the sources, then check them
-python scripts/register_zetaris.py               # prints the SQL; --apply runs it via REST
+# 5. Zetaris (the hackathon's local platform bundle, in its own folder):
+#    copy docs/zetaris-override.yml there as docker-compose.override.yml (it mounts WhyChain's data),
+#    set WHYCHAIN_DIR, docker compose up -d; put the admin login in WhyChain's .env (ZETARIS_USER/PASSWORD)
+python scripts/register_zetaris.py               # registers both datasets, then checks every table's row count
 
 # 6. Check everything
 python -m whychain.doctor
 ```
 
-With `WHYCHAIN_HARNESS=local`, the same sources and table names are served by DuckDB (ERP read live from Postgres). Agents write the same Spark SQL either way; it's translated with sqlglot. This exists for offline development and as a fallback if Zetaris is unreachable. **Every run so far has used it**, because Zetaris is not yet connected. The UI always shows which harness answered.
+With `WHYCHAIN_HARNESS=zetaris`, every query goes to Zetaris: Postgres through a JDBC datasource, the CSV and JSON exports as Lightning file tables read in place. With `WHYCHAIN_HARNESS=local` (or if Zetaris is unreachable), the same sources and table names are served by DuckDB, with the ERP read live from Postgres. Agents write the same Spark SQL either way; for DuckDB it's translated with sqlglot. The UI always shows which harness answered.
+
+How the two compare (`scripts/register_zetaris.py` and the checks behind this commit): every table has the same row count; the computed findings for all 11 eval questions are identical; agent-style queries (cross-source joins, date arithmetic) return the same rows. Zetaris takes 0.2 to 1.3 s per query where DuckDB takes milliseconds, and the first fact load of a session about 17 s instead of 8 s.
 
 ## Usage
 
@@ -243,8 +258,42 @@ Each pass ran all six questions on an empty memory, one after the other (`evals/
 - **Models used:** Nemotron 3.5 Super, with Nemotron 3 Ultra taking over when NVIDIA rate-limited it (column "Models used" in `evals/results.md`). The computed findings don't depend on which model answered.
 - **Scorer change, disclosed:** pass 1 was first scored with the earlier scorer, which counted only confirmed *causes*. O1 and H2 then scored 1/2, because "where the rise sits" (RJ / interstate shipping) is reported as a measurement. The scorer now also counts confirmed measurements; red herrings are still judged on causes only. The table uses the current scorer for both passes.
 - **Earlier architecture, for comparison:** 8 to 10 minutes and 50 to 70 model calls per question. The strike verdict on O1 flipped between runs, and O3 was answered wrongly.
+- Both passes above used the local DuckDB harness. The third pass, below, ran through Zetaris.
 
-### Simulated company (Kaveri), one pass, 22 Oct 16:25 to 17:08 IST
+### Real data (Olist) through Zetaris: third pass, 22 Oct 18:03 to 18:19 IST
+
+The same six questions and the same code, with `WHYCHAIN_HARNESS=zetaris`: every query, including the engine's fact query, went to the local Zetaris platform (`harness: zetaris` in each run's `result.json`), on an empty memory.
+
+| Case | | Result | Model calls | Time |
+|---|---|---|---|---|
+| O1 March 2018 spike | dev | ✅ 2/2, no red herring | 7 | 241 s |
+| O2 Black Friday 2017 | dev | ✅ 2/2, no red herring | 8 | 154 s |
+| O3 Truckers' strike 2018 | dev | ✅ 2/2, no red herring | 7 | 99 s |
+| H1 Carnival 2018 | held out | ✅ 1/1, no red herring | 6 | 150 s |
+| H2 Northeast delays | held out | ✅ 2/2, no red herring | 8 | 85 s |
+| H3 Rio security | held out | ✅ 2/2 (no red herring defined) | 7 | 139 s |
+
+- **Same answers as the local passes:** all 62 computed findings (verdict, cause share and claim) and all six headlines are identical to both earlier passes.
+- **Slower:** 85 to 241 s per question, against 25 to 140 s locally. Zetaris queries take 0.2 to 1.3 s each. O1 also rebuilt the data map once (about 80 s: Zetaris lists JSON columns in a different order, so the cached map didn't match), some NVIDIA calls timed out and were retried, and the test suite and comparison scripts were running on the same laptop during O1 to O3.
+- **Models used:** Nemotron 3.5 Super for 71 to 100% of calls per question, Nemotron 3 Ultra for the rest.
+
+### Simulated company (Kaveri) through Zetaris, with the supply engine: 22 Oct 18:32 to 18:39 IST
+
+The five Kaveri questions on commit `f10d80d`, every query through Zetaris, on an empty memory. A, C and D run on the supply engine; B and E are late-delivery questions and run on the analysis engine.
+
+| Case | Path | Root cause found | Red herring avoided | Right action | Model calls | Time | What the brief says |
+|---|---|---|---|---|---|---|---|
+| A Pune orders at risk | supply | ✅ 2/2 | ✅ | ✅ | 7 | 100 s | 23 of 29 orders due next week have a backordered line. Late Voltix (S-14) purchase orders, held at Chennai by the dock strike, are involved in 58.4% of the short units; demand spikes and stale reorder points also count. Actions: a proven-optimal transfer from Mumbai (4,414 units by truck, 621 by air, INR 125,921), chase the Voltix orders, raise reorder points. |
+| B Nashik late | engine | ✅ 2/2 | ✅ | ✅ | 6 | 66 s | 91.4% late against a normal 15.1%; carrier transit explains it, concentrated in carrier C02. Actions include switching from C02 to C01 or C03. |
+| C Mumbai earbuds | supply | ✅ 2/2 | ✅ | ✅ | 7 | 40 s | A demand spike on promotion DIWALI26 (up to 7.5x the baseline) and reorder points last reviewed in August. Late supply, the port strike and duplicates (4.4%) ruled out. Action: raise the reorder points. |
+| D Chennai backlog | supply | ✅ 1/1 | ✅ | ✅ | 6 | 103 s | 23 of 81 orders are extra EDI copies of earlier orders, ordering units equal to 72.7% of the shortage; genuine order volume did not rise. Action: cancel the copies and fix the EDI connector (needs approval). |
+| E On-time drop | engine | ✅ 2/3 | ✅ | ✅ | 8 | 86 s | Carrier transit (46.6% of the rise) and warehouse dispatch (21.9%), concentrated in Nashik. The documents name the Chennai port strike; this run's Document Analyst didn't mention the Diwali promotion, so the third group was missed (the engine finds that dispatch slowed, not why). |
+
+- **Against the earlier pass (below):** the three supply questions went from 0 of 3 found, 11 to 16 minutes and 49 to 86 model calls each, to 3 of 3 found in under two minutes with 6 or 7 calls.
+- **Disclosed:** this pass came after fixes made from reading an earlier supply-engine pass the same evening (18:18 to 18:27, also 5/5 found). That pass named 3 duplicate orders as a cause of the earbud stock-out, because duplicates had their own threshold; they are now judged like every other check (`f10d80d`). D's headline was reworded afterwards to say exactly what the 72.7% measures.
+- All Kaveri ground truth was planted by the author, so these are development cases, not held-out ones.
+
+### Before the supply engine: Kaveri, one pass, 22 Oct 16:25 to 17:08 IST (local harness)
 
 | Case | Path | Root cause found | Right action | Model calls | Time | Notes |
 |---|---|---|---|---|---|---|
@@ -254,7 +303,7 @@ Each pass ran all six questions on an empty memory, one after the other (`evals/
 | D Chennai backlog | agent loop | ❌ 0/1 | ❌ | 86 | 16 min | Missed the duplicate EDI orders. Earlier runs found them, but the prompts then contained the hint "duplicates"; with the hints removed, it doesn't. |
 | E On-time drop | engine | ✅ 3/3 | ✅ | 9 | 68 s | Transit (46.6%) and warehouse dispatch; the documents name the port strike and the promotion. |
 
-**Reading this honestly:** the engine path answers what, where and how much reliably, and a minute is enough. The agent loop, used for stock, backlog and risk questions, is slow (11 to 16 minutes, mostly NVIDIA rate limits) and found the planted cause in none of its three cases. A and B pass "found" partly through document findings, which the scorer counts since 17:11 IST. The stock-and-supply questions are the next thing to move onto computed tests.
+The agent loop, then used for stock, backlog and risk questions, was slow (11 to 16 minutes, mostly NVIDIA rate limits) and found the planted cause in none of its three cases. That is why those questions moved onto computed checks (the supply engine, above).
 
 ## Hackathon tracks
 
@@ -262,10 +311,10 @@ WhyChain is one product; this is how it maps to each track, with what is real to
 
 | Track | What WhyChain shows | Evidence | Gap |
 |---|---|---|---|
-| 1 Fragmented intelligence | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs. The Data Scout maps the sources and tests every join. | Join tests in every run; the engine's fact query joins five sources | Runs use the local DuckDB harness until Zetaris is connected (in progress) |
-| 2 The agent that explains why | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, and red herrings are ruled out with reasons. | Results above: 6/6 real-data cases twice, 62/62 findings identical | Stock and backlog questions (agent loop) are weak |
+| 1 Fragmented intelligence | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. The Data Scout maps the sources and tests every join. | Join tests in every run; the engine's fact query joins five sources in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
+| 2 The agent that explains why | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, and red herrings are ruled out with reasons. | Results above: 6/6 real-data questions in three passes (two local, one through Zetaris), 62/62 computed findings identical; 5/5 simulated-company questions found with the right action | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker; the engine finds which stage slowed, not always why (case E) |
 | 3 Reasoning architecture | Code computes and agents reason. Coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, and memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
-| Wildcard | An existing project, Optiagent, extended with Zetaris and Meterless. | Meterless H-MEM and World Model in every run | Zetaris integration not yet live |
+| Wildcard | An existing project, Optiagent, extended with Zetaris and Meterless. | Zetaris as the data path, Meterless H-MEM and World Model in every run | Meterless Nightshift (local model serving) not set up |
 | NVIDIA Nemotron prize | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
 
 Whether one project may be entered in several tracks is not stated on the public event page; the author is checking with the organizers.
@@ -306,9 +355,9 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 | Limitation | Where it stands |
 |---|---|
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
-| Zetaris, Nightshift and Grok have never run. | All runs used the local DuckDB harness and cloud NVIDIA NIM (see the sponsor table). Model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. |
-| Results vary from run to run (agent loop). | For late-delivery questions the computed findings are identical run to run (62/62 in two passes). The agent loop for stock questions still uses language models at temperature 0.2, so its answers can vary. |
-| Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
+| Nightshift and Grok have never run; Zetaris only locally. | Zetaris runs as the local Docker platform (Zetaris Cloud is untested). All model calls use cloud NVIDIA NIM, so model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. Zetaris queries take 0.2 to 1.3 s each where DuckDB takes milliseconds; the computed answers are identical. |
+| Results vary from run to run (agent loop). | Late-delivery and supply questions: the computed findings are identical run to run (62/62 across three Olist passes, local and Zetaris). Only the Document Analyst's reading and the short model-written answer vary. Questions that fit neither engine use the agent loop, which runs language models at temperature 0.2, so its answers can vary. |
+| Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded; the same holds for the supply checks. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
 | The engine's choices are judgement calls. | The 10% cause threshold, the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
 | Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
 | No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
@@ -332,7 +381,8 @@ frontend/          React + TypeScript + Tailwind web app (Vite)
 datagen/           company simulator, documents, Postgres loader
 evals/             ground-truth cases and scorer
 meterless_bridge/  Node service exposing Meterless H-MEM + World Model engines over HTTP
-scripts/           Zetaris source registration
+scripts/           Zetaris source registration and table-by-table check
+docs/              compose override that mounts WhyChain's data into the Zetaris bundle
 tests/             end-to-end wiring test with a scripted model
 ```
 
@@ -353,7 +403,7 @@ The repository was only created at 13:37 IST. So the first commits (`9b47209` to
   - the Kaveri simulator, its documents and Postgres loader;
   - the Olist loader (`datagen/olist.py`);
   - the 16 researched external events and 13 news briefs (`datagen/olist_events.json`).
-- Harness: the Zetaris REST client (never yet run against a live instance) and the local DuckDB harness with sqlglot translation.
+- Harness: a Zetaris REST client (never run against a live instance before the window; rewritten in the window for the local platform's API) and the local DuckDB harness with sqlglot translation.
 - The full agent graph: Memory, Data Scout, Planner, Investigators, Document Analyst, Evaluator with revise loop, Risk & Action, Reporter, and the Action Executor.
 - The LLM client: NVIDIA NIM / Nemotron, role-based fallback chains and retries.
 - The Optiagent integration (`whychain/optimize.py`, the `optimize` action).
@@ -375,4 +425,6 @@ Later commits:
 - the Regions view;
 - incomplete-run marking;
 - the weekly-exposure rule for dated events;
+- the analysis engine and the supply engine;
+- the connection to the local Zetaris platform;
 - everything addressing the review in "Known limitations".

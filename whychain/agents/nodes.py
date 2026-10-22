@@ -1030,8 +1030,12 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
 
     def share_txt(f):
         sh = v[f["task_id"]].get("share_of_symptom")
-        what = "of the short units" if supply else "of the rise"
-        return f" ({round(100 * sh, 1)}% {what})" if isinstance(sh, float) else ""
+        if not isinstance(sh, float):
+            return ""
+        if supply and tasks.get(f["task_id"], {}).get("tool") == "duplicates":
+            # not a share of the short units: the copies' own units, measured against the shortage
+            return f" (the extra copies order units equal to {round(100 * sh, 1)}% of the shortage)"
+        return f" ({round(100 * sh, 1)}% {'of the short units' if supply else 'of the rise'})"
 
     # A disrupted port is why inbound orders are late, not a second cause beside them: show one chain.
     held_by: dict[str, dict] = {}

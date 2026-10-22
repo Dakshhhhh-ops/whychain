@@ -34,7 +34,7 @@
 **Next, in order:**
 1. Free RAM: restart the laptop, then keep Chrome and other apps closed while working.
 2. Add `NVIDIA_API_KEY` and `XAI_API_KEY` to `.env`, run `python -m whychain.doctor`, then `python -m evals.run_evals`. Tune prompts on the failures.
-3. Zetaris: sign up, install locally (needs about 8 GB RAM for Docker, so it may need the AWS option), put the API key and org id in `.env`, then run `python scripts/register_zetaris.py --apply`.
+3. Zetaris: **done 22 Oct 18:01 IST.** The local Docker platform runs on this laptop; both datasets are registered with `python scripts/register_zetaris.py` (which also checks every table against the local copy), and `WHYCHAIN_HARNESS=zetaris`.
 4. Install Meterless Nightshift and put its proxy token in `.env`.
 6. Connect the GitHub repo (user will send the URL). No commits or pushes until then.
 
