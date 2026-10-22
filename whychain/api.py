@@ -386,17 +386,28 @@ def memory(limit: int = 200, dataset: str | None = None) -> dict:
 def warm(dataset: str | None = None) -> dict:
     """Load a dataset's analysis tables into this process (scripts/warmup.py calls it), so the first question's
     computed tests, and its preliminary answer, take seconds instead of a minute."""
+    import pandas as pd
+
     from whychain.analysis import get_engine
     from whychain.analysis.supply import get_supply_engine
 
     h, _ = shared_harness(dataset)
     t0 = time.time()
+    h.catalog()   # every investigation starts by reading it
     eng = get_engine(h)
     rows = len(eng.facts()) if eng else 0
     if eng is not None:
-        eng.reviews()
+        eng.order_stars()
         eng.events()
         eng.stock_lines()
+        if eng.m.reviews_sql:
+            from whychain.analysis.battery import build_scope
+            spec = {"mode": "time", "label": "warm-up", "start": str(eng.facts()["purchase"].max().date()),
+                    "end": str((eng.facts()["purchase"].max() + pd.Timedelta(days=1)).date())}
+            try:
+                eng.text(build_scope(eng, spec))   # builds the shared review text
+            except Exception:
+                pass
     seng = get_supply_engine(h)
     if seng is not None:
         for load in (seng.lines, seng.pos, seng.suppliers, seng.ports, seng.policy, seng.warehouses):

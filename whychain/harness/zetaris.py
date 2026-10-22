@@ -30,7 +30,7 @@ from whychain.datasets import Dataset, get_dataset
 from whychain.harness.base import Column, QueryResult, TableInfo, Timer, check_read_only, pin_today
 
 PREFIX = {"olist": "", "kaveri": "kaveri_"}   # Zetaris database name = prefix + source name
-CATALOG_TTL_S = 600
+CATALOG_TTL_S = 900      # as long as the analysis tables are shared (whychain.analysis.engine.TABLE_TTL_S)
 TOKEN_TTL_S = 600        # only when a token's own lifetime can't be read (the local platform issues 15-minute tokens)
 TOKEN_MARGIN_S = 120     # log in again this long before a token expires
 # The local platform answers a request with an expired or invalid token with HTTP 400 and a bare message, not 401.

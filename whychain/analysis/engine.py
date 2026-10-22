@@ -83,6 +83,23 @@ _TABLES: dict[tuple, tuple[float, pd.DataFrame]] = {}
 _TABLES_LOCK = threading.Lock()
 
 
+def _shared(harness, what: str, build):
+    """A processed table (the fact table after parsing dates, the review stars...) shared like the raw tables:
+    built once per TABLE_TTL_S for a dataset, and copied for each run."""
+    if not getattr(harness, "shared_tables", False):
+        return build()
+    key = (getattr(harness, "name", ""), getattr(getattr(harness, "dataset", None), "key", ""),
+           str(getattr(harness, "as_of", "")), what)
+    with _TABLES_LOCK:
+        hit = _TABLES.get(key)
+    if hit and time.time() - hit[0] < TABLE_TTL_S:
+        return hit[1].copy()
+    val = build()
+    with _TABLES_LOCK:
+        _TABLES[key] = (time.time(), val.copy())
+    return val
+
+
 def shared_table(harness, sql: str, limit: int = 500_000) -> pd.DataFrame:
     """The result of `sql` through `harness`, from the shared cache if it was pulled in the last TABLE_TTL_S seconds
     through the same kind of harness for the same dataset."""
@@ -138,7 +155,12 @@ class Engine:
     def facts(self) -> pd.DataFrame:
         with self._lock:
             if self._facts is None:
-                self._facts = self._load()
+                def build():
+                    df = self._load()
+                    df.attrs["raw_rows"] = self._raw_rows
+                    return df
+                self._facts = _shared(self.h, f"facts:{self.m.dataset}", build)
+                self._raw_rows = int(self._facts.attrs.get("raw_rows", len(self._facts)))
             return self._facts
 
     def _query_df(self, sql: str, limit: int = 500_000) -> pd.DataFrame:
@@ -198,12 +220,13 @@ class Engine:
     def order_stars(self) -> pd.Series:
         """Review stars per order (mean if an order has several reviews); empty if the dataset has no reviews."""
         if getattr(self, "_stars", None) is None:
-            rv = self.reviews()
-            if rv.empty or "review_score" not in rv.columns:
-                self._stars = pd.Series(dtype=float)
-            else:
+            def build():
+                rv = self.reviews()
+                if rv.empty or "review_score" not in rv.columns:
+                    return pd.Series(dtype=float)
                 sc = pd.to_numeric(rv["review_score"], errors="coerce")
-                self._stars = sc.groupby(rv["order_id"]).mean().dropna()
+                return sc.groupby(rv["order_id"]).mean().dropna()
+            self._stars = _shared(self.h, f"stars:{self.m.dataset}", build)
         return self._stars
 
     def _value(self, g: pd.DataFrame) -> float:
@@ -691,11 +714,14 @@ class Engine:
 
     def text(self, s: Scope) -> Result:
         """What customers wrote: review mentions per 1,000 orders, focus vs reference, with verbatim examples."""
-        rv = self.reviews()
+        def build():
+            rv = self.reviews()
+            if rv.empty:
+                return rv
+            return rv.assign(txt=(rv["title"].astype(str) + " " + rv["message"].astype(str)).str.lower())
+        rv = _shared(self.h, f"review_text:{self.m.dataset}", build)
         if rv.empty:
             raise ValueError("this dataset has no customer review text")
-        txt = (rv["title"].astype(str) + " " + rv["message"].astype(str)).str.lower()
-        rv = rv.assign(txt=txt)
         rows, samples = [], []
         fids, rids = set(s.focus["order_id"]), set(s.ref["order_id"])
         rf, rr = rv[rv["order_id"].isin(fids)], rv[rv["order_id"].isin(rids)]
