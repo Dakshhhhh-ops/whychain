@@ -17,12 +17,13 @@ def tables(seed: int):
     rnd = random.Random(seed)
     months = [f"2017-{m:02d}" for m in range(1, 13)] + [f"2018-{m:02d}" for m in range(1, 9)]
     monthly = {"id": "T1.Q1", "type": "sql", "sql": "SELECT month, orders, late_pct, transit_days, review, gmv FROM o "
-               "WHERE month >= '2017-01' GROUP BY month LIMIT 100",
+               "WHERE purchase >= '2017-01-01' AND purchase < '2018-09-01' AND handover >= '2018-02-26' "
+               "GROUP BY month LIMIT 100",
                "columns": ["month", "orders", "late_pct", "transit_days", "review", "gmv"],
                "rows": [[m, rnd.randint(800, 7500), round(rnd.uniform(3, 22), 1), round(rnd.uniform(6, 14), 1),
                          round(rnd.uniform(3.8, 4.4), 2), round(rnd.uniform(1e5, 1.2e6), 2)] for m in months]}
     states = {"id": "T2.Q1", "type": "sql", "sql": "SELECT state, orders, late_pct, base_late_pct, transit_days FROM s "
-              "GROUP BY state HAVING COUNT(*) >= 30",
+              "WHERE purchase BETWEEN '2018-03-01' AND '2018-03-31' GROUP BY state HAVING COUNT(*) >= 30",
               "columns": ["state", "orders", "late_pct", "base_late_pct", "transit_days"],
               "rows": [[s, rnd.randint(30, 6000), round(rnd.uniform(2, 60), 1), round(rnd.uniform(2, 30), 1),
                         round(rnd.uniform(5, 30), 1)] for s in STATES]}

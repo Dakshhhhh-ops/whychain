@@ -267,7 +267,13 @@ def plan(state: dict, ctx: Ctx) -> dict:
                       "has objects with \"statement\", \"type\", \"agent\" (\"data\" or \"docs\") and \"checks\".")
         out = ctx.llm.json("reason", P.PLANNER if rnd == 1 else P.PLANNER_REVISE, retry_user, agent=agent)
         new = _parse_tasks(out.get("tasks", []), existing, rnd, cap)
-    if rnd == 1 and new and not any(t["agent"] == "docs" for t in new):
+    if not new:  # still nothing usable: fall back to measuring the symptom, so the round isn't wasted
+        ctx.tracer.event("plan_fallback", agent, round=rnd)
+        new = [{"id": f"T{len(existing) + 1}", "round": rnd, "type": "measure",
+                "statement": "Measure the symptom precisely against a normal baseline and find where it is concentrated",
+                "agent": "data", "checks": ["series over a longer window", "breakdown by segment"], "priority": 1,
+                "addresses_gap": None}]
+    if new and not any(t["agent"] == "docs" for t in existing + new):
         # the reason behind a pattern is often only written down: always have the documents checked once
         new.append({"id": f"T{len(existing) + len(new) + 1}", "round": rnd, "type": "hypothesis",
                     "statement": "Contracts, policies or email record a change or event that explains this symptom",
@@ -360,7 +366,7 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
     # 2) deterministic claim check: the numbers a data finding states must appear in the rows it cites
     checks = {}
     for f in this_round:
-        if f.get("agent_kind") == "data":
+        if f.get("agent_kind") in ("data", "docs"):
             checks[f["task_id"]] = c = check_numbers(f["claim"], finding_evidence(f, evidence), f.get("key_numbers"),
                                                      fetch=refetch(ctx))
             if c["checked"]:

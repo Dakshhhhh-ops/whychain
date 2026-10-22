@@ -33,3 +33,7 @@ Thumbs.db
 # frontend build output
 frontend/dist/
 *.tsbuildinfo
+
+# eval outputs (curated results live in the README)
+evals/results.json
+evals/results.md

@@ -120,7 +120,10 @@ def tables_from(evidence: list[dict]) -> list[Table]:
             out.append(Table(ev.get("id", ""), [], [list(_flat({k: v for k, v in ev.items() if k != "id"}))]))
         elif ev.get("type") == "doc":
             nums = [n.value for n in numbers_in(ev.get("quote", ""))]
-            out.append(Table(ev.get("id", ""), [], [nums]))
+            out.append(Table(ev.get("id", ""), ["quote_number"] * len(nums), [nums]))
+        elif ev.get("type") == "analysis":
+            out.append(Table(ev.get("id", ""), [str(c) for c in ev.get("columns", [])], ev.get("rows", []) or [],
+                             ev.get("sql", ""), False))
     return out
 
 
@@ -261,9 +264,14 @@ def check_numbers(text: str, evidence: list[dict], key_numbers=None, fetch=None,
         else:
             key_problems.append(f"{ref.get('value')} @ {ref.get('evidence')}.{ref.get('column')}: "
                                 f"{why or f'the cell holds {cell}'}")
+    for t in tables:  # every number of a verified verbatim quote counts like a cited cell
+        if t.columns and set(t.columns) == {"quote_number"}:
+            key_vals += [(v, None) for v in _cells(t.rows)]
     row_cells = [tc for t, ri in key_rows for tc in _typed_cells([t.rows[ri]], t.columns)]
     found_cells = [tc for t in tables for tc in _typed_cells(t.rows, t.columns)]
-    sql_tokens = {float(x) for t in tables for x in re.findall(r"(?<![\w.])\d+(?:\.\d+)?", t.sql or "")}
+    # numbers written in the SQL itself (a window, a threshold), not inside quoted literals like '2018-02-26'
+    sql_tokens = {float(x) for t in tables
+                  for x in re.findall(r"(?<![\w.])\d+(?:\.\d+)?", re.sub(r"'[^']*'|\"[^\"]*\"", " ", t.sql or ""))}
     nums = numbers_in(text)
     units = [unit_of(text, n) for n in nums]
     support: dict[int, str] = {}
