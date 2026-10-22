@@ -1,0 +1,87 @@
+# Ground truth for the planted scenarios. The agents never see this file.
+# Each group in must_find is a list of synonyms; a group matches if any synonym appears in a
+# CONFIRMED cause (statement + claim) or the headline. min_groups defaults to all groups.
+
+- id: A-pune-at-risk
+  question: Why are so many Pune orders at risk of missing their promised date next week?
+  must_find:
+    - [strike, port]
+    - [voltix, s-14]
+  distractors:
+    - [rain, weather]
+  expected_actions:
+    - [transfer, mumbai, mum]
+
+- id: B-nashik-late
+  question: Why have deliveries to Nashik been late since September?
+  must_find:
+    - [consolidat, milk run, milk-run, tuesday, twice a week, tue/fri]
+    - [swiftcargo, c02]
+  distractors:
+    - [stockout, out of stock, backorder]
+  expected_actions:
+    - [deccan, c03, switch carrier, alternative carrier, ftl]
+
+- id: C-mumbai-earbuds
+  question: Why did Mumbai run out of earbuds in mid-October?
+  must_find:
+    - [diwali26, promo, promotion, campaign]
+    - [soundwave, s-07]
+  distractors:
+    - [strike, port]
+  expected_actions:
+    - [air, expedite, reorder point]
+
+- id: D-chennai-backlog
+  question: Why has the Chennai DC's open-order backlog jumped this week?
+  must_find:
+    - [duplicate, external_ref, edi]
+  distractors:
+    - [weather, thunderstorm]
+  expected_actions:
+    - [dedup, duplicate, cancel]
+
+- id: E-ontime-drop
+  question: Why did our overall on-time delivery rate drop in September and October compared with August?
+  min_groups: 2
+  must_find:
+    - [nashik, consolidat, swiftcargo]
+    - [strike, port, voltix]
+    - [diwali26, promo, earbud, soundwave]
+  distractors:
+    - [weather, rain]
+  expected_actions:
+    - [carrier, transfer, expedite]
+
+# --- Olist (REAL data). Nothing is planted: the ground truth below was established independently with SQL on the
+# raw data (weekly and per-state breakdowns) before scoring the agents. No expected actions: there is no single
+# right business action on historical data.
+
+- id: O1-march-2018
+  dataset: olist
+  question: Why did late deliveries jump to 21% for orders placed in March 2018?
+  # carrier transit ~15 days for parcels handed over 26 Feb-18 Mar (normal ~8.5); seller hand-over got faster;
+  # concentrated in Rio de Janeiro (transit 9.7 -> 20.7 days, late 7% -> 36%) and the Northeast
+  min_groups: 2
+  must_find:
+    - [transit, carrier]
+    - [rio, " rj", "(rj", northeast, nordeste, ceará, maranhão]
+
+- id: O2-black-friday-2017
+  dataset: olist
+  question: Why did deliveries run late around Black Friday 2017?
+  # week of 20 Nov 2017: 2,915 orders (2.3x normal), 19.4% late; transit 12.4 days vs ~9; hand-over to carrier ~flat
+  min_groups: 2
+  must_find:
+    - [volume, surge, black friday, peak, more orders, order spike]
+    - [transit, carrier]
+
+- id: O3-truckers-strike-2018
+  dataset: olist
+  question: Did the May 2018 truckers' strike delay deliveries, and by how much?
+  # orders placed 14-20 May (in transit when highways were blocked 21 May-1 Jun) were 16% late vs ~4-5%;
+  # orders placed during the strike week fell by about half
+  min_groups: 2
+  must_find:
+    - [strike, trucker, caminhoneiro]
+    - [transit, in-transit, in flight, carrier, week before, 14 may, mid-may]

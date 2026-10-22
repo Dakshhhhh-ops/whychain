@@ -1,0 +1,181 @@
+"""Model access. Every provider speaks the OpenAI API, so one client covers all of them.
+
+Each agent asks for a *role*, not a model:
+  reason  -> planner, evaluator, risk, reporter   (xAI Grok, then NVIDIA NIM, then local)
+  work    -> data investigators, scout           (NVIDIA NIM, then Grok, then local)
+  local   -> document analyst                    (Meterless Nightshift on the local NVIDIA GPU, then Ollama, then NIM)
+
+If a provider fails, the call falls through to the next one, and the trace records it.
+"""
+from __future__ import annotations
+
+import json
+import re
+import threading
+import time
+from dataclasses import dataclass
+
+from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
+
+from whychain.config import SETTINGS, Provider
+
+ROLE_CHAINS = {
+    "reason": ["xai", "nim-reason", "nim", "nightshift", "ollama"],
+    "work": ["nim", "xai", "nim-reason", "nightshift", "ollama"],
+    "local": ["nightshift", "nim", "ollama", "xai"],
+}
+JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason"}
+TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
+ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
+
+
+@dataclass
+class LLMResult:
+    text: str
+    provider: str
+    model: str
+    ms: int
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+class LLMError(RuntimeError):
+    pass
+
+
+class LLM:
+    def __init__(self, tracer=None, providers: dict[str, Provider] | None = None,
+                 chains: dict[str, list[str]] | None = None):
+        self.providers = providers or SETTINGS.providers()
+        self.chains = chains or ROLE_CHAINS
+        self.tracer = tracer
+        self._clients: dict[str, OpenAI] = {}
+        self._failures: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------ plumbing
+    def available(self) -> dict[str, bool]:
+        return {k: p.configured for k, p in self.providers.items()}
+
+    def _client(self, p: Provider) -> OpenAI:
+        if p.name not in self._clients:
+            # JSON replies are short, so a slow call is almost always stuck in a queue: give up early and retry
+            timeout = 240.0 if p.name in ("ollama", "nightshift", "nim-reason") else 60.0
+            headers = {"meterless-app": "whychain", "meterless-scope": "user"} if p.name == "nightshift" else None
+            self._clients[p.name] = OpenAI(base_url=p.base_url, api_key=p.api_key or "none", timeout=timeout,
+                                           max_retries=0, default_headers=headers)
+        return self._clients[p.name]
+
+    def _chain(self, role: str) -> list[Provider]:
+        out = []
+        for name in self.chains.get(role, self.chains["reason"]):
+            p = self.providers.get(name)
+            if p and p.configured and self._failures.get(name, 0) < 3:
+                out.append(p)
+        return out
+
+    # ------------------------------------------------------------------ calls
+    def chat(self, role: str, system: str, user: str, *, agent: str, json_mode: bool = False,
+             temperature: float = 0.2, max_tokens: int = 2500) -> LLMResult:
+        chain = self._chain(role)
+        if not chain:
+            raise LLMError("No model provider is configured. Set XAI_API_KEY / NVIDIA_API_KEY or run Ollama.")
+        errors = []
+        for p in chain:
+            msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+            if p.name == "ollama" and p.model.startswith("qwen3"):
+                msgs[-1]["content"] += "\n/no_think"
+            kwargs = dict(model=p.model, messages=msgs, temperature=temperature, max_tokens=max_tokens)
+            if json_mode and p.name in JSON_MODE_OK:
+                kwargs["response_format"] = {"type": "json_object"}
+            if p.thinking is not None:
+                kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": p.thinking}}
+                if p.thinking:  # leave room for the reasoning before the answer
+                    kwargs["max_tokens"] = max(max_tokens, 12000)
+            t0 = time.perf_counter()
+            try:
+                resp = self._create(p, kwargs, agent)
+                text = strip_thinking(resp.choices[0].message.content or "")
+                usage = resp.usage
+                res = LLMResult(text, p.name, p.model, int((time.perf_counter() - t0) * 1000),
+                                getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0)
+                with self._lock:
+                    self._failures[p.name] = 0
+                self._trace("llm_call", agent, provider=p.name, model=p.model, ms=res.ms,
+                            prompt_tokens=res.prompt_tokens, completion_tokens=res.completion_tokens,
+                            fallback_from=[e["provider"] for e in errors] or None)
+                return res
+            except Exception as e:  # network, auth, rate limit, bad model name: fall through
+                with self._lock:
+                    self._failures[p.name] = self._failures.get(p.name, 0) + 1
+                errors.append({"provider": p.name, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+                self._trace("llm_fallback", agent, provider=p.name, error=errors[-1]["error"])
+        raise LLMError(f"All providers failed for role '{role}': {errors}")
+
+    def _create(self, p: Provider, kwargs: dict, agent: str):
+        """Call one provider, retrying transient failures (5xx, rate limits, timeouts) with back-off."""
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                return self._client(p).chat.completions.create(**kwargs)
+            except TRANSIENT as e:
+                if attempt == ATTEMPTS:
+                    raise
+                self._trace("llm_retry", agent, provider=p.name, attempt=attempt, error=f"{type(e).__name__}: {str(e)[:120]}")
+                time.sleep(2.5 * attempt)
+
+    def json(self, role: str, system: str, user: str, *, agent: str, retries: int = 2,
+             temperature: float = 0.2, max_tokens: int = 2500) -> dict:
+        """Ask for a JSON object. If it doesn't parse, say why and ask again."""
+        prompt = user
+        last = ""
+        for attempt in range(retries + 1):
+            res = self.chat(role, system, prompt, agent=agent, json_mode=True, temperature=temperature,
+                            max_tokens=max_tokens)
+            try:
+                return extract_json(res.text)
+            except ValueError as e:
+                last = str(e)
+                self._trace("json_repair", agent, attempt=attempt + 1, error=last)
+                prompt = (f"{user}\n\nYour previous reply was not valid JSON ({last}). "
+                          "Reply again with ONE valid JSON object only, no prose, no code fences.")
+        raise LLMError(f"{agent}: model did not return valid JSON after {retries + 1} tries ({last})")
+
+    def _trace(self, kind: str, agent: str, **data) -> None:
+        if self.tracer:
+            self.tracer.event(kind, agent, **{k: v for k, v in data.items() if v is not None})
+
+
+def strip_thinking(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+
+def extract_json(text: str) -> dict:
+    t = strip_thinking(text)
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t.strip(), flags=re.M)
+    start = t.find("{")
+    if start < 0:
+        raise ValueError("no JSON object found")
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(t)):
+        ch = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                chunk = t[start:i + 1]
+                try:
+                    return json.loads(chunk)
+                except json.JSONDecodeError:
+                    # common small-model slip: trailing commas
+                    return json.loads(re.sub(r",\s*([}\]])", r"\1", chunk))
+    raise ValueError("unbalanced JSON object")
