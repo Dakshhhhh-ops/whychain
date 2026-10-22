@@ -307,6 +307,11 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
                      f"{r[5]}. There is no rise to explain in this scope ({focus_rate}% vs {ref_rate}% late).")
             keys = [k for k in keys if k["column"] != "share_of_rise_pct"]
             share, reason = None, "Not applicable: the late rate did not rise in this scope."
+        elif share is not None and share >= CAUSE_SHARE and "stage_moved" in res.columns \
+                and not r[res.columns.index("stage_moved")]:
+            verdict = "refutes"
+            reason = (f"The stage itself barely changed (typically {r[2]} vs {r[3]} days, four in five within {r[4]} "
+                      f"vs {r[5]}), so its {sh}% share of the rise is noise in the counterfactual, not a cause.")
         elif share is not None and share >= CAUSE_SHARE:
             verdict, status, is_cause = "supports", "confirmed", True
             reason = f"Explains {sh}% of the rise (cause threshold: {int(CAUSE_SHARE * 100)}%)."

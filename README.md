@@ -214,9 +214,9 @@ The [Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datase
 |---|---|---|
 | `oms` | Order management (Postgres) | `orders` (purchase, approval, carrier hand-over, delivery and promised dates), `customers` |
 | `sellers` | Seller platform (CSV) | `order_items` (with each seller's shipping deadline), `sellers`, `products` |
-| `payments` | Payment gateway (JSON lines) | `order_payments` |
-| `feedback` | Customer reviews (JSON lines) | `reviews`: 100,000 real reviews, in Portuguese |
-| `signals` | External events (JSON lines) | `events`: 16 verified events, 2017–2018 |
+| `payments` | Payment gateway (JSON) | `order_payments` |
+| `feedback` | Customer reviews (JSON) | `reviews`: 100,000 real reviews, in Portuguese |
+| `signals` | External events (JSON) | `events`: 16 verified events, 2017–2018 |
 | `docs` | News briefs | `documents`: 13 briefs on those events |
 
 Nothing is planted. The events (Correios strikes, the 2018 truckers' strike, Carnival, Black Friday, Rio de Janeiro's federal intervention and cargo-theft record, Correios price and policy changes) were researched for this project from public sources, mainly Agência Brasil and the official legal texts. Every event and brief lists its source URLs, and the control tower links to them. They are in `datagen/olist_events.json`, with summaries paraphrased rather than copied. The dataset is not redistributed in this repository; the script downloads it.

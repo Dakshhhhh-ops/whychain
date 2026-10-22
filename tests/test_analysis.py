@@ -143,7 +143,8 @@ def test_results_are_identical_on_every_run():
     sa = a.stages(a.time_scope(date(2018, 3, 1), date(2018, 4, 1)))
     sb = b.stages(b.time_scope(date(2018, 3, 1), date(2018, 4, 1)))
     assert sa.rows == sb.rows
-    assert np.isclose(sum(r[-2] for r in sa.rows if r[-2] is not None), round(100 * sa.summary["rise_pp"] / 100, 2),
+    ci = sa.columns.index("contribution_pp")
+    assert np.isclose(sum(r[ci] for r in sa.rows if r[ci] is not None), round(100 * sa.summary["rise_pp"] / 100, 2),
                       atol=0.05)
 
 
@@ -170,3 +171,19 @@ def test_stock_waits_explain_slower_dispatch():
     olist = get_engine(LocalHarness("olist"))
     assert not any(t["tool"] == "stock_wait" for t in plan_battery(
         "Why did late deliveries jump to 19% for orders placed in March 2018?", olist, date(2018, 9, 1))["tasks"])
+
+
+def test_a_stage_that_did_not_move_is_not_a_cause():
+    """Held-out case KH2 (Hyderabad, Sep 2026): transit was flat (typically 2 vs 2 days), yet the counterfactual on
+    98 orders gave it 14.6% of the rise. A stage must itself have moved to count as a cause."""
+    from datetime import date
+
+    from whychain.analysis import get_engine
+    from whychain.analysis.battery import plan_battery, run_task
+    from whychain.harness.local import LocalHarness
+
+    eng = get_engine(LocalHarness("kaveri"))
+    tasks = plan_battery("Why did deliveries to Hyderabad get later in September?", eng, date(2026, 10, 21))["tasks"]
+    verdict = {t["params"].get("stage"): run_task(eng, t, "T")[0]["fixed"] for t in tasks if t["tool"] == "stage"}
+    assert not verdict["transit"]["is_cause"] and "barely changed" in verdict["transit"]["reason"]
+    assert verdict["handover"]["is_cause"]

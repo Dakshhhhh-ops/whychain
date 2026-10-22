@@ -9,13 +9,13 @@ import { PageHeader } from "./History";
 const META: Record<string, { name: string; system: string; icon: ReactNode }> = {
   oms: { name: "Order management", system: "Postgres database", icon: <Database className="h-4 w-4" /> },
   sellers: { name: "Seller platform", system: "CSV export", icon: <Package className="h-4 w-4" /> },
-  payments: { name: "Payment gateway", system: "JSON lines", icon: <Boxes className="h-4 w-4" /> },
-  feedback: { name: "Customer reviews", system: "JSON lines (real text)", icon: <Mail className="h-4 w-4" /> },
+  payments: { name: "Payment gateway", system: "JSON", icon: <Boxes className="h-4 w-4" /> },
+  feedback: { name: "Customer reviews", system: "JSON (real text)", icon: <Mail className="h-4 w-4" /> },
   erp: { name: "ERP", system: "Postgres database", icon: <Database className="h-4 w-4" /> },
   wms: { name: "Warehouse system", system: "CSV export", icon: <Boxes className="h-4 w-4" /> },
-  carrier: { name: "Carrier feed", system: "JSON lines", icon: <Truck className="h-4 w-4" /> },
+  carrier: { name: "Carrier feed", system: "JSON", icon: <Truck className="h-4 w-4" /> },
   procurement: { name: "Procurement", system: "CSV export", icon: <Package className="h-4 w-4" /> },
-  signals: { name: "External signals", system: "JSON lines", icon: <Globe className="h-4 w-4" /> },
+  signals: { name: "External signals", system: "JSON", icon: <Globe className="h-4 w-4" /> },
   docs: { name: "Contracts, policies & email", system: "Documents", icon: <Mail className="h-4 w-4" /> },
 };
 

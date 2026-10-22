@@ -1105,6 +1105,18 @@ def _short(statement: str) -> str:
     return s[0].lower() + s[1:] if s else s
 
 
+def _no_rise(state: dict, measure: dict) -> bool:
+    """The measured late rate is not above the reference (the question's premise doesn't hold)."""
+    ev = state["evidence"].get((measure.get("evidence_ids") or [""])[0], {})
+    rows = {str(r[0]): r for r in ev.get("rows", [])}
+    try:
+        cols = ev["columns"]
+        f, r = rows["focus"][cols.index("late_pct")], rows["reference"][cols.index("late_pct")]
+        return f is not None and r is not None and f <= r
+    except (KeyError, ValueError, IndexError):
+        return False
+
+
 def report_battery(state: dict, ctx: Ctx) -> dict:
     """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer."""
     agent = "Reporter"
@@ -1197,6 +1209,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         headline = f"Main causes: {top}."
         if measure:
             headline = measure["claim"].split(":")[0] + f". {headline}"
+    elif measure and not supply and _no_rise(state, measure):
+        headline = "It did not rise: " + measure["claim"].split(":")[0][0].lower() + measure["claim"].split(":")[0][1:] + \
+            ". There is no rise to explain."
     else:
         headline = "No cause could be confirmed from the data."
 

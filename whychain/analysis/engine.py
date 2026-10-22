@@ -308,22 +308,30 @@ class Engine:
         rows = []
         for st, col in (("handover", "h"), ("transit", "t"), ("promise", "p")):
             share = gain[st] / rise if rise and rise > 0 else float("nan")
+            # did the stage itself measurably move the late way? (promises: shorter). A stage that didn't move can
+            # still pick up a share of a small sample's rise in the counterfactual; it isn't a cause then.
+            sign = -1 if st == "promise" else 1
+            moved = bool(len(F) and len(R) and (sign * (F[col].mean() - R[col].mean()) >= 0.25
+                                               or sign * (F[col].median() - R[col].median()) >= 1
+                                               or sign * (F[col].quantile(0.8) - R[col].quantile(0.8)) >= 1))
             rows.append([st, STAGES[st], r1(F[col].median()), r1(R[col].median()), r1(F[col].quantile(0.8)),
                          r1(R[col].quantile(0.8)), r1(F[col].mean()), r1(R[col].mean()), pct(gain[st], 2),
-                         pct(share, 1)])
+                         pct(share, 1), moved])
         other = rise - explained
         rows.append(["other", "everything else (mix of orders, interactions)", None, None, None, None, None, None,
-                     pct(other, 2), pct(other / rise, 1) if rise and rise > 0 else None])
+                     pct(other, 2), pct(other / rise, 1) if rise and rise > 0 else None, None])
         shares = {st: (gain[st] / rise if rise and rise > 0 else None) for st in base}
         top = max(shares, key=lambda k: shares[k] or -1)
         summary = {"rise_pp": pct(rise), "explained_pp": pct(explained), "shares": {k: pct(v, 1) if v is not None
                    else None for k, v in shares.items()}, "top_stage": top, "focus": s.label, "reference": s.ref_label}
         cols = ["stage", "meaning", "focus_median_days", "ref_median_days", "focus_p80_days", "ref_p80_days",
-                "focus_mean_days", "ref_mean_days", "contribution_pp", "share_of_rise_pct"]
+                "focus_mean_days", "ref_mean_days", "contribution_pp", "share_of_rise_pct", "stage_moved"]
         method = ("For each stage, every focus order's days are replaced by the reference value at the same rank "
                   + (f"(within the same {within}) " if within else "")
                   + "and the late rate is recomputed. Exact Shapley values over the three stages split the rise so the "
-                  "contributions add up; 'other' is what no stage explains.")
+                  "contributions add up; 'other' is what no stage explains. 'stage_moved': the stage itself got "
+                  "slower (promises: shorter) by a quarter day on average, or a day in its typical or four-in-five "
+                  "time.")
         return Result("stages", "Which delivery stage explains the rise", cols, rows, summary, method, "measured",
                       self.provenance())
 
