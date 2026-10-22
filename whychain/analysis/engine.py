@@ -474,7 +474,8 @@ class Engine:
         rows = [["orders in scope", n], ["not delivered (left out)", not_delivered],
                 ["delivered but a date is missing", missing], ["impossible date order", impossible],
                 ["duplicate order rows in the source", dupes],
-                ["late % comparing calendar dates", pct(date_rate)], ["late % comparing timestamps", pct(ts_rate)]]
+                ["late % comparing calendar dates", pct(date_rate)], ["late % comparing timestamps", pct(ts_rate)],
+                ["anomalies, % of orders in scope", pct(bad, 2)]]
         summary = {"anomaly_share_pct": pct(bad, 2), "definition_gap_pp": pct(ts_rate - date_rate),
                    "not_delivered": not_delivered}
         method = ("Counts delivered orders with missing or impossible dates (an artefact counts if over 2%), and "

@@ -570,6 +570,7 @@ def finding_evidence(f: dict, evidence: dict) -> list[dict]:
 
 
 _UNVERIFIED = " (unverified)"
+RULE_CONSTANTS = [10.0, 25.0, 1.5, 2.0, 5.0, 80.0]   # thresholds named in coded verdicts and action steps
 _CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]")
 
 
@@ -585,12 +586,24 @@ def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: C
         supported += [float(a[k]) for k in ("est_cost_inr", "value_protected_inr", "orders_protected")
                       if isinstance(a.get(k), (int, float))]
     checked, unverified = 0, []
+    all_ev = {**evidence, **{e: ev for a in actions for e in a.get("evidence", []) if (ev := evidence.get(e))}}
+    in_answer = False
 
     def mark(line: str) -> str:
-        nonlocal checked
-        evs = [evidence[i] for i in _CITE.findall(line) if i in evidence]
-        c = check_numbers(line, evs, None, extra_values=supported)
-        nums = numbers_in(line)
+        nonlocal checked, in_answer
+        if line.startswith("## "):
+            in_answer = line.strip().lower() == "## answer"
+        body = re.sub(r"^\s*\d+\.\s", lambda m: " " * len(m.group(0)), line)  # list numbers aren't claims
+        evs = [all_ev[i] for i in _CITE.findall(line) if i in all_ev]
+        extra = list(supported)
+        if not in_answer:
+            # lines written by code may use any cell of the computed tables they cite, and the rule constants;
+            # the model-written answer gets the strict check
+            extra += RULE_CONSTANTS + [float(x) for ev in evs if ev.get("type") == "analysis"
+                                       for row in ev.get("rows", []) for x in row
+                                       if isinstance(x, (int, float)) and not isinstance(x, bool)]
+        c = check_numbers(body, evs, None, extra_values=extra)
+        nums = numbers_in(body)
         checked += len(nums)
         out = line
         for n in sorted(nums, key=lambda n: -n.start):
