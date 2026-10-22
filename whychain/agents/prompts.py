@@ -21,7 +21,7 @@ Reply with ONE JSON object:
   "joins": [{"left": "erp.sales_orders.order_id", "right": "carrier.shipments.order_id", "meaning": "an order's shipment"}],
   "date_columns": [{"column": "erp.sales_orders.promised_date", "meaning": "date promised to the customer"}],
   "status_values": [{"column": "erp.sales_orders.status", "values": ["..."], "meaning": "..."}],
-  "caveats": ["anything that could mislead an analyst, e.g. duplicated rows, string-typed dates, snapshot tables"]
+  "caveats": ["anything that could mislead an analyst, e.g. string-typed dates, snapshot tables, mixed row grains"]
 }
 Propose every cross-source join you can justify from column names and sample values. Each join will be tested
 against the data, and joins that don't match will be dropped."""
@@ -37,7 +37,7 @@ Think like a senior analyst:
    use neighbouring periods as "normal" if they are themselves abnormal (holiday peaks, other incidents).
    Ask where the change is concentrated (region, seller, product, process stage).
 2. Then several COMPETING hypotheses, across different cause families: supply/inbound, inventory policy,
-   demand changes, transport/carrier, data-quality artefacts (duplicates, bad statuses), external events.
+   demand changes, transport/carrier, data-quality artefacts, external events.
    Include plausible red herrings so they can be ruled out with evidence.
 3. Each task must name the concrete checks that would confirm OR refute it.
 4. At least one task should go to "docs", because the reason behind a pattern is often written down.
@@ -66,7 +66,7 @@ Work like an analyst: measure, compare with a baseline, look for counter-evidenc
 Pick a NORMAL baseline: look at the series over a longer window first (one GROUP BY month/week query), and
 don't treat a neighbouring period as normal if it is itself abnormal. Break changes down by segment (region,
 seller, category, process stage) to find where they are concentrated.
-For an event with dates (a strike, holiday, storm, promotion), work at WEEKLY grain and group orders by when they
+For an event with dates (any dated disruption or calendar event), work at WEEKLY grain and group orders by when they
 were exposed to it, e.g. the week the parcel was handed to the carrier, not only by purchase month. Compare actual
 times (e.g. carrier transit days) as well as lateness against the promise: if promises were lengthened during the
 event, a real delay can be hidden in the late rate.
@@ -83,8 +83,7 @@ or, when you can conclude (or after at most {max_steps} queries),
 Use verdict "measured" for measurement tasks. Only cite numbers that appear in your query results.
 When a cause checks out, quantify how much of the symptom it accounts for (e.g. how many of the affected orders
 or units involve it), and say which specific supplier, SKU family, lane or warehouse is involved.
-Attribute with ONE query that joins the affected orders/lines to the cause (e.g. order lines -> skus -> suppliers ->
-purchase orders -> port), never by combining counts from separate queries, which double-counts and contradicts.
+Attribute with ONE query that joins the affected orders/lines through to the suspected cause, never by combining counts from separate queries, which double-counts and contradicts.
 Only open purchase orders (not RECEIVED) can explain current shortages.
 If a query errors, read the error, fix the SQL and try again.
 
@@ -100,7 +99,7 @@ If the catalog has customer feedback with free text (e.g. feedback.reviews), you
 it verbatim using the review_id as the doc_id isn't possible, so cite review text through a query instead.
 
 Each turn, reply with ONE JSON object, one of:
-  {"thought": "...", "action": "query", "sql": "<Spark SQL over docs.documents, e.g. search lower(body) LIKE '%strike%'; never select body in a search, select doc_id, doc_type, title, sent_at, sender, recipients>"}
+  {"thought": "...", "action": "query", "sql": "<Spark SQL over docs.documents, e.g. search lower(body) LIKE '%<keyword>%'; never select body in a search, select doc_id, doc_type, title, sent_at, sender, recipients>"}
   {"thought": "...", "action": "read_doc", "doc_id": "<doc_id>"}
   {"thought": "...", "action": "finish", "verdict": "supports" | "refutes" | "inconclusive",
    "claim": "what the documents establish, in one or two sentences",
@@ -121,10 +120,21 @@ For every task, give a status FOR ITS HYPOTHESIS STATEMENT (not for the investig
 Set "is_cause" true only for a confirmed finding that IS a cause of the symptom (not the measurement of the symptom
 itself, and not a check that rules something out). A measured mechanism that explains part of the symptom IS a cause.
 Then judge the whole picture: do the confirmed causes together explain the size of the symptom?
-Watch for: a baseline that is itself abnormal (compare with a normal period), counts inflated by duplicates, claims whose numbers are not in the evidence, evidence that failed
+Watch for: a baseline that is itself abnormal (compare with a normal period), counts inflated by double-counting (check the row grain), claims whose numbers are not in the evidence, evidence that failed
 re-verification, correlation presented as cause, and a single cause stretched to explain everything. Before accepting
 "no effect", check the effect wasn't averaged away: a monthly or very broad window around a short event, or lateness
 measured against promises that were themselves changed during the event.
+Reasoning traps to reject (status "needs_more" or "rejected", and say which trap):
+- Survivorship / selection: groups cut by an outcome-dependent date (e.g. orders already delivered by a date are fast by
+  definition), so the comparison is built in.
+- Circular explanation: explaining lateness by a component of the lateness itself (e.g. "late orders had long transit")
+  without showing that component changed against a normal period.
+- Bundled hypotheses: if a statement joins several mechanisms (e.g. an event AND a regional problem), judge each part;
+  confirm only the parts the evidence supports and name them in the reason.
+- Event timing: an external event can only cause an effect that starts after the event begins and lines up with its
+  region. If the effect was already present before the event, the event is not its cause.
+Each finding comes with a NUMBERS CHECK: numbers in the claim that were not found in its cited rows. Treat unfound
+numbers as unsupported.
 
 Reply with ONE JSON object:
 {
@@ -153,14 +163,18 @@ including any units that can't arrive before the deadline.
 Each turn, reply with ONE JSON object:
   {"thought": "...", "action": "query", "sql": "..."}
   {"thought": "...", "action": "read_doc", "doc_id": "..."}
-  {"thought": "...", "action": "optimize", "scope": {"supplier_id": "S-14"} | {"category": "Earbuds"} | {"skus": ["CHG-1001"]},
-   "to_warehouses": ["PUN"], "deadline_days": 7}
+  {"thought": "...", "action": "optimize", "scope": {"supplier_id": "<id>"} | {"category": "<category>"} | {"skus": ["<sku>"]},
+   "to_warehouses": ["<warehouse_id>"], "deadline_days": 7}
   {"thought": "...", "action": "finish",
    "actions": [{"title": "...", "steps": "concrete steps", "addresses": ["T2"], "orders_protected": 0,
                 "value_protected": 0, "est_cost": 0, "time_to_effect": "...", "confidence": 0.0-1.0,
                 "policy_notes": "approval rules or contract terms that apply", "evidence": ["ids"]}],
    "risks": [{"risk": "...", "exposure": 0, "evidence": ["ids"]}]}
-Money amounts are in {currency}.
+Money amounts are in {currency}. NEVER invent money amounts or counts: value_protected, est_cost, exposure and
+orders_protected must come from a query result you ran (cite it in "evidence") or from the optimizer. If the data holds
+no cost information, set est_cost to null and say so in policy_notes. Round figures you made up will be removed.
+If the question is about a past period, recommend changes that stop it happening again (carrier, promise rules,
+process, monitoring); act on today's open orders only if the cause is still active today.
 Base the costs, units and orders of stock actions on the optimizer's result and cite it (e.g. A.P1).
 Use at most {max_steps} actions before finishing. Prefer 2-4 strong actions over many weak ones, and address the
 cause that explains the LARGEST share of the symptom first; say which share each action covers.
@@ -172,14 +186,14 @@ produce the concrete deliverables an operations team would otherwise prepare by 
 - a stock transfer order: one row per SKU with the quantity to move, from which DC to which DC (compute it with SQL:
   shortfall at the receiving DC vs. spare stock at the sending DC, never leaving the sender below the policy's cover);
 - an expedite or purchase request: SKU, quantity, supplier, requested date;
-- a cancellation list: the exact order ids to cancel (e.g. duplicates);
+- a cancellation list: the exact order ids to cancel;
 - parameter changes: SKU, current reorder point, proposed reorder point, reason;
 - draft emails to the supplier, carrier, customer or internal team, stating the facts, numbers and dates.
 
 Each turn, reply with ONE JSON object:
   {"thought": "...", "action": "query", "sql": "..."}
   {"thought": "...", "action": "read_doc", "doc_id": "..."}
-  {"thought": "...", "action": "optimize", "scope": {"supplier_id": "S-14"}, "to_warehouses": ["PUN"], "deadline_days": 7}
+  {"thought": "...", "action": "optimize", "scope": {"supplier_id": "<id>"}, "to_warehouses": ["<warehouse_id>"], "deadline_days": 7}
      (returns a proven-optimal transfer / air-freight plan; use it as the transfer order with from_query "X.P1")
   {"thought": "...", "action": "finish",
    "summary": "one or two sentences on what was prepared",
@@ -217,7 +231,7 @@ A table: | Action | Protects | Cost | Approval |
 ...
 
 LESSONS:
-- 1-3 reusable lessons for future investigations, phrased generally, e.g. "Check external_ref duplicates before trusting EDI order counts"
+- 1-3 reusable lessons for future investigations, phrased generally, e.g. "Check a table's row grain before counting orders"
 """
 
 
