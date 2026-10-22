@@ -99,6 +99,13 @@ export class NemotronEmbedder {
     return { updated, embedder: ok ? this.model : "mock (deterministic token hash)" };
   }
 
+  /** Nemotron vectors for texts (undefined where NVIDIA is off or failed): used by Scout Intent's semantic stage. */
+  async vectors(texts: string[], kind: Kind): Promise<(number[] | undefined)[]> {
+    if (!this.active) return texts.map(() => undefined);
+    await this.prefetch(texts, kind);
+    return texts.map((t) => this.cache.get(`${kind}\u0000${t}`));
+  }
+
   status() {
     return { embedder: this.active ? this.model : "mock (deterministic token hash)", active: this.active, dim: this.dim,
              calls: this.calls, failures: this.failures, last_error: this.lastError, cached: this.cache.size };

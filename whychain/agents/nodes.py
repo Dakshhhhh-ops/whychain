@@ -371,14 +371,15 @@ def plan(state: dict, ctx: Ctx) -> dict:
     agent = "Planner"
     rnd = state.get("round", 0) + 1
     ctx.tracer.event("agent_start", agent, round=rnd)
-    if rnd == 1 and ctx.fixed_analyses and supply_kind(state["question"]):
+    route = ctx.route   # chosen at the start of the run (Meterless Scout Intent, or the word rules)
+    if rnd == 1 and ctx.fixed_analyses and (route == "supply" if route else supply_kind(state["question"])):
         seng = get_supply_engine(ctx.harness)
         if seng is not None:
             out = plan_with_supply(state, ctx, seng)
             if out is not None:
                 preliminary(state, out, ctx)
                 return out
-    if rnd == 1 and ctx.fixed_analyses and battery_applies(state["question"]):
+    if rnd == 1 and ctx.fixed_analyses and (route == "battery" if route else battery_applies(state["question"])):
         eng = engine_for(ctx)
         if eng is not None:
             out = plan_with_battery(state, ctx, eng)

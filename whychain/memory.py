@@ -30,6 +30,7 @@ class Memory:
         self.local_path = local_path or SETTINGS.runs_dir / "_local_memory.json"
         self.engines: dict = {}
         self.embedder: str | None = None
+        self.scout: dict | None = None
         self.online = self._health()
         self._q: queue.Queue = queue.Queue()
         if self.online:
@@ -42,13 +43,14 @@ class Memory:
             body = r.json()
             self.engines = body.get("engines", {})
             self.embedder = (body.get("embeddings") or {}).get("embedder")
+            self.scout = body.get("scout")
             return r.status_code == 200 and bool(body.get("ok"))
         except Exception:
             return False
 
     def status(self) -> dict:
         return {"online": self.online, "url": self.url, "engines": self.engines, "embedder": self.embedder,
-                "backend": "meterless" if self.online else "local-json"}
+                "scout": self.scout, "backend": "meterless" if self.online else "local-json"}
 
     # ------------------------------------------------------------------ H-MEM
     def write(self, run_id: str, agent: str, kind: str, content: str, provenance: dict | None = None,

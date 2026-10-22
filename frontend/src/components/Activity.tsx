@@ -95,6 +95,15 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
       );
     case "escalation":
       return <span className="text-amber-800">Escalated {e.action_id} for approval: {(e.reasons ?? []).join("; ")}</span>;
+    case "scout":
+      return e.available ? (
+        <>
+          Meterless Scout: {code(String(e.intent))} ({e.confidence}, {e.band}) → {e.route_label}
+          <span className="text-slate-400"> · decided by {e.decided_by}{e.contract_id ? ` · signed contract ${String(e.contract_id).slice(-8)}` : ""}</span>
+        </>
+      ) : (
+        <span className="text-slate-500">Routed by WhyChain's rules to {e.route_label} (Meterless Scout not reachable)</span>
+      );
     case "preliminary":
       return <span className="font-medium text-brand-700">Preliminary answer ready, computed from the data in {e.seconds} s</span>;
     case "llm_fallback":

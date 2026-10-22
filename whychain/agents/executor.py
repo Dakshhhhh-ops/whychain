@@ -29,6 +29,7 @@ class Ctx:
     dataset: object = None  # whychain.datasets.Dataset; None in unit tests (treated as the simulated distributor)
     fixed_analyses: bool = True  # False: every question goes through the open-ended agent loop (agent-loop tests)
     precomputed: dict = field(default_factory=dict)  # task id -> result of a computed test already run (round 1)
+    route: str | None = None   # battery | supply | agent: which part answers (Meterless Scout, or the word rules)
 
 
 @dataclass

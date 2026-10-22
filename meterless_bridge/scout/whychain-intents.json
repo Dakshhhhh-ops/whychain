@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "note": "WhyChain's intent registry for Meterless Scout Intent: which part of WhyChain answers a question. The examples are written for the registry; none is one of WhyChain's eval questions (evals/cases.yaml), so routing them is a real test.",
+  "intents": [
+    {
+      "id": "GENERAL",
+      "category": "general",
+      "description": "Not a question about orders, deliveries, stock, suppliers, carriers, customers or the company's data. Answered at once; nothing is investigated.",
+      "parameters": {"type": "object", "properties": {}},
+      "capabilities": [],
+      "riskClass": "low",
+      "surfaces": ["app", "api", "cli"],
+      "roles": ["*"],
+      "examples": ["What's the capital of France?", "Tell me a joke", "hello there", "Write me a poem about the sea"],
+      "version": 1
+    },
+    {
+      "id": "delivery.explain",
+      "category": "delivery",
+      "description": "Explain why deliveries were late, slower, or missed their promised date, or why the on-time rate fell: for a period, a place, a carrier, a seller or around an event.",
+      "parameters": {"type": "object", "properties": {"period": {"type": "string"}, "place": {"type": "string"}, "event": {"type": "string"}}},
+      "capabilities": ["zetaris.query", "analysis.engine", "docs.read", "memory.recall", "world.assert"],
+      "riskClass": "low",
+      "surfaces": ["app", "api", "cli"],
+      "roles": ["*"],
+      "examples": [
+        "Why were orders to Bahia delivered late in April 2018?",
+        "What caused the drop in on-time delivery last month?",
+        "Did the postal strike slow down our deliveries?",
+        "Why is carrier transit so slow to the north of the country?",
+        "Why did delays spike after the holidays?",
+        "Why have shipments to Bengaluru been arriving late since August?",
+        "Are parcels to Recife late more often than elsewhere, and why?"
+      ],
+      "triggers": ["late", "lateness", "delay", "delayed", "delays", "on-time", "on time", "deliveries", "delivery", "delivered", "transit", "arrive", "arriving", "promised date", "strike", "carnival", "black friday"],
+      "version": 1
+    },
+    {
+      "id": "supply.explain",
+      "category": "supply",
+      "description": "Explain a stock-out or shortage, backordered orders, a jump in the open-order backlog, or orders at risk of missing their promised date because stock is short.",
+      "parameters": {"type": "object", "properties": {"warehouse": {"type": "string"}, "category": {"type": "string"}}},
+      "capabilities": ["zetaris.query", "supply.engine", "optimizer.solve", "docs.read", "memory.recall", "world.assert"],
+      "riskClass": "medium",
+      "surfaces": ["app", "api", "cli"],
+      "roles": ["*"],
+      "examples": [
+        "Why did the Thane warehouse run out of chargers?",
+        "Why are so many orders at the Kolhapur DC backordered?",
+        "Why is the open-order backlog growing this week?",
+        "Which orders will miss their promised date next week because of stock, and why?",
+        "Why are we short of cables at the Surat DC?",
+        "What is behind the keyboard shortage?"
+      ],
+      "triggers": ["stock", "out of stock", "ran out", "run out", "running out", "shortage", "short of", "backorder", "backordered", "backlog", "at risk", "next week", "inventory", "reorder"],
+      "version": 1
+    },
+    {
+      "id": "open.investigate",
+      "category": "investigate",
+      "description": "Any other question about the company's data that needs an open-ended investigation: reviews, revenue, prices, payments, sellers, returns, cancellations, customers.",
+      "parameters": {"type": "object", "properties": {}},
+      "capabilities": ["zetaris.query", "agents.loop", "docs.read", "memory.recall", "world.assert"],
+      "riskClass": "low",
+      "surfaces": ["app", "api", "cli"],
+      "roles": ["*"],
+      "examples": [
+        "Why did review scores fall in May?",
+        "Which sellers have the most cancellations, and why?",
+        "Why did the average order value drop this quarter?",
+        "Why are payments by boleto failing more often?",
+        "Why did revenue from electronics fall?",
+        "What do customers complain about most in their reviews?"
+      ],
+      "triggers": ["review", "reviews", "score", "scores", "revenue", "price", "prices", "payment", "payments", "seller", "sellers", "cancellation", "cancellations", "return", "returns", "refund", "complain", "customers"],
+      "version": 1
+    }
+  ]
+}

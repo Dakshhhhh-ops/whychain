@@ -1,1 +1,5 @@
 Meterless/Meterless @ 1742dec56a66e58eef9dda2d2b865823758ca8cd (2026-10-19)
+
+engines/scout-intent/: the Scout Intent specification (README, AGENTS.md, docs/) and its eval harness (evals/), from
+the same commit, unchanged; evals/reports/latest.md is the report of the last run against WhyChain's implementation.
+The spec ships no code: WhyChain's implementation is scout/scout.ts (not vendored).

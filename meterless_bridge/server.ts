@@ -16,6 +16,7 @@
 // Run: npm start   (= tsx server.ts). Port: METERLESS_BRIDGE_PORT (default 8787).
 
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,7 @@ import type {
 } from "./engines/hmem/reference/src/index.ts";
 import { WorldModel, entityIdFromName, externalId, normalizeName } from "./engines/world-model/reference/src/index.ts";
 import { NemotronEmbedder } from "./nemotronEmbed.ts";
+import { Scout } from "./scout/scout.ts";
 import type {
   Entity,
   Fact,
@@ -77,6 +79,28 @@ try {
 }
 
 const embedder = new NemotronEmbedder(HERE);
+
+// Meterless Scout Intent (WhyChain's implementation of the spec, scout/scout.ts): which part of WhyChain answers a
+// question, with an injection guard and a signed execution contract. Stage 2 uses the same Nemotron embeddings.
+// The signing secret is kept in the data folder, so contracts stay verifiable across restarts.
+function scoutSecret(): string {
+  const f = path.join(DATA_DIR, "scout.secret");
+  try {
+    return fs.readFileSync(f, "utf-8").trim();
+  } catch {
+    const secret = randomBytes(32).toString("hex");
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(f, secret, { mode: 0o600 });
+    return secret;
+  }
+}
+const scout = new Scout({
+  intentRegistry: path.join(HERE, "scout", "whychain-intents.json"),
+  policyPack: ["default", "adversarial-tight"],
+  embed: embedder.active ? (texts, kind) => embedder.vectors(texts, kind) : undefined,
+  secret: scoutSecret(),
+});
+let scoutDecisions = 0;
 let embedSync: { updated: number; embedder: string } | null = null;
 if (hmem) {
   // bring stored memories onto the active embedder before serving
@@ -1069,11 +1093,16 @@ function health() {
     world: world ? { events: world.events().length, runs: stepCount.size, audit_entries: world.audit().length } : null,
     defaults: { recall_min_score: DEFAULT_MIN_SCORE, recall_k: 5 },
     embeddings: { ...embedder.status(), startup_reembedded: embedSync?.updated ?? 0 },
+    scout: { intents: scout.registry.intents.map((i) => i.id), registry_version: scout.registry.version ?? 1,
+             policy_pack: scout.policyPackVersion, semantic: embedder.active, decisions: scoutDecisions },
   };
 }
 
 const ROUTES = [
   "GET  /health",
+  "POST /scout/decide        {prompt, user?:{id, role}, surface?, traceId?}  -> intent, candidates, risk, toolPlan, clarification, signed executionContract",
+  "POST /scout/verify        {contract}  -> {valid}",
+  "GET  /scout/registry",
   "POST /memory/write        {run_id, agent, kind, content, provenance:{source, query?, doc?, origin?}, confidence?, tags?, tier?, supersedes?}",
   "POST /memory/recall       {query, k?, tags?, kinds?, agents?, tiers?, run_id?, exclude_run_id?, min_score?}",
   "POST /memory/consolidate  {run_id?, min_confidence?, min_access?, sleep?, conflicts?, dry_run?}",
@@ -1100,6 +1129,19 @@ async function route(req: http.IncomingMessage, url: URL): Promise<[number, unkn
       return [200, { service: "whychain-meterless-bridge", version: VERSION, routes: ROUTES }];
     case "GET /health":
       return [200, health()];
+    case "POST /scout/decide": {
+      const body = await readBody(req);
+      if (typeof body.prompt !== "string" || !body.prompt.trim()) throw bad(`"prompt" must be a non-empty string`);
+      scoutDecisions++;
+      return [200, await scout.decide({ prompt: body.prompt, user: body.user as never, surface: body.surface as never,
+                                         traceId: body.traceId as never })];
+    }
+    case "POST /scout/verify": {
+      const body = await readBody(req);
+      return [200, { valid: isObj(body.contract) ? scout.verify(body.contract as Record<string, unknown>) : false }];
+    }
+    case "GET /scout/registry":
+      return [200, scout.registry];
     case "POST /memory/write": {
       const body = await readBody(req);
       if (typeof body.content === "string") await embedder.prefetch([body.content], "passage");

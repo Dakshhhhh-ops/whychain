@@ -9,13 +9,16 @@
     "start": "tsx server.ts",
     "smoke": "node smoke.mjs",
     "conformance": "tsx engines/hmem/conformance/runner.ts && tsx engines/world-model/conformance/runner.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "scout:evals": "tsx engines/scout-intent/evals/runner/index.ts all",
+    "scout:routing": "tsx scout/test-routing.ts"
   },
   "dependencies": {
     "tsx": "^4.20.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "yaml": "^2.5.1"
   }
 }
