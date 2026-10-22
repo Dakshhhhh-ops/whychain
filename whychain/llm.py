@@ -159,9 +159,11 @@ class LLM:
             except TimeoutError as e:  # waited too long for a free slot
                 raise APITimeoutError(request=None) from e  # type: ignore[arg-type]
             except RateLimitError as e:
-                if attempt >= limit:
+                # with another model behind this one, switch after one short retry: NIM limits each model separately
+                if attempt >= limit or (attempts <= 2 and attempt >= 2):
                     raise
-                wait = min(_retry_after(e) or 10.0 * attempt, 60.0, max(0.0, stop - time.monotonic()))
+                wait = min(_retry_after(e) or (5.0 if attempts <= 2 else 10.0 * attempt), 60.0,
+                           max(0.0, stop - time.monotonic()))
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, wait_s=wait, error="RateLimitError: 429")
                 time.sleep(wait)
             except TRANSIENT as e:

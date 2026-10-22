@@ -4,10 +4,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import date
 
 from whychain.agents import prompts as P
 from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
 from whychain.harness.base import catalog_text
+from whychain.analysis import get_engine
+from whychain.analysis.battery import battery_applies, plan_battery, run_task, build_scope
 from whychain.grounding import check_numbers, figure_supported, numbers_in
 from whychain.llm import LLMError, extract_json
 
@@ -89,6 +92,10 @@ SIMILAR_QUESTION = 0.4  # word overlap (Jaccard) needed to reuse another investi
 
 
 def evidence_text(ev: dict, max_rows: int = 8) -> str:
+    if ev["type"] == "analysis":
+        rows = "\n".join("    " + " | ".join("" if v is None else str(v) for v in r) for r in ev["rows"][:max_rows + 4])
+        return (f"[{ev['id']}] ANALYSIS (computed by code, verdict: {ev.get('verdict')}): {ev.get('title')}\n"
+                f"    {' | '.join(ev['columns'])}\n{rows}")
     if ev["type"] == "doc":
         return f"[{ev['id']}] DOC {ev['doc_id']} ({ev.get('doc_type')}, {ev.get('sent_at') or ''}): \"{ev['quote']}\""
     if ev["type"] == "optimization":
@@ -242,10 +249,57 @@ def scout(state: dict, ctx: Ctx) -> dict:
     return {"data_map": dm}
 
 
+def engine_for(ctx: Ctx):
+    """The analysis engine for this run's dataset, or None if it has no fact model."""
+    try:
+        return get_engine(ctx.harness)
+    except Exception:
+        return None
+
+
+def plan_with_battery(state: dict, ctx: Ctx, eng) -> dict | None:
+    """Round 1 for a late-delivery question: a fixed battery of tests run by code, plus one Document Analyst task
+    for the written record (context, not a cause)."""
+    agent = "Planner"
+    try:
+        as_of = date.fromisoformat(str(ctx.as_of)[:10])
+        b = plan_battery(state["question"], eng, as_of)
+    except Exception as e:
+        ctx.tracer.event("agent_error", agent, error=f"analysis battery failed, using the model planner: {e}"[:300])
+        return None
+    new = []
+    for i, t in enumerate(b["tasks"], 1):
+        new.append({"id": f"T{i}", "round": 1, "type": "measure" if t["tool"] in ("measure", "text") else "hypothesis",
+                    "statement": t["statement"], "agent": "tool", "tool": t["tool"], "scope": t["scope"],
+                    "params": t["params"], "checks": [f"analysis engine: {t['tool']}"], "priority": 1,
+                    "addresses_gap": None})
+    new.append({"id": f"T{len(new) + 1}", "round": 1, "type": "hypothesis", "agent": "docs", "context_only": True,
+                "statement": "The written record (news briefs, contracts, email) explains the symptom or describes "
+                             "events around it",
+                "checks": ["search docs.documents and signals.events for the period and places in question"],
+                "priority": 2, "addresses_gap": None})
+    p = b["primary"]
+    ctx.tracer.event("plan", agent, round=1, symptom=f"Late deliveries: {p['label']}",
+                     reasoning=("A fixed battery of tests, computed by the analysis engine (no model): the symptom, "
+                                "each delivery stage, where it is concentrated, volume, data quality, review text and "
+                                "the dated events in the period. The Document Analyst reads the written record."),
+                     tasks=[{"id": t["id"], "agent": t["agent"], "type": t["type"], "statement": t["statement"]}
+                            for t in new])
+    return {"tasks": new, "open_tasks": new, "round": 1, "symptom": f"Late deliveries: {p['label']}",
+            "analysis": {"primary": p, "scopes": b["scopes"], "named_events": b.get("named_events", []),
+                         "context_events": b["context_events"]}}
+
+
 def plan(state: dict, ctx: Ctx) -> dict:
     agent = "Planner"
     rnd = state.get("round", 0) + 1
     ctx.tracer.event("agent_start", agent, round=rnd)
+    if rnd == 1 and battery_applies(state["question"]):
+        eng = engine_for(ctx)
+        if eng is not None:
+            out = plan_with_battery(state, ctx, eng)
+            if out is not None:
+                return out
     existing = state.get("tasks", [])
     if rnd == 1:
         user = base_context(state, ctx) + "\n\nCreate the investigation plan (1 measure task + 3-5 hypotheses)."
@@ -312,9 +366,35 @@ def _parse_tasks(raw, existing: list, rnd: int, cap: int) -> list[dict]:
     return new
 
 
+def investigate_tool(t: dict, ctx: Ctx) -> dict:
+    """A battery task: computed by the analysis engine, with a coded verdict. No model call."""
+    agent = f"Analysis engine {t['id']}"
+    ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"])
+    try:
+        f, evidence = run_task(engine_for(ctx), t, t["id"])
+    except Exception as e:
+        f = {"statement": t["statement"], "type": t["type"], "verdict": "inconclusive",
+             "claim": f"The analysis could not be computed: {str(e)[:200]}", "key_numbers": [], "evidence_ids": [],
+             "fixed": {"status": "needs_more", "is_cause": False, "share_of_symptom": None, "reason": "analysis error"}}
+        evidence = {}
+        ctx.tracer.event("agent_error", agent, task_id=t["id"], error=str(e)[:300])
+    for eid, ev in evidence.items():
+        ctx.tracer.event("analysis", agent, task_id=t["id"], evidence_id=eid, tool=ev["tool"], title=ev["title"],
+                         verdict=ev["verdict"], rows=ev["row_count"])
+    finding = {"task_id": t["id"], "statement": t["statement"], "type": f["type"], "agent_kind": "tool",
+               "agent": agent, "verdict": f["verdict"], "claim": f["claim"], "key_numbers": f["key_numbers"],
+               "who_knew": None, "confidence": 1.0, "evidence_ids": f["evidence_ids"], "steps": 1,
+               "sql_errors_recovered": 0, "quotes_rejected": 0, "round": t["round"], "fixed": f["fixed"]}
+    ctx.tracer.event("finding", agent, task_id=t["id"], verdict=finding["verdict"], claim=finding["claim"],
+                     evidence=finding["evidence_ids"], confidence=1.0, recovered=0)
+    return {"findings": [finding], "evidence": evidence}
+
+
 def investigate(payload: dict, ctx: Ctx) -> dict:
     """Runs one task. Fanned out in parallel, one call per task."""
     t = payload["task"]
+    if t.get("agent") == "tool":
+        return investigate_tool(t, ctx)
     docs = t["agent"] == "docs"
     agent = f"{'Doc Analyst' if docs else 'Investigator'} {t['id']}"
     ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"])
@@ -340,7 +420,7 @@ def investigate(payload: dict, ctx: Ctx) -> dict:
                "key_numbers": f.get("key_numbers", {}), "who_knew": f.get("who_knew"),
                "confidence": f.get("confidence"), "evidence_ids": ev_ids, "steps": res.steps,
                "sql_errors_recovered": res.sql_errors_recovered, "quotes_rejected": rejected,
-               "round": t["round"]}
+               "round": t["round"], "context_only": bool(t.get("context_only"))}
     ctx.tracer.event("finding", agent, task_id=t["id"], verdict=finding["verdict"], claim=finding["claim"],
                      evidence=ev_ids, confidence=finding["confidence"], recovered=res.sql_errors_recovered)
     return {"findings": [finding], "evidence": evidence}
@@ -371,17 +451,37 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
                                                      fetch=refetch(ctx))
             if c["checked"]:
                 ctx.tracer.event("numbers_check", agent, task_id=f["task_id"], checked=c["checked"], missing=c["missing"])
-    # 3) skeptical review
+    verdicts: dict = {}
+    # 3) skeptical review: the model judges only what code didn't decide
     earlier = [f for f in state["findings"] if f["round"] < rnd]
-    user = (base_context(state, ctx) + f"\n\nSYMPTOM: {state.get('symptom')}\n\n"
-            f"EARLIER FINDINGS (already judged):\n{findings_text(earlier, evidence, state.get('verdicts'), 4) or '(none)'}"
-            f"\n\nNEW FINDINGS TO JUDGE (round {rnd}):\n{findings_text(this_round, evidence, checks=checks)}")
-    try:
-        out = ctx.llm.json("reason", P.EVALUATOR, user, agent=agent, max_tokens=3000)
-    except LLMError as e:
-        ctx.tracer.event("agent_error", agent, error=str(e)[:300])
-        out = {"verdicts": [], "decision": "accept", "summary": f"Evaluator unavailable: {e}"}
-    verdicts = {}
+    coded = [f for f in this_round if f.get("fixed")]
+    to_judge = [f for f in this_round if not f.get("fixed")]
+    coded_txt = "\n".join(f"- [{f['task_id']}] {f['statement']} -> {f['fixed']['status']}"
+                           f"{' (cause, ' + str(round(100 * f['fixed']['share_of_symptom'], 1)) + '% of the rise)' if f['fixed'].get('is_cause') and isinstance(f['fixed'].get('share_of_symptom'), float) else ''}"
+                           f": {f['fixed']['reason']}" for f in coded)
+    if state.get("analysis"):  # battery run: the record is context; its quotes were verified word for word
+        for f in to_judge:
+            nq = sum(1 for e in f["evidence_ids"] if evidence.get(e, {}).get("type") == "doc")
+            verdicts[f["task_id"]] = {"status": "confirmed" if nq else "needs_more", "is_cause": False,
+                                      "share_of_symptom": None, "round": rnd, "numbers_check": checks.get(f["task_id"]),
+                                      "reason": (f"Context only: {nq} quote(s) verified word for word. Dated events are "
+                                                 "judged by the event tests, not by documents.") if nq else
+                                                "Context only: no verified quote."}
+        to_judge_llm = []
+    else:
+        to_judge_llm = to_judge
+    if to_judge_llm:
+        user = (base_context(state, ctx) + f"\n\nSYMPTOM: {state.get('symptom')}\n\n"
+                + (f"DECIDED BY CODE (authoritative; don't re-judge these, but use them):\n{coded_txt}\n\n" if coded else "")
+                + f"EARLIER FINDINGS (already judged):\n{findings_text(earlier, evidence, state.get('verdicts'), 4) or '(none)'}"
+                f"\n\nNEW FINDINGS TO JUDGE (round {rnd}):\n{findings_text(to_judge_llm, evidence, checks=checks)}")
+        try:
+            out = ctx.llm.json("reason", P.EVALUATOR, user, agent=agent, max_tokens=3000)
+        except LLMError as e:
+            ctx.tracer.event("agent_error", agent, error=str(e)[:300])
+            out = {"verdicts": [], "decision": "accept", "summary": f"Evaluator unavailable: {e}"}
+    else:
+        out = {"verdicts": [], "decision": "accept", "gaps": [], "red_flags": [], "summary": ""}
     valid_ids = {f["task_id"] for f in state["findings"]}
     for v in out.get("verdicts", []):
         if isinstance(v, dict) and v.get("task_id") in valid_ids:
@@ -406,6 +506,30 @@ def evaluate(state: dict, ctx: Ctx) -> dict:
             verdicts[v["task_id"]] = {"status": status, "reason": reason,
                                       "is_cause": bool(is_cause), "share_of_symptom": v.get("share_of_symptom"),
                                       "round": rnd, "numbers_check": c}
+    for f in coded:  # the analysis engine's verdicts, with the same numbers rule as everything else
+        fx = dict(f["fixed"])
+        c = checks.get(f["task_id"])
+        if fx["status"] == "confirmed" and c and c["checked"] >= 2 and len(c["missing"]) * 3 > c["checked"]:
+            fx.update(status="needs_more", is_cause=False,
+                      reason=fx["reason"] + f" [Numbers check failed: {', '.join(c['missing'][:5])}]")
+        verdicts[f["task_id"]] = {**fx, "round": rnd, "numbers_check": c, "decided_by": "code"}
+    for f in to_judge:  # the written record gives context; dated events are judged by the event test
+        if f.get("context_only") and f["task_id"] in verdicts:
+            verdicts[f["task_id"]]["is_cause"] = False
+    if coded:
+        stage_ids = {t["id"] for t in state.get("tasks", []) if t.get("tool") == "stage"}
+        explained = sum(v["share_of_symptom"] for k, v in verdicts.items() if k in stage_ids and v.get("is_cause")
+                        and isinstance(v.get("share_of_symptom"), float))
+        out["symptom_explained"] = round(min(1.0, max(0.0, explained)), 2) if stage_ids else out.get("symptom_explained")
+        causes_txt = ", ".join(f"{f['statement'].lower()} ({round(100 * verdicts[f['task_id']]['share_of_symptom'], 1)}%)"
+                               if isinstance(verdicts[f["task_id"]].get("share_of_symptom"), float)
+                               else f["statement"].lower()
+                               for f in coded if verdicts[f["task_id"]].get("is_cause"))
+        ruled = ", ".join(f["statement"].lower() for f in coded if verdicts[f["task_id"]]["status"] == "rejected")
+        out["summary"] = ((f"Confirmed by the analysis engine: {causes_txt or 'no cause'}. Ruled out: {ruled or 'nothing'}. ")
+                          + (out.get("summary") or ""))
+        if not to_judge:
+            out["decision"] = "accept"
     decision = out.get("decision", "accept")
     forced = False
     if decision == "revise" and (rnd >= ctx.settings.max_rounds or not out.get("gaps")):
@@ -446,7 +570,7 @@ def finding_evidence(f: dict, evidence: dict) -> list[dict]:
 
 
 _UNVERIFIED = " (unverified)"
-_CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDP]\d+)\]")
+_CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]")
 
 
 def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: Ctx | None = None) -> tuple[str, str, dict]:
@@ -512,6 +636,84 @@ def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str
     return out, removed
 
 
+def act_battery(state: dict, ctx: Ctx) -> dict:
+    """Actions for a late-delivery question, from templates per confirmed cause, sized with computed tables.
+    No model: every figure is a cell of a cited result."""
+    agent = "Risk & Action"
+    v = state.get("verdicts", {})
+    tasks = {t["id"]: t for t in state.get("tasks", [])}
+    eng = engine_for(ctx)
+    primary = state["analysis"]["primary"]
+    evidence, actions = {}, []
+    causes = [f for f in state["findings"] if v.get(f["task_id"], {}).get("is_cause")]
+    tools = {tasks[f["task_id"]].get("tool"): f for f in causes if f["task_id"] in tasks}
+    stages = {tasks[f["task_id"]]["params"].get("stage"): f for f in causes
+              if tasks.get(f["task_id"], {}).get("tool") == "stage"}
+    cur = getattr(ctx.dataset, "currency", "")
+
+    def add(title, steps, addresses, ev_ids, orders=None, approval=None):
+        actions.append({"id": f"A{len(actions) + 1}", "title": title, "steps": steps, "addresses": addresses,
+                        "orders_protected": orders, "value_protected_inr": None, "est_cost_inr": None,
+                        "currency": cur, "confidence": 1.0, "evidence": ev_ids, "unsupported_figures": [],
+                        "needs_approval": bool(approval), "approval_reasons": approval or [], "decision": "pending",
+                        "time_to_effect": "next orders", "policy_notes": ""})
+
+    if "transit" in stages or "promise" in stages:
+        try:
+            res = eng.promise_buffer(build_scope(eng, primary))
+            evidence["A.A1"] = res.evidence("A.A1", "A", "Analysis engine")
+            need = [r for r in res.rows if r[4] > 0][:5]
+            if need:
+                where = ", ".join(f"{r[0]} +{r[4]} days" for r in need)
+                avoided = sum(r[5] - r[6] for r in need)
+                add(f"Add delivery-promise buffers where transit outruns the promise: {where}",
+                    f"Set each area's promised window to the 80th percentile of actual delivery time. On the orders "
+                    f"in question, this would have turned {avoided} late deliveries into on-time ones in these areas.",
+                    [stages.get("transit", stages.get("promise"))["task_id"]], ["A.A1"], avoided,
+                    ["changes what customers are promised"])
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"promise buffer failed: {e}"[:200])
+    if "transit" in stages:
+        f = stages["transit"]
+        seg = next((g for g in state["findings"] if tasks.get(g["task_id"], {}).get("tool") == "segments"
+                    and tasks[g["task_id"]]["params"].get("dim") in ("carrier_id", eng.m.map_within)), None)
+        detail = ""
+        if seg:
+            ev = state["evidence"].get(seg["evidence_ids"][0], {})
+            if ev.get("rows"):
+                top = ev["rows"][0]
+                detail = (f" Start with {top[0]}: {top[7]}% of the rise from {top[8]}% of the orders "
+                          f"({top[4]}% -> {top[3]}% late).")
+        add("Escalate carrier transit performance with the carrier, with weekly transit monitoring by area",
+            "Share the transit figures with the carrier, agree recovery targets, and alert when an area's weekly mean "
+            "transit moves 1 day above its normal." + detail, [f["task_id"]], f["evidence_ids"] + (seg["evidence_ids"][:1] if seg else []))
+    if "handover" in stages:
+        f = stages["handover"]
+        add("Enforce hand-over deadlines with the slowest senders",
+            "Rank sellers (or warehouses) by late hand-overs in the period and agree corrective plans.",
+            [f["task_id"]], f["evidence_ids"])
+    if "volume" in tools:
+        f = tools["volume"]
+        add("Plan peak capacity before the next surge", "Pre-book carrier pick-ups and extend promises in the weeks "
+            "when orders run well above the usual daily level.", [f["task_id"]], f["evidence_ids"])
+    for f in causes:
+        t = tasks.get(f["task_id"], {})
+        if t.get("tool") == "event":
+            name = f["statement"].split(" (")[0]
+            add(f"Contingency playbook for events like: {name}",
+                "When a comparable event starts, extend promises for parcels in transit and notify affected customers.",
+                [f["task_id"]], f["evidence_ids"], approval=["changes what customers are promised"])
+        if t.get("tool") == "segments":
+            add("Address the order mix behind the gap",
+                "Serve these customers from closer stock or sellers where possible, and set promises by distance.",
+                [f["task_id"]], f["evidence_ids"])
+    ctx.tracer.event("agent_end", agent, actions=[(a["id"], a["title"], a["needs_approval"]) for a in actions])
+    for a in actions:
+        if a["needs_approval"]:
+            ctx.tracer.event("escalation", agent, action_id=a["id"], title=a["title"], reasons=a["approval_reasons"])
+    return {"actions": actions, "risks": [], "evidence": evidence}
+
+
 def act(state: dict, ctx: Ctx) -> dict:
     agent = "Risk & Action"
     confirmed = [f for f in state["findings"]
@@ -521,17 +723,32 @@ def act(state: dict, ctx: Ctx) -> dict:
         ctx.tracer.event("agent_skip", agent, note="No confirmed causes; no actions proposed")
         return {"actions": [], "risks": []}
     ctx.tracer.event("agent_start", agent, causes=[f["task_id"] for f in confirmed])
+    if state.get("analysis"):
+        return act_battery(state, ctx)
     optimizer = getattr(ctx.dataset, "optimizer", True)
     currency = getattr(ctx.dataset, "currency", "INR")
+    extra_ev, extra_txt = {}, ""
+    if state.get("analysis") and not optimizer:
+        # prescriptive numbers for the real dataset: the promise buffer each area needs (computed, not estimated)
+        try:
+            eng = engine_for(ctx)
+            res_b = eng.promise_buffer(build_scope(eng, state["analysis"]["primary"]))
+            extra_ev["A.A1"] = res_b.evidence("A.A1", "A", "Analysis engine")
+            extra_txt = ("\n\nCOMPUTED FOR YOU (cite it as A.A1; use its cells as the action's numbers):\n"
+                         + evidence_text(extra_ev["A.A1"], 12))
+            ctx.tracer.event("analysis", agent, task_id="A", evidence_id="A.A1", tool="promise_buffer",
+                             title=res_b.title, verdict="measured", rows=len(res_b.rows))
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"promise buffer failed: {e}"[:200])
     threshold = getattr(ctx.dataset, "approval_threshold", ctx.settings.approval_threshold_inr)
     brief = (base_context(state, ctx) + f"\n\nCONFIRMED CAUSES:\n{findings_text(confirmed, state['evidence'])}"
              f"\n\nApproval threshold: actions costing more than {currency} {threshold:,.0f} "
-             f"need sign-off from the head of operations.\n\nCATALOG:\n{ctx.catalog_text}")
+             f"need sign-off from the head of operations.{extra_txt}\n\nCATALOG:\n{ctx.catalog_text}")
     res = run_loop(ctx, agent=agent, role="work", system=fill(P.risk_prompt(optimizer, currency), 8), brief=brief,
                    task_id="A", max_steps=8, allow_docs=True, allow_optimize=optimizer, finish_keys=("actions",))
     f = res.final
     actions = []
-    all_ev = {**state["evidence"], **res.evidence}
+    all_ev = {**state["evidence"], **extra_ev, **res.evidence}
     for i, a in enumerate(f.get("actions", []) or [], 1):
         if not isinstance(a, dict):
             continue
@@ -559,7 +776,7 @@ def act(state: dict, ctx: Ctx) -> dict:
         if reasons:
             ctx.tracer.event("escalation", agent, action_id=act_["id"], title=a.get("title"), reasons=reasons)
     ctx.tracer.event("agent_end", agent, actions=[(a["id"], a.get("title"), a["needs_approval"]) for a in actions])
-    return {"actions": actions, "risks": f.get("risks", []) or [], "evidence": res.evidence}
+    return {"actions": actions, "risks": f.get("risks", []) or [], "evidence": {**extra_ev, **res.evidence}}
 
 
 def tidy_brief(md: str, headline: str) -> tuple[str, str]:
@@ -609,9 +826,123 @@ def parse_brief(text: str) -> dict:
     return {"headline": headline, "brief_markdown": t.strip(), "lessons": lessons}
 
 
+ANSWER_PROMPT = """You write the short answer at the top of a supply chain brief for a busy manager.
+Use ONLY the facts given. Copy every number exactly as written, keep the evidence ids in square brackets right after
+the numbers they support, and add no new numbers. Two or three sentences, plain English, no headings."""
+
+
+def _cites(f: dict) -> str:
+    return "".join(f"[{e}]" for e in f.get("evidence_ids", [])[:2])
+
+
+def _short(statement: str) -> str:
+    s = statement.strip().rstrip(".")
+    return s[0].lower() + s[1:] if s else s
+
+
+def report_battery(state: dict, ctx: Ctx) -> dict:
+    """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer."""
+    agent = "Reporter"
+    v = state.get("verdicts", {})
+    tasks = {t["id"]: t for t in state.get("tasks", [])}
+    fs = state["findings"]
+    measure = next((f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "measure"), None)
+    causes = sorted([f for f in fs if v.get(f["task_id"], {}).get("is_cause") and v[f["task_id"]]["status"] == "confirmed"],
+                    key=lambda f: -(v[f["task_id"]].get("share_of_symptom") or 0) if isinstance(
+                        v[f["task_id"]].get("share_of_symptom"), float) else 1)
+    ruled = [f for f in fs if v.get(f["task_id"], {}).get("status") == "rejected" and f.get("agent_kind") == "tool"]
+    where = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "segments" and not v.get(f["task_id"], {}).get("is_cause")]
+    context = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "text"]
+    quotes = [state["evidence"][e] for f in fs if f.get("agent_kind") == "docs" for e in f["evidence_ids"]
+              if state["evidence"].get(e, {}).get("type") == "doc"]
+    named = state.get("analysis", {}).get("named_events") or []
+    event_f = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "event"
+               and tasks[f["task_id"]].get("params", {}).get("event_id") in named]
+
+    def share_txt(f):
+        sh = v[f["task_id"]].get("share_of_symptom")
+        return f" ({round(100 * sh, 1)}% of the rise)" if isinstance(sh, float) else ""
+
+    # headline, in code
+    if event_f:
+        e = event_f[0]
+        st = v[e["task_id"]]["status"]
+        name = e["statement"].split(" (")[0]
+        headline = (f"{'Yes' if st == 'confirmed' else 'No'}: {name} "
+                    f"{'delayed deliveries' if st == 'confirmed' else 'did not cause the delays'}. {v[e['task_id']]['reason']}")
+    elif causes:
+        top = " and ".join(_short(f["statement"]) + share_txt(f) for f in causes[:2])
+        headline = f"Main causes: {top}."
+        if measure:
+            headline = measure["claim"].split(":")[0] + f". {headline}"
+    else:
+        headline = "No cause could be confirmed from the data."
+
+    lines = ["## Root causes"]
+    if causes:
+        for i, f in enumerate(causes, 1):
+            lines.append(f"{i}. **{f['statement']}**{share_txt(f)}. {f['claim']} {_cites(f)}")
+    else:
+        lines.append("No cause passed the tests.")
+    if where:
+        lines += ["", "## Where it happened"] + [f"- {f['claim']} {_cites(f)}" for f in where]
+    lines += ["", "## Ruled out"] + ([f"- **{f['statement']}**: {v[f['task_id']]['reason']} {_cites(f)}" for f in ruled]
+                                     or ["- Nothing was ruled out."])
+    if context or quotes:
+        lines += ["", "## What customers and the written record say"]
+        for f in context:
+            lines.append(f"- {f['claim']} {_cites(f)}")
+        for q in quotes[:4]:
+            lines.append(f"- {q.get('title') or q.get('doc_id')} ({str(q.get('sent_at') or '')[:10]}): "
+                         f"\"{q['quote']}\" [{q['id']}]")
+    acts = state.get("actions", [])
+    if acts:
+        cur = getattr(ctx.dataset, "currency", "")
+        lines += ["", "## Recommended actions", "| Action | Protects | Est. cost | Approval |", "|---|---|---|---|"]
+        for a in acts:
+            prot = f"{int(a['orders_protected']):,} orders" if isinstance(a.get("orders_protected"), (int, float)) and a.get("orders_protected") else "—"
+            cost = f"{cur} {a['est_cost_inr']:,.0f}" if isinstance(a.get("est_cost_inr"), (int, float)) else "not computed (no cost data)"
+            appr = "needs approval: " + "; ".join(a.get("approval_reasons") or []) if a.get("needs_approval") else "within limits"
+            lines.append(f"| {a['id']}. {a.get('title', '')} {''.join(f'[{e}]' for e in a.get('evidence', [])[:2])} | {prot} | {cost} | {appr} |")
+    last = state["evaluations"][-1] if state.get("evaluations") else {}
+    stage_causes = [f for f in causes if tasks.get(f["task_id"], {}).get("tool") == "stage"]
+    stage_sh = [round(100 * v[f["task_id"]]["share_of_symptom"], 1) for f in stage_causes
+                if isinstance(v[f["task_id"]].get("share_of_symptom"), float)]
+    lines += ["", "## How sure we are",
+              (f"- The confirmed stages ({' and '.join(f'{x}%' for x in stage_sh)}) together explain "
+               f"{round(sum(stage_sh), 1)}% of the measured rise"
+               + ("; the rest is mix and interactions." if sum(stage_sh) <= 100 else
+                  " (more than all of it: other effects, such as the mix of orders, offset part of it).")
+               if len(stage_sh) > 1 else
+               f"- The confirmed stage explains {stage_sh[0]}% of the measured rise." if stage_sh else
+               "- No single delivery stage explains the symptom in this scope."),
+              "- Every number above was computed by the analysis engine from the cited results, and checked against "
+              "their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
+    body = "\n".join(lines)
+
+    facts = "\n".join([f"HEADLINE: {headline}"] + ([f"SYMPTOM: {measure['claim']} {_cites(measure)}"] if measure else [])
+                      + [f"CAUSE: {f['statement']}{share_txt(f)}: {f['claim']} {_cites(f)}" for f in causes[:3]]
+                      + [f"RULED OUT: {f['statement']}: {v[f['task_id']]['reason']}" for f in ruled[:5]])
+    answer = ""
+    try:
+        res = ctx.llm.chat("work", ANSWER_PROMPT, f"QUESTION: {state['question']}\n\nFACTS:\n{facts}", agent=agent,
+                           max_tokens=600, temperature=0.2)
+        answer = re.sub(r"(?m)^#+.*$", "", res.text).strip()
+    except LLMError as e:
+        ctx.tracer.event("agent_error", agent, error=str(e)[:200])
+    if len(answer) < 40:
+        answer = headline + (f" {measure['claim']} {_cites(measure)}" if measure else "")
+    md = f"## Answer\n{answer}\n\n{body}"
+    md, headline, brief_check = check_brief(md, headline, state, acts, ctx)
+    ctx.tracer.event("agent_end", agent, headline=headline, invalid_citations_removed=[])
+    return {"brief": md, "headline": headline, "lessons": [], "brief_check": brief_check}
+
+
 def report(state: dict, ctx: Ctx) -> dict:
     agent = "Reporter"
     ctx.tracer.event("agent_start", agent)
+    if state.get("analysis"):
+        return report_battery(state, ctx)
     v = state.get("verdicts", {})
     currency = getattr(ctx.dataset, "currency", "INR")
     actions = json.dumps([{"id": a.get("id"), "title": a.get("title"), "steps": a.get("steps"),
@@ -645,7 +976,7 @@ def report(state: dict, ctx: Ctx) -> dict:
     ev_by_task = {f["task_id"]: f["evidence_ids"] for f in state["findings"]}
     md = re.sub(r"\[(T\d+)\]", lambda m: "".join(f"[{e}]" for e in ev_by_task.get(m.group(1), [])[:2]) or m.group(0), md)
     known = set(state["evidence"])
-    bad = sorted({c for c in re.findall(r"\[([A-Z][A-Za-z0-9]*\.[QDP]\d+)\]", md) if c not in known})
+    bad = sorted({c for c in re.findall(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]", md) if c not in known})
     for c in bad:
         md = md.replace(f"[{c}]", "[citation removed]")
     headline = re.sub(r"\s*\[[^\]]*\]", "", str(out.get("headline", ""))).strip()

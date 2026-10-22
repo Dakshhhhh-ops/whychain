@@ -221,7 +221,7 @@ def msg_ids(v) -> list[str]:
     if not v:
         return []
     if isinstance(v, str):
-        v = re.findall(r"[A-Z][A-Za-z0-9]*\.[QDP]\d+", v)
+        v = re.findall(r"[A-Z][A-Za-z0-9]*\.[QDPA]\d+", v)
     return [str(x).strip("[] ") for x in v]
 
 

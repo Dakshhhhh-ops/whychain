@@ -24,7 +24,7 @@ _DATES = re.compile(
     r"|\b\d{1,2}/\d{1,2}(/\d{2,4})?\b"                            # 12/03/2018
     r"|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(\s*[-–]\s*\d{1,2})?(?!\d)"  # Mar 12-13
     r"|\b\d{1,2}(\s*[-–]\s*\d{1,2})?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b"  # 12-13 March
-    r"|\b[A-Z]\d*\.[QDP]\d+\b"                                    # evidence ids like T2.Q1
+    r"|\b[A-Z]\d*\.[QDPA]\d+\b"                                    # evidence ids like T2.Q1
     r"|\b[A-Za-z]{1,4}-\d+\b"                                     # ids like S-14, C02 handled below
     r"|\b[A-Z]{1,4}\d+\b",                                        # ids like C02, T2, A1
     re.I)
@@ -195,11 +195,12 @@ _UNIT_WORDS = [
                          r"lines?|skus?|purchase orders?|pos?)\b")),
 ]
 _MONEY_BEFORE = re.compile(r"(brl|inr|r\$|₹|\$)\s*$")
-_COLUMN_KINDS = [
-    ("pct", re.compile(r"pct|percent|rate|share|ratio|late|ontime|on_time|frac")),
+_COLUMN_KINDS = [  # order matters: "share_of_orders_pct" is a rate, "late_orders" a count, "orders_per_day" a count
+    ("pct", re.compile(r"pct|percent|rate|share|ratio|frac|ontime|on_time|_pp$")),
+    ("count", re.compile(r"(^|_)(n|cnt|count|orders?|units?|qty|quantity|items?|num|lines?|sellers?|customers?|"
+                         r"reviews?|parcels?|mentions?|handed_over)($|_)")),
     ("time", re.compile(r"day|transit|time|lead|hour|delay|dur|lag|week")),
     ("money", re.compile(r"price|value|cost|freight|payment|gmv|revenue|amount|brl|inr|spend|penalty|sales")),
-    ("count", re.compile(r"(^|_)(n|cnt|count|orders?|units?|qty|quantity|items?|num|lines?|sellers?|customers?|reviews?)($|_)")),
 ]
 
 

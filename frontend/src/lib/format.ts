@@ -27,7 +27,7 @@ export function runDate(runId: string) {
   return when(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`);
 }
 
-export const CITATION = /\[([A-Z][A-Za-z0-9]*\.[QDP]\d+)\](?!\()/g;
+export const CITATION = /\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\](?!\()/g;
 
 /** ₹2.67 Cr / ₹78.3 L style for big rupee amounts. */
 export function inrShort(v?: number | null) {
