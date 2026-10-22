@@ -246,7 +246,7 @@ def _median(xs: list[float]) -> float:
 
 OLIST_MONTHLY_SQL = """
 WITH o AS (SELECT order_id, date_format(order_purchase_timestamp, 'yyyy-MM') AS month,
-             CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 ELSE 0 END AS late,
+             CASE WHEN CAST(order_delivered_customer_date AS DATE) > CAST(order_estimated_delivery_date AS DATE) THEN 1 ELSE 0 END AS late,
              datediff(order_delivered_customer_date, order_delivered_carrier_date) AS carrier_days
            FROM oms.orders WHERE order_status = 'delivered' AND order_delivered_customer_date IS NOT NULL),
      s AS (SELECT i.order_id, MAX(CASE WHEN o.order_delivered_carrier_date > i.shipping_limit_date THEN 1 ELSE 0 END) AS seller_late
@@ -262,7 +262,7 @@ GROUP BY o.month HAVING COUNT(*) >= 200 ORDER BY o.month"""
 
 OLIST_STATES_SQL = """
 SELECT c.customer_state AS state, COUNT(*) AS orders,
-       ROUND(100.0 * AVG(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END), 1) AS late_pct
+       ROUND(100.0 * AVG(CASE WHEN CAST(o.order_delivered_customer_date AS DATE) > CAST(o.order_estimated_delivery_date AS DATE) THEN 1 ELSE 0 END), 1) AS late_pct
 FROM oms.orders o JOIN oms.customers c ON c.customer_id = o.customer_id
 WHERE o.order_status = 'delivered' AND o.order_delivered_customer_date IS NOT NULL
 GROUP BY c.customer_state HAVING COUNT(*) >= 300 ORDER BY late_pct DESC"""
@@ -273,7 +273,7 @@ FROM signals.events ORDER BY start_date"""
 
 OLIST_REGIONS_SQL = """
 WITH o AS (SELECT c.customer_state AS state, date_format(o.order_purchase_timestamp, 'yyyy-MM') AS month,
-             CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END AS late,
+             CASE WHEN CAST(o.order_delivered_customer_date AS DATE) > CAST(o.order_estimated_delivery_date AS DATE) THEN 1 ELSE 0 END AS late,
              datediff(o.order_delivered_customer_date, o.order_delivered_carrier_date) AS transit
            FROM oms.orders o JOIN oms.customers c ON c.customer_id = o.customer_id
            WHERE o.order_status = 'delivered' AND o.order_delivered_customer_date IS NOT NULL

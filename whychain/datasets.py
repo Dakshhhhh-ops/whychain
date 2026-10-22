@@ -82,7 +82,7 @@ OLIST = Dataset(
     source_notes={
         "oms": ("Order management system (Postgres): orders (status, purchase/approval timestamps, handed to carrier "
                 "= order_delivered_carrier_date, delivered = order_delivered_customer_date, promised = "
-                "order_estimated_delivery_date) and customers (city, state). Late = delivered after the estimated date."),
+                "order_estimated_delivery_date) and customers (city, state). LATE (use this definition everywhere) = delivered on a later calendar date than promised: CAST(order_delivered_customer_date AS DATE) > CAST(order_estimated_delivery_date AS DATE). The promised date has no time of day, so comparing raw timestamps would wrongly count same-day deliveries as late."),
         "sellers": ("Seller platform (CSV): order_items (one row per item: seller, product, shipping_limit_date = deadline "
                     "for the seller to hand the item to the carrier, price, freight_value), sellers (city, state), "
                     "products (category in Portuguese and English, weight, dimensions)."),
@@ -95,7 +95,7 @@ OLIST = Dataset(
     },
     samples=[
         {"title": "March 2018 delay spike", "tag": "Transport",
-         "question": "Why did late deliveries jump to 21% for orders placed in March 2018?"},
+         "question": "Why did late deliveries jump to 19% for orders placed in March 2018?"},
         {"title": "Black Friday 2017", "tag": "Peak season",
          "question": "Why did deliveries run late around Black Friday 2017?"},
         {"title": "Late in the Northeast", "tag": "Regional",

@@ -59,13 +59,13 @@
 
 - id: O1-march-2018
   dataset: olist
-  question: Why did late deliveries jump to 21% for orders placed in March 2018?
+  question: Why did late deliveries jump to 19% for orders placed in March 2018?
   # carrier transit ~15 days for parcels handed over 26 Feb-18 Mar (normal ~8.5); seller hand-over got faster;
   # concentrated in Rio de Janeiro (transit 9.7 -> 20.7 days, late 7% -> 36%) and the Northeast
   min_groups: 2
   must_find:
     - [transit, carrier]
-    - [rio, " rj", "(rj", northeast, nordeste, ceará, maranhão]
+    - [rio, rj, northeast, nordeste, ceará, maranhão]
 
 - id: O2-black-friday-2017
   dataset: olist

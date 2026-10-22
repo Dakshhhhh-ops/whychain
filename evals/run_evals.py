@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
@@ -20,8 +21,16 @@ from whychain.graph import investigate
 HERE = Path(__file__).resolve().parent
 
 
+def term_pattern(term: str) -> re.Pattern:
+    """A synonym must start at a word boundary. Short terms (4 letters or fewer, like "rio", "port", "edi", "air") must
+    be whole words; longer ones are stems and may continue ("consolidat" matches "consolidated")."""
+    t = str(term).lower().strip()
+    tail = r"(?![a-z0-9])" if len(t) <= 4 else ""
+    return re.compile(r"(?<![a-z0-9])" + re.escape(t) + tail)
+
+
 def matches(text: str, group: list[str]) -> bool:
-    return any(str(s).lower() in text for s in group)
+    return any(term_pattern(s).search(text) for s in group)
 
 
 def score(case: dict, res: dict) -> dict:
