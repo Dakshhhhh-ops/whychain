@@ -78,6 +78,7 @@
 
 - id: KH2-hyderabad-september
   held_out: false  # held out until commit 4ae49f7 changed code because of it; first run 20261022-191234-0dc3: FAIL (red herring: transit)
+  held_out_run: 20261022-191234-0dc3   # its first, held-out run
   question: Why did deliveries to Hyderabad get later in September?
   # SQL: late 17.3% in September vs 3.3% in August. Hand-over rose 2.41 -> 3.21 days, transit flat (2.03 -> 2.06),
   # same carrier (C02) and warehouse (CHN). Orders handed over after their requested ship date: 15.3% vs 2.2%, with
@@ -93,6 +94,7 @@
 
 - id: KH3-pune-october-false-premise
   held_out: false  # held out until commit 4ae49f7 changed code because of it; first run 20261022-191325-32b1: pass
+  held_out_run: 20261022-191325-32b1   # its first, held-out run
   question: Why did late deliveries to Pune rise in October?
   # SQL: Pune late rate by order month: Aug 11.0%, Sep 13.9%, Oct 4.4%. Lateness fell; there is no rise to explain.
   must_find:

@@ -139,7 +139,8 @@ def rescore(cases: list[dict], run_ids: list[str], commit: str | None) -> list[d
             last = trace.read_text(encoding="utf-8").strip().splitlines()[-1]
             seconds = round(json.loads(last).get("t") or 0) or None
         s = score(c, res)
-        s.update(id=c["id"], dataset=c.get("dataset", "kaveri"), held_out=bool(c.get("held_out")), run_id=rid,
+        held = bool(c.get("held_out")) or rid == c.get("held_out_run")   # a case's first run, while it was held out
+        s.update(id=c["id"], dataset=c.get("dataset", "kaveri"), held_out=held, run_id=rid,
                  seconds=seconds, harness=res.get("harness"), providers=res.get("llm", {}).get("by_provider"),
                  commit=_commit(res.get("code")) or commit, embedder=(res.get("memory") or {}).get("embedder"))
         rows.append(s)
