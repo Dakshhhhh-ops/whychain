@@ -27,6 +27,26 @@ ROLE_CHAINS = {
 JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup"}
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
 ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
+RATE_LIMIT_ATTEMPTS = 5  # 429s: the backup model shares the same key and quota, so wait instead of switching
+# at most this many calls in flight per endpoint (per process); parallel agents otherwise burst past rate limits
+MAX_PARALLEL = int(__import__("os").environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
+_SLOTS: dict[str, threading.BoundedSemaphore] = {}
+_SLOTS_LOCK = threading.Lock()
+
+
+def _slot(base_url: str) -> threading.BoundedSemaphore:
+    with _SLOTS_LOCK:
+        if base_url not in _SLOTS:
+            _SLOTS[base_url] = threading.BoundedSemaphore(MAX_PARALLEL)
+        return _SLOTS[base_url]
+
+
+def _retry_after(e: Exception) -> float | None:
+    try:
+        v = e.response.headers.get("retry-after")  # type: ignore[attr-defined]
+        return float(v) if v else None
+    except Exception:
+        return None
 
 
 @dataclass
@@ -116,11 +136,21 @@ class LLM:
 
     def _create(self, p: Provider, kwargs: dict, agent: str, attempts: int = ATTEMPTS):
         """Call one provider, retrying transient failures (5xx, rate limits, timeouts) with back-off."""
-        for attempt in range(1, attempts + 1):
+        limit = max(attempts, RATE_LIMIT_ATTEMPTS)
+        attempt = 0
+        while True:
+            attempt += 1
             try:
-                return self._client(p).chat.completions.create(**kwargs)
+                with _slot(p.base_url or p.name):
+                    return self._client(p).chat.completions.create(**kwargs)
+            except RateLimitError as e:
+                if attempt >= limit:
+                    raise
+                wait = _retry_after(e) or 10.0 * attempt
+                self._trace("llm_retry", agent, provider=p.name, attempt=attempt, wait_s=wait, error="RateLimitError: 429")
+                time.sleep(min(wait, 60.0))
             except TRANSIENT as e:
-                if attempt == attempts:
+                if attempt >= attempts:
                     raise
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, error=f"{type(e).__name__}: {str(e)[:120]}")
                 time.sleep(2.5 * attempt)
