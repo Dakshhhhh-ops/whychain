@@ -1,0 +1,35 @@
+# secrets
+.env
+*.pem
+*.key
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# generated data and run output
+data/generated/
+# Olist: downloaded and rebuilt by `python -m datagen.olist` (CC BY-NC-SA 4.0; not redistributed here)
+data/olist/raw/
+data/olist/generated/
+preview_runs/
+runs/
+!runs/.gitkeep
+*.duckdb
+*.duckdb.wal
+
+# node (meterless bridge)
+node_modules/
+meterless_bridge/data/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+
+# frontend build output
+frontend/dist/
+*.tsbuildinfo
