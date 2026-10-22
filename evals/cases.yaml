@@ -125,7 +125,8 @@
     - [stock-out, stockout, stock]
 
 - id: KH5-mumbai-chargers-false-premise
-  held_out: true
+  held_out: false  # development case since 22 Oct 20:28 IST: its brief ("No cause could be confirmed") led to the no-shortage headline
+  held_out_run: 20261022-193243-c38c   # its first, held-out run
   question: Why is there a charger shortage at the Mumbai DC?
   # SQL: MUM has NO open charger backorders (0 units). Its open backorders are earbuds (S-07, 3,302 units), cables,
   # routers, smart plugs, speakers, keyboards. No open charger POs for MUM. The premise is false.
@@ -133,6 +134,7 @@
     - [no cause, 0 of, no shortage, not short, nothing to explain]
   distractors:
     - [late inbound, spiked, too low, duplicate, strike, port]
+
 
 # --- Olist (REAL data). Nothing is planted: the ground truth below was established independently with SQL on the
 # raw data (weekly and per-state breakdowns) before scoring the agents. No expected actions: there is no single
@@ -203,7 +205,8 @@
 
 - id: H2-northeast-delays
   dataset: olist
-  held_out: true
+  held_out: false  # development case since 22 Oct 20:28 IST: its brief (a "0.0% (unverified)" in the answer) led to a change in the answer's numbers check
+  held_out_run: 20261022-161503-3bfb   # its first, held-out run
   question: Why are deliveries to Northeast states like Maranhão and Ceará late so often?
   # Northeast: 12.7% late vs 6.2% elsewhere; carrier transit 16.6 vs 8.6 days; promises 30.7 vs 23.0 days (the extra
   # promise covers about the extra transit, with no margin for its variability); 71% of items ship from SP sellers and
@@ -217,7 +220,8 @@
 
 - id: H3-rio-security
   dataset: olist
-  held_out: true
+  held_out: false  # development case since 22 Oct 20:28 IST: its brief ("Cargo theft is not mentioned as a cause") led to the untested-condition lead-in
+  held_out_run: 20261022-161633-a3ce   # its first, held-out run
   question: Did cargo theft in Rio de Janeiro slow deliveries there?
   # RJ: 12.1% late vs 4.6% (MG) and 4.0% (PR), states a similar distance from the SP sellers; transit 12.0 vs 8.8 days;
   # worse in nearly every month. Consistent with the documented security problems (record cargo theft 2017,
@@ -227,3 +231,36 @@
   must_find:
     - [transit, slower, longer, late]
     - [mg, minas, pr, paraná, parana, similar distance, comparable, neighbour, neighbor, other southeast, espírito, espirito]
+
+# --- Olist held-out questions, added 22 Oct 20:28 IST, ground truth from plain SQL on oms.orders / oms.customers
+# (order-level monthly means, by purchase month) before any engine or agent ran them. Not changed after their first run.
+
+- id: HO1-february-2018
+  dataset: olist
+  held_out: true
+  question: Why were so many deliveries late in February 2018?
+  # SQL (delivered orders by purchase month): Feb 2018 late 14.1% vs Aug-Oct 2017 2.9-4.4%. Mean transit 13.38 days vs
+  # 8.05-8.64 (Aug-Oct 2017) and 10.48 (Jan 2018); promised days 25.16 vs 23.07-24.11 (LONGER, not shorter);
+  # hand-over 3.49 vs 2.97-3.32 (little change). By customer state: RJ 34.0% late (879 orders), SC 24.0%, SP 7.3%.
+  # Carnival 2018 (12-14 Feb) is not the trigger (H1: the effect was already there before it).
+  must_find:
+    - [transit, carrier]
+    - [rio, rj]
+  distractors:
+    - [carnival, carnaval, holiday]
+    - [promised delivery windows got shorter, shorter promise]
+  headline_must_not:
+    - "(due to|because of|caused by|driven by)\\s+((the|a)\\s+)?(carnival|carnaval|holiday)"
+
+- id: HO2-december-2017
+  dataset: olist
+  held_out: true
+  question: Why did late deliveries rise in December 2017?
+  # SQL: Dec 2017 late 7.5% vs Aug-Oct 2017 2.9-4.4%. Mean transit 11.70 days vs 8.05-8.64; promised days 28.31 vs
+  # 23.07-24.11 (LONGER); hand-over 3.61 vs 2.97-3.32 (+0.3 to +0.6 day); orders 5,513 vs 7,289 in November (fewer).
+  # So: slower carrier transit; not shorter promises, not a volume surge in December itself.
+  must_find:
+    - [transit, carrier]
+  distractors:
+    - [promised delivery windows got shorter, shorter promise]
+    - [surge in orders, volume surge, more orders]
