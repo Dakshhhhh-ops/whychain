@@ -209,12 +209,19 @@ class ZetarisHarness:
             _CATALOGS[key] = (time.time(), out)
         return out
 
-    def status(self) -> dict:
-        try:
-            self._run("SELECT 1 AS ok", 1)
-            return {"ok": True, "harness": self.name, "url": self.base, "mode": self.mode}
-        except Exception as e:
-            return {"ok": False, "harness": self.name, "url": self.base, "mode": self.mode, "error": str(e)[:200]}
+    def status(self, attempts: int = 3) -> dict:
+        """Reachable? Under load the platform sometimes answers a query with a transient HTTP 400/5xx, so a failed
+        check is retried before the caller falls back to the local copy."""
+        err = ""
+        for i in range(attempts):
+            try:
+                self._run("SELECT 1 AS ok", 1)
+                return {"ok": True, "harness": self.name, "url": self.base, "mode": self.mode}
+            except Exception as e:
+                err = str(e)[:200]
+                if i + 1 < attempts:
+                    time.sleep(1.5 * (i + 1))
+        return {"ok": False, "harness": self.name, "url": self.base, "mode": self.mode, "error": err}
 
 
 def parse_response(payload) -> tuple[list[str], list[list]]:

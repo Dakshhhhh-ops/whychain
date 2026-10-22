@@ -115,7 +115,8 @@ def shared_harness(dataset: str | None = None):
     """One long-lived harness per dataset for the read-only pages (status, overview, sources)."""
     key = get_dataset(dataset).key
     hit = _shared.get(key)
-    if not hit or time.time() - hit["t"] > 300:
+    # a fallback (Zetaris was unreachable) is re-checked after a minute, a healthy harness after five
+    if not hit or time.time() - hit["t"] > (60 if hit["h"].name != SETTINGS.harness else 300):
         h, notes = get_harness(dataset=key)
         hit = _shared[key] = {"h": h, "notes": notes, "t": time.time()}
     return hit["h"], hit["notes"]
