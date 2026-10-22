@@ -33,46 +33,56 @@ These runs used a timestamp definition of "late" in some steps (21.4%) and calen
 
 A good analyst needs half a day to stitch that together. WhyChain does it in minutes, and shows its working.
 
-## What it does
+## How it works
 
-You ask a "why" question in plain English. WhyChain then:
+WhyChain splits the work between **code that computes** and **agents that plan, read and write**. Numbers and verdicts come from code; language models never produce a number that reaches the brief.
 
-1. **Maps the data.** The Data Scout reads the data harness's catalog (Zetaris by design; the local DuckDB harness in every run so far), profiles columns, proposes joins across sources and **tests every join against the data**. Joins that don't match are dropped. The map is saved to Meterless memory, so later runs skip this step.
-2. **Plans competing hypotheses.** The Planner measures the symptom first, then sets up rival explanations (supply, inventory policy, demand, carrier, data quality, external events), including red herrings that need ruling out.
-3. **Investigates in parallel.**
-   - **Data Investigators** query all sources with one SQL dialect through the data harness (see the sponsor status table for what has actually run). They repair their own failed queries.
-   - The **Document Analyst** searches contracts, policies and email, and must quote them **verbatim**. Quotes are checked character by character, and invented ones are thrown away.
-4. **Challenges the findings.** Code **re-runs every cited query** and **checks every number in each finding against the exact cells it cites** (see "Reliability"). The Evaluator sees the result, then confirms, rejects or asks for more on each hypothesis, and checks whether the confirmed causes explain the *size* of the symptom. If not, it sends specific gaps back to the Planner, which plans another round.
-5. **Turns causes into proven-optimal actions.** For any stock shortage, the Risk & Action agent calls the **optimizer**, built on Optiagent (see below). The agent chooses only the scope, for example "Voltix SKUs, to Pune, within 7 days". Code then reads the backorders, the spare stock at other DCs (after each keeps its policy cover), the truck lanes and the air-freight terms from the data. It solves the transfer problem and returns a plan with a **duality certificate**: a proof that no cheaper plan exists. It also reports any units that can't arrive in time. The agent checks penalty exposure and policy, then proposes priced fixes. Anything over the approval threshold or under 60% confidence is **escalated to a human**.
-6. **Does the approved work.** When a manager approves an action, the **Action Executor** prepares the deliverables that carry it out, grounded in the data:
-   - stock-transfer orders (SKU by SKU, computed with SQL, never leaving the sending DC below its cover);
-   - cancellation lists and parameter changes;
-   - draft emails to suppliers, carriers and customers.
+**Questions about late deliveries** (the real Olist data, and lateness questions on the simulated company) run on the **analysis engine** (`whychain/analysis/`):
 
-   Every table must come from one of the agent's own queries, which is re-run in full. Invented tables are discarded. Each deliverable can be downloaded (CSV / text).
-7. **Reports and remembers.**
-   - The Reporter writes a one-page brief in which every number cites its evidence. Citations to evidence that doesn't exist are removed.
-   - Confirmed causes, ruled-out causes, lessons and the manager's approve/reject decisions are written to **Meterless H-MEM**.
-   - The cause-and-effect links go into the **Meterless World Model**.
+1. **One federated query** pulls order-level facts through the data harness. That's one row per order: purchase, hand-over to the carrier, delivery, promised date, place, seller, carrier. "Late" has one definition: delivered on a later calendar date than promised.
+2. **The question becomes a fixed battery of tests** (`battery.py`). The period, places and named events are read from the question with plain rules. The same kind of question always gets the same tests:
+   - **the symptom** against a *normal* baseline: the months (or weeks) before, minus any that were themselves abnormal;
+   - **each delivery stage** (seller hand-over, carrier transit, the promise): counterfactual late rates where a stage takes its baseline distribution, matched like with like by area. Exact **Shapley values** split the rise, so the shares add up;
+   - **where it sits**: a shift-share split of the rise by area, seller state or carrier, separating "it got worse there" from "more orders came from there";
+   - **volume**: orders per day against the four weeks before (business growth is not a surge);
+   - **dated events** in or near the period: weekly transit and lateness, by the week parcels were handed to the carrier, against the **prior trend**. An event counts only if the change starts with it, and for a regional event, only if it is larger in that region;
+   - **data quality and definitions**, and **what customers wrote** (review mentions per thousand orders);
+   - for regional questions, a second comparison with **places at a similar distance** (similar promised times), to separate distance from everything else.
+3. **Coded verdicts.** A stage is a cause if it explains at least 10% of the rise. An event is a cause only if the effect starts with it. Volume counts only if orders rose 25% or more and the chain slowed with it. The thresholds are in the code and the brief.
+4. **Agents** around the engine:
+   - the **Document Analyst** reads the written record and must quote it verbatim. Documents are context, never a cause: dated events are judged by the event test;
+   - **actions** come from templates per confirmed cause, sized with computed tables (e.g. the promise buffer each state needs);
+   - a model writes only the brief's short answer, from the computed facts. Every number in the brief is checked against its cells and marked "(unverified)" if it isn't there.
+
+A late-delivery investigation takes about a minute and about 5 model calls, and gives the same numbers on every run.
+
+**Other questions** (stock-outs, backlogs, orders at risk next week) use the **agent loop**:
+- the Data Scout maps and join-tests the sources;
+- the Planner sets competing hypotheses;
+- Data Investigators write SQL;
+- the Evaluator re-runs every cited query and challenges the reasoning, sending gaps back for another round;
+- the Risk & Action agent calls the **Optiagent optimizer** for stock transfers, with a duality certificate proving no cheaper plan exists;
+- the **Action Executor** prepares transfer orders, cancellation lists and draft emails after a manager approves.
+
+The same numbers check applies to findings, actions and the brief.
+
+Both paths write confirmed and ruled-out causes, with their provenance, to **Meterless H-MEM**, and cause-effect links to the **Meterless World Model**.
 
 ```mermaid
 flowchart LR
     Q[Question] --> M[Memory recall<br/>Meterless H-MEM]
-    M --> S[Data Scout<br/>catalog + join tests]
-    S --> P[Planner]
-    P -->|parallel| I1[Investigator]
-    P -->|parallel| I2[Investigator]
-    P -->|parallel| D[Doc Analyst]
-    I1 & I2 & D --> E[Evaluator<br/>re-runs evidence]
-    E -->|gaps: revise| P
-    E -->|accept| R[Risk & Action]
-    R <-->|scope / proven plan| O[Optimizer<br/>Optiagent LP + certificate]
-    R -->|over threshold| H[Human approval]
-    H -->|approved| X[Action Executor<br/>transfer orders, emails]
-    R --> B[Brief + citations]
-    B --> W[Write memory +<br/>World Model graph]
-    I1 & I2 & D & R -. SQL .-> Z[(Data harness<br/>Zetaris by design;<br/>local DuckDB today)]
-    Z --- PG[(ERP Postgres)] & F1[WMS CSV] & F2[Carrier JSON] & F3[Procurement CSV] & F4[Signals JSON] & F5[Docs]
+    M --> P{Late-delivery<br/>question?}
+    P -->|yes| B[Battery of tests<br/>from the question]
+    B --> AE[Analysis engine<br/>baseline, stages, segments,<br/>events, volume, data, text]
+    B --> D[Doc Analyst<br/>verbatim quotes]
+    AE --> V[Coded verdicts]
+    D --> V
+    V --> A1[Actions from templates<br/>+ promise buffers]
+    P -->|no| L[Planner -> SQL Investigators<br/>-> Evaluator, revise loop]
+    L --> A2[Risk & Action<br/>+ Optiagent optimizer]
+    A1 & A2 --> R[Brief: numbers checked<br/>against their cells]
+    R --> W[Write memory +<br/>World Model graph]
+    AE & L -. SQL .-> Z[(Data harness<br/>Zetaris by design;<br/>local DuckDB today)]
 ```
 
 ## Prescriptive layer: Optiagent (declared pre-existing component)
@@ -248,7 +258,9 @@ Results for the current version, including repeated runs of the same questions a
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
 | Zetaris, Nightshift and Grok have never run. | All runs used the local DuckDB harness and cloud NVIDIA NIM (see the sponsor table). Model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. |
 | Results vary from run to run. | Language models at temperature 0.2 do not give identical answers: the strike verdict for March 2018 has flipped between runs. Repeated runs are planned but not yet reported (see "Results"). |
-| Reasoning errors can still get through. | The numbers check proves a number came from the data, not that the reasoning is right. Selection on the outcome, circular explanations, bundled hypotheses and causes that come after their effect are rules in the Evaluator's prompt, not code. |
+| Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
+| The engine's choices are judgement calls. | The 10% cause threshold, the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
+| Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
 | No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
 | Weak memory recall. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are reused only when they come from a similar question (word overlap ≥ 0.4); memories are hints, never evidence. |
 | Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. H1–H3 are held out: added after the last prompt change, with ground truth computed with SQL before any agent ran them. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
@@ -258,6 +270,10 @@ Results for the current version, including repeated runs of the same questions a
 
 ```
 whychain/          agents, graph (LangGraph), harness (Zetaris + local), LLM client, memory, trace, CLI
+  analysis/        deterministic engine: fact model, tests (baseline, stages, segments, events, volume, data, text),
+                   question -> battery of tests -> findings with coded verdicts
+  grounding.py     numbers check: every number must trace to a cited cell
+  slots.py         machine-wide cap on concurrent model calls
   agents/          prompts.py, executor.py (act-observe loop), nodes.py (each agent)
   api.py           FastAPI server: runs, live event stream (SSE), decisions, overview, memory, sources
   overview.py      control-tower KPIs, problem detection rules, supply network
