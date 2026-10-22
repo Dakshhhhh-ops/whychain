@@ -21,7 +21,7 @@
 **Update, 22 Oct ~03:00–13:45 IST (inside the build window):**
 - **Real data is now the main demo.** The Olist Brazilian e-commerce dataset (99,441 real orders, 100,000 real reviews; CC BY-NC-SA 4.0) is split into six federated sources: `oms` (Postgres), `sellers`, `payments`, `feedback`, `signals` and `docs` (`python -m datagen.olist`). Kaveri (simulated) stays as the second dataset, for the optimizer and stock-transfer loop. A dataset switch in the sidebar changes every page.
 - **16 verified external events plus 13 news briefs**, researched from public sources (Agência Brasil, legal texts), are in `datagen/olist_events.json`. Each has its source URLs. The control tower marks them on the monthly chart, linked to their sources.
-- **Real-data finding on March 2018 (21.4% late):** carrier transit slowed (about 15 days vs 8.5 normal) in Rio de Janeiro and the Northeast. It lines up with the Rio federal intervention, the Correios surcharge on Rio parcels and the 12–13 Mar Correios strike. The agents showed the strike itself covers only 63 orders.
+- **Real-data finding on March 2018 (21.4% late):** carrier transit slowed nationally (about 15 days vs 8.5 normal), worst in Rio de Janeiro (about 2 of the 9 points of the jump) and the Northeast. The agents showed the 12–13 Mar Correios strike is too small to explain it: lateness was already high in the two weeks before, and only 63 orders fell in the strike window. The national cause of the carrier slowdown is not in the data, and the brief says so.
 - **Agent fixes from real runs:**
   - pick a *normal* baseline and break changes down by segment;
   - a confirmed mechanism that explains a material share of the symptom counts as a cause;

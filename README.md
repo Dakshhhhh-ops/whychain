@@ -8,12 +8,14 @@ Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
 
 ## The problem
 
-**On real data.** In March 2018, 21.4% of orders on Olist, a Brazilian marketplace, arrived after the promised date, about double the usual rate. The order system shows that it happened, but not why. The answer is spread across the order timestamps, the seller hand-over records, customer reviews and the news of the time. WhyChain's agents found it in about 7 minutes on the public Olist dataset (99,441 real orders):
+**On real data.** In March 2018, 21.4% of orders on Olist, a Brazilian marketplace, arrived after the promised date, about double the usual rate. The order system shows that it happened, but not why. The evidence is spread across order timestamps, seller hand-over records, customer reviews and the news of the time. On the public Olist dataset (99,441 real orders), WhyChain's agents established in a few minutes:
 
-- Carrier transit, not the sellers, was the bottleneck. Parcels handed to the carrier between 26 Feb and 18 Mar took about 15.5 days to arrive, against 8.5 in a normal month. Sellers were actually handing orders over *faster* than before.
-- The slowdown was concentrated in Rio de Janeiro and the Northeast. In Rio, transit doubled (9.7 → 20.7 days) and late deliveries rose from 7% to 36%.
-- Verified events line up with it: the federal security intervention in Rio (16 Feb), a Correios surcharge on Rio parcels citing violence against its staff (announced 27 Feb), and a national Correios strike (12–13 Mar). The agents also showed that the strike window covers only 63 orders, so it cannot explain the whole spike.
-- Red herrings were ruled out with numbers: order volume, seller delays, product mix and data errors.
+- **Where the time went:** carrier-to-customer transit, not the sellers. Transit lengthened while sellers handed orders to the carrier slightly *faster* than in January–February.
+- **Where it hit:** everywhere, but worst in Rio de Janeiro (34.5% late, against 16.8% in the rest of Brazil) and the Northeast. Rio alone accounts for about 2 of the 9 percentage points of the jump.
+- **What the events can and can't explain:** the national Correios strike (12–13 Mar) is real but too small. Lateness was already high in the two weeks *before* it, and only 63 orders fell in the strike window. The agents said so rather than blaming the strike.
+- **Ruled out with numbers:** order volume, product mix, new sellers, tighter delivery promises and data errors. They also caught a definition issue: comparing dates instead of timestamps changes the rate from 21.4% to 19.0%.
+
+An independent SQL check on the raw data agrees: parcels handed to the carrier between 26 Feb and 18 Mar took about 15 days to arrive, against about 8.5 in a normal month, and Rio's transit doubled (9.7 → 20.7 days). What slowed the carrier nationally isn't in the data, and the brief lists that as an open question instead of guessing.
 
 **In a simulated company,** where the agents can also act on stock: a planner sees that 26 of 32 Pune orders due next week are backordered. The answer to "why?" is spread across five systems and three inboxes:
 
