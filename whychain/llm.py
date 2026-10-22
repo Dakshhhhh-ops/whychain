@@ -10,6 +10,7 @@ If a provider fails, the call falls through to the next one, and the trace recor
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
 
 from whychain.config import SETTINGS, Provider
+from whychain.slots import slot
 
 ROLE_CHAINS = {
     "reason": ["xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
@@ -28,17 +30,10 @@ JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup"
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
 ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
 RATE_LIMIT_ATTEMPTS = 5  # 429s: the backup model shares the same key and quota, so wait instead of switching
-# at most this many calls in flight per endpoint (per process); parallel agents otherwise burst past rate limits
-MAX_PARALLEL = int(__import__("os").environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
-_SLOTS: dict[str, threading.BoundedSemaphore] = {}
-_SLOTS_LOCK = threading.Lock()
-
-
-def _slot(base_url: str) -> threading.BoundedSemaphore:
-    with _SLOTS_LOCK:
-        if base_url not in _SLOTS:
-            _SLOTS[base_url] = threading.BoundedSemaphore(MAX_PARALLEL)
-        return _SLOTS[base_url]
+# at most this many calls in flight per endpoint ON THIS MACHINE, across every WhyChain process (see slots.py)
+MAX_PARALLEL = int(os.environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
+PROVIDER_DEADLINE_S = {"work": 180.0, "reason": 420.0, "local": 240.0}   # all attempts on one provider, waits included
+COOLDOWN_S = 90.0      # a provider that failed 3 times in a row is skipped for this long, then tried again
 
 
 def _retry_after(e: Exception) -> float | None:
@@ -71,7 +66,9 @@ class LLM:
         self.tracer = tracer
         self._clients: dict[str, OpenAI] = {}
         self._failures: dict[str, int] = {}
+        self._down_until: dict[str, float] = {}
         self._lock = threading.Lock()
+        self.deadline: float | None = None   # monotonic time after which this run makes no more model calls
 
     # ------------------------------------------------------------------ plumbing
     def available(self) -> dict[str, bool]:
@@ -90,16 +87,24 @@ class LLM:
         out = []
         for name in self.chains.get(role, self.chains["reason"]):
             p = self.providers.get(name)
-            if p and p.configured and self._failures.get(name, 0) < 3:
+            if p and p.configured and time.monotonic() >= self._down_until.get(name, 0.0):
                 out.append(p)
         return out
 
     # ------------------------------------------------------------------ calls
     def chat(self, role: str, system: str, user: str, *, agent: str, json_mode: bool = False,
              temperature: float = 0.2, max_tokens: int = 2500) -> LLMResult:
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise LLMError("the run's time limit was reached; no more model calls")
         chain = self._chain(role)
-        if not chain:
-            raise LLMError("No model provider is configured. Set XAI_API_KEY / NVIDIA_API_KEY or run Ollama.")
+        if not chain:  # every provider is cooling down: wait for the first one rather than fail
+            soonest = min((self._down_until.get(n, 0.0) for n in self.chains.get(role, [])
+                           if self.providers.get(n) and self.providers[n].configured), default=None)
+            if soonest is None:
+                raise LLMError("No model provider is configured. Set XAI_API_KEY / NVIDIA_API_KEY or run Ollama.")
+            time.sleep(max(0.0, min(soonest - time.monotonic(), 60.0)))
+            chain = self._chain(role) or [p for n in self.chains.get(role, []) if (p := self.providers.get(n))
+                                          and p.configured][:1]
         errors = []
         for i, p in enumerate(chain):
             # with a backup model behind it, give up on a struggling provider sooner
@@ -116,13 +121,14 @@ class LLM:
                     kwargs["max_tokens"] = max(max_tokens, 12000)
             t0 = time.perf_counter()
             try:
-                resp = self._create(p, kwargs, agent, attempts)
+                resp = self._create(p, kwargs, agent, attempts, PROVIDER_DEADLINE_S.get(role, 240.0))
                 text = strip_thinking(resp.choices[0].message.content or "")
                 usage = resp.usage
                 res = LLMResult(text, p.name, p.model, int((time.perf_counter() - t0) * 1000),
                                 getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0)
                 with self._lock:
                     self._failures[p.name] = 0
+                    self._down_until.pop(p.name, None)
                 self._trace("llm_call", agent, provider=p.name, model=p.model, ms=res.ms,
                             prompt_tokens=res.prompt_tokens, completion_tokens=res.completion_tokens,
                             fallback_from=[e["provider"] for e in errors] or None)
@@ -130,25 +136,34 @@ class LLM:
             except Exception as e:  # network, auth, rate limit, bad model name: fall through
                 with self._lock:
                     self._failures[p.name] = self._failures.get(p.name, 0) + 1
+                    if self._failures[p.name] >= 3:  # rest it, then try it again (not: drop it for the whole run)
+                        self._down_until[p.name] = time.monotonic() + COOLDOWN_S
+                        self._failures[p.name] = 0
                 errors.append({"provider": p.name, "error": f"{type(e).__name__}: {str(e)[:200]}"})
                 self._trace("llm_fallback", agent, provider=p.name, error=errors[-1]["error"])
         raise LLMError(f"All providers failed for role '{role}': {errors}")
 
-    def _create(self, p: Provider, kwargs: dict, agent: str, attempts: int = ATTEMPTS):
-        """Call one provider, retrying transient failures (5xx, rate limits, timeouts) with back-off."""
+    def _create(self, p: Provider, kwargs: dict, agent: str, attempts: int = ATTEMPTS, deadline_s: float = 240.0):
+        """Call one provider, retrying transient failures (5xx, rate limits, timeouts) with back-off, within an
+        overall deadline for all attempts and waits together."""
         limit = max(attempts, RATE_LIMIT_ATTEMPTS)
         attempt = 0
+        stop = time.monotonic() + deadline_s
         while True:
             attempt += 1
+            if time.monotonic() > stop:
+                raise APITimeoutError(request=None)  # type: ignore[arg-type]
             try:
-                with _slot(p.base_url or p.name):
+                with slot(p.base_url or p.name, MAX_PARALLEL, wait_s=max(5.0, stop - time.monotonic())):
                     return self._client(p).chat.completions.create(**kwargs)
+            except TimeoutError as e:  # waited too long for a free slot
+                raise APITimeoutError(request=None) from e  # type: ignore[arg-type]
             except RateLimitError as e:
                 if attempt >= limit:
                     raise
-                wait = _retry_after(e) or 10.0 * attempt
+                wait = min(_retry_after(e) or 10.0 * attempt, 60.0, max(0.0, stop - time.monotonic()))
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, wait_s=wait, error="RateLimitError: 429")
-                time.sleep(min(wait, 60.0))
+                time.sleep(wait)
             except TRANSIENT as e:
                 if attempt >= attempts:
                     raise

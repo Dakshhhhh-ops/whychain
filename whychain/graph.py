@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import operator
+import os
+import time
 import traceback
 from datetime import date
 from typing import Annotated, TypedDict
@@ -97,6 +99,8 @@ def make_ctx(harness_pref: str | None = None, listener=None, tracer: Tracer | No
         tracer.listeners.append(listener)
     harness, notes = get_harness(harness_pref, dataset=ds.key)
     llm = LLM(tracer=tracer)
+    # a run never hangs: after this many seconds it stops calling models and finishes with what it has
+    llm.deadline = time.monotonic() + float(os.environ.get("WHYCHAIN_RUN_TIMEOUT_S", "1500"))
     ctx = Ctx(llm=llm, harness=harness, tracer=tracer, memory=memory, settings=SETTINGS, as_of=ds.as_of,
               catalog_text=catalog_text(harness.catalog(), ds.source_notes), dataset=ds)
     return ctx, notes
