@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActivityFeed, describe, Stepper } from "../components/Activity";
 import { Board } from "../components/Board";
-import { BriefView } from "../components/Brief";
+import { BriefView, Markdown } from "../components/Brief";
 import { EvidenceBody, EvidenceDrawer } from "../components/Evidence";
 import { AgentAvatar, Badge, Bar, Button, Card, CardHeader, EmptyState, LiveDot, Spinner, Stat, Tabs } from "../components/ui";
 import { highlightFromText, MapLegend, NetworkMap } from "../components/NetworkMap";
@@ -208,6 +208,25 @@ export function Investigation() {
           <Stat label="Escalations" value={state.escalations.length} hint="need approval" />
         </div>
       </Card>
+
+      {state.preliminary && !(result && result.status === "ok") && (
+        <Card className="mt-5 border-brand-200 bg-brand-50/40">
+          <div className="px-6 py-4">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-brand-700">
+              <Calculator className="h-3.5 w-3.5" />
+              Preliminary answer
+              <span className="font-normal normal-case tracking-normal text-slate-500">
+                · computed from the data{state.preliminary.t ? ` at ${Math.round(state.preliminary.t)} s` : ""}; the written record and the
+                written answer are still coming
+              </span>
+            </div>
+            <div className="mt-1.5 text-[16px] font-semibold leading-snug text-slate-900">{state.preliminary.headline}</div>
+            <div className="mt-2">
+              <Markdown text={state.preliminary.summary} onOpen={setOpenEv} known={{}} />
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">

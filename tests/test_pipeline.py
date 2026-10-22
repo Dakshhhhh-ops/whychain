@@ -153,3 +153,25 @@ def test_the_written_record_is_remembered_as_its_quotes_not_the_models_summary(t
     texts = [i.get("content") or i.get("text") or json.dumps(i) for i in items]
     assert any(t.startswith("WRITTEN RECORD") and quote in t for t in texts)
     assert not any("explains the jump" in t for t in texts)
+
+
+def test_a_preliminary_answer_comes_from_the_computed_tests_before_the_written_answer(tmp_path):
+    """The computed tests take seconds, the document reading and the model minutes: a code-written answer is
+    published first, it matches the final headline, and no computed test runs (or is traced) twice."""
+    from collections import Counter
+
+    ctx = make_ctx(tmp_path, fixed_analyses=True)
+    res = investigate("Why are so many Pune orders at risk of missing their promised date next week?", ctx=ctx)
+    assert res["status"] == "ok"
+    ev = ctx.tracer.events
+    pre = [i for i, e in enumerate(ev) if e["kind"] == "preliminary"]
+    assert len(pre) == 1
+    p = ev[pre[0]]
+    assert p["headline"] == res["headline"] and "What to do" in p["summary"] and not p["unverified"]
+    first_model_call = next(i for i, e in enumerate(ev) if e["kind"] == "llm_call")
+    docs_done = max(i for i, e in enumerate(ev) if e["kind"] == "finding" and e["agent"].startswith("Doc Analyst"))
+    assert pre[0] < docs_done and pre[0] < next(i for i, e in enumerate(ev) if e["kind"] == "agent_start"
+                                                 and e["agent"] == "Reporter")
+    starts = Counter(e["agent"] for e in ev if e["kind"] == "agent_start" and e["agent"].startswith("Analysis engine"))
+    assert starts and max(starts.values()) == 1
+    assert first_model_call >= 0

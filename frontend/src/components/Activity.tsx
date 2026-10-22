@@ -95,6 +95,8 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
       );
     case "escalation":
       return <span className="text-amber-800">Escalated {e.action_id} for approval: {(e.reasons ?? []).join("; ")}</span>;
+    case "preliminary":
+      return <span className="font-medium text-brand-700">Preliminary answer ready, computed from the data in {e.seconds} s</span>;
     case "llm_fallback":
       return <span className="text-amber-700">Model {code(e.provider)} failed; fell back to the next provider</span>;
     case "memory_write":

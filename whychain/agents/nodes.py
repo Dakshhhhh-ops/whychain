@@ -5,6 +5,8 @@ import hashlib
 import json
 import math
 import re
+import time
+from contextlib import contextmanager
 from datetime import date, timedelta
 
 from whychain.agents import prompts as P
@@ -322,6 +324,49 @@ def plan_with_supply(state: dict, ctx: Ctx, seng) -> dict | None:
             "analysis": {"kind": "supply", "spec": spec, "named_events": []}}
 
 
+@contextmanager
+def _muted(ctx: Ctx):
+    """Run code-only steps a second time without repeating their events in the trace."""
+    orig = ctx.tracer.event
+    ctx.tracer.event = lambda *a, **k: None
+    try:
+        yield
+    finally:
+        ctx.tracer.event = orig
+
+
+def preliminary(state: dict, out: dict, ctx: Ctx) -> None:
+    """A preliminary answer in seconds. The computed tests take seconds; the document reading and the model-written
+    answer take minutes. So run the tests now (they are kept: the investigate step doesn't run them again), size the
+    actions and write the summary in code, and publish it while the rest of the run continues. The final brief is
+    built the same way, plus the written record and the short written answer."""
+    t0 = time.time()
+    findings, evidence, verdicts = [], {}, {}
+    for t in out["tasks"]:
+        if t.get("agent") != "tool":
+            continue
+        res = investigate_tool(t, ctx)
+        ctx.precomputed[t["id"]] = res
+        for f in res["findings"]:
+            findings.append(f)
+            verdicts[f["task_id"]] = {**f["fixed"], "round": 1}
+        evidence.update(res["evidence"])
+    pseudo = {**state, **out, "findings": findings, "evidence": evidence, "verdicts": verdicts, "actions": [],
+              "evaluations": []}
+    try:
+        with _muted(ctx):
+            if any(v.get("status") == "confirmed" and v.get("is_cause") for v in verdicts.values()):
+                acts = act_supply(pseudo, ctx) if out["analysis"].get("kind") == "supply" else act_battery(pseudo, ctx)
+                pseudo["actions"] = acts.get("actions", [])
+                pseudo["evidence"] = {**evidence, **acts.get("evidence", {})}
+            pre = report_battery(pseudo, ctx, preliminary=True)
+        ctx.tracer.event("preliminary", "Reporter", headline=pre["headline"], summary=pre["summary"],
+                         seconds=round(time.time() - t0, 1), actions=len(pseudo["actions"]),
+                         unverified=pre["numbers_check"]["unverified"])
+    except Exception as e:   # the full run goes on regardless
+        ctx.tracer.event("agent_error", "Reporter", error=f"preliminary answer failed: {e}"[:300])
+
+
 def plan(state: dict, ctx: Ctx) -> dict:
     agent = "Planner"
     rnd = state.get("round", 0) + 1
@@ -331,12 +376,14 @@ def plan(state: dict, ctx: Ctx) -> dict:
         if seng is not None:
             out = plan_with_supply(state, ctx, seng)
             if out is not None:
+                preliminary(state, out, ctx)
                 return out
     if rnd == 1 and ctx.fixed_analyses and battery_applies(state["question"]):
         eng = engine_for(ctx)
         if eng is not None:
             out = plan_with_battery(state, ctx, eng)
             if out is not None:
+                preliminary(state, out, ctx)
                 return out
     existing = state.get("tasks", [])
     if rnd == 1:
@@ -435,6 +482,8 @@ def investigate(payload: dict, ctx: Ctx) -> dict:
     """Runs one task. Fanned out in parallel, one call per task."""
     t = payload["task"]
     if t.get("agent") == "tool":
+        if t.get("round") == 1 and t["id"] in ctx.precomputed:
+            return ctx.precomputed.pop(t["id"])
         return investigate_tool(t, ctx)
     docs = t["agent"] == "docs"
     agent = f"{'Doc Analyst' if docs else 'Investigator'} {t['id']}"
@@ -1155,8 +1204,9 @@ def _money(cur: str, v) -> str:
     return f"R$ {v:,.0f}" if cur == "BRL" else f"{cur} {v:,.0f}"
 
 
-def report_battery(state: dict, ctx: Ctx) -> dict:
-    """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer."""
+def report_battery(state: dict, ctx: Ctx, preliminary: bool = False) -> dict:
+    """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer.
+    preliminary: stop after the code-written headline and summary (no model call, no trace events)."""
     agent = "Reporter"
     v = state.get("verdicts", {})
     tasks = {t["id"]: t for t in state.get("tasks", [])}
@@ -1408,6 +1458,11 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         "Nothing: there is no problem to fix." if why.startswith("Nothing to explain") else
         "No action could be sized from the data.")
     summary = f"- **What happened:** {what}\n- **Why:** {why}\n- **What to do:** {todo_txt}"
+    if preliminary:
+        threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
+        md_p, head_p, chk = check_brief(f"## Summary\n{summary}", headline, state, acts, None,
+                                        policy=[float(threshold)] if threshold else None)
+        return {"headline": head_p, "summary": md_p.split("\n", 1)[1], "numbers_check": chk}
 
     if event_f:
         # the event test (by the week parcels were handed over) answers the question; the late rate of orders placed

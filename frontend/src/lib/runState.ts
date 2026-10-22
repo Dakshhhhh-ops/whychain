@@ -61,6 +61,8 @@ export type LiveState = {
   memoryEmbedder?: string;
   dataset?: string;
   error?: string;
+  // the answer built by code from the computed tests, published before the written record and the written answer
+  preliminary?: { headline: string; summary: string; seconds?: number; t?: number };
   events: TraceEvent[];
 };
 
@@ -186,6 +188,9 @@ export function applyEvent(s: LiveState, e: TraceEvent): LiveState {
       break;
     case "llm_fallback":
       n.fallbacks += 1;
+      break;
+    case "preliminary":
+      n.preliminary = { headline: String(e.headline ?? ""), summary: String(e.summary ?? ""), seconds: e.seconds as number | undefined, t: e.t };
       break;
     case "run_error":
     case "agent_error":
