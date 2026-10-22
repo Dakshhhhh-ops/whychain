@@ -12,6 +12,7 @@ import operator
 import os
 import time
 import traceback
+from pathlib import Path
 from datetime import date
 from typing import Annotated, TypedDict
 
@@ -107,6 +108,22 @@ def make_ctx(harness_pref: str | None = None, listener=None, tracer: Tracer | No
     return ctx, notes
 
 
+def code_version() -> dict:
+    """The commit the code was at, and whether code folders had uncommitted changes (results cite it)."""
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", "--", "whychain",
+                                "meterless_bridge", "evals", "datagen"], cwd=root, capture_output=True, text=True,
+                               timeout=10).stdout.strip()
+        return {"commit": sha or None, "dirty": bool(dirty)}
+    except (OSError, subprocess.SubprocessError):
+        return {"commit": None, "dirty": None}
+
+
 def investigate(question: str, harness_pref: str | None = None, listener=None, ctx: Ctx | None = None,
                 notes: list[str] | None = None, dataset: str | None = None) -> dict:
     """Run one investigation end to end. Returns the final state plus run metadata."""
@@ -115,8 +132,9 @@ def investigate(question: str, harness_pref: str | None = None, listener=None, c
         ctx, notes = make_ctx(harness_pref, listener, dataset=dataset)
     t = ctx.tracer
     ds_key = getattr(ctx.dataset, "key", None)
+    version = code_version()
     t.event("run_start", "System", question=question, dataset=ds_key, harness=ctx.harness.name, harness_notes=notes,
-            memory=ctx.memory.status(), models=ctx.llm.available(), today=str(date.today()))
+            memory=ctx.memory.status(), models=ctx.llm.available(), today=str(date.today()), code=version)
     graph = build_graph(ctx)
     try:
         final = graph.invoke({"question": question}, {"recursion_limit": 60})
@@ -129,7 +147,7 @@ def investigate(question: str, harness_pref: str | None = None, listener=None, c
     t.event("run_end", "System", status=status, **stats)
     ctx.memory.flush()
     result = {"run_id": t.run_id, "status": status, "dataset": ds_key, "harness": ctx.harness.name, "harness_notes": notes,
-              "memory": ctx.memory.status(), "llm": stats, **final}
+              "memory": ctx.memory.status(), "code": version, "llm": stats, **final}
     t.save("result.json", result)
     if final.get("brief"):
         t.save("brief.md", f"# {final.get('headline', '')}\n\n{final['brief']}")
