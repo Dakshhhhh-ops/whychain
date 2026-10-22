@@ -185,14 +185,26 @@ class SupplyEngine:
                 ["share of orders at risk (%)", pct(at_risk / orders) if orders else None],
                 ["units on backorder", units], ["value on backorder", round(value, 2)],
                 ["SKUs short", short["sku"].nunique()]]
-        where = (f" from {', '.join(spec['warehouses'])}" if spec["warehouses"] else "") + \
-                (f", category {', '.join(spec['categories'])}" if spec["categories"] else "")
-        what = {"at_risk": "open orders", "stockout": "orders placed", "backlog": "open orders created"}[spec["kind"]]
-        summary = {"orders": orders, "at_risk": at_risk, "units": units, "label": f"{what} {spec['label']}{where}"}
-        method = (f"Order lines of {what} {spec['label']}{where}, as of {self.as_of.date()}. A line is short when part "
-                  "of it is on backorder (not allocated from stock).")
+        summary = {"orders": orders, "at_risk": at_risk, "units": units, "label": self.scope_phrase(spec)}
+        method = (f"Order lines of the {summary['label']}, as of {self.as_of.date()}. A line is short when part of it is "
+                  "on backorder (not allocated from stock).")
         return Result("supply_measure", "The symptom: orders and units short", ["measure", "result"], rows, summary,
                       method, "measured", self.provenance())
+
+    def scope_phrase(self, spec: dict) -> str:
+        """The orders in scope, in words: 'orders for power banks placed at the Chennai DC in the last 14 days'."""
+        wh = self.warehouses()
+        names = {str(r.warehouse_id): str(r.name).split(" (")[0] for r in wh.itertuples()}
+        at = " and ".join(names.get(w, w) for w in spec["warehouses"])
+        at = f" at the {at}" if at else ""
+        cats = " and ".join(c.lower() for c in spec["categories"])
+        what = f"orders for {cats}" if cats else "orders"
+        window = spec["label"] if spec["label"] in ("this week", "due in the coming week") else f"in {spec['label']}"
+        if spec["kind"] == "at_risk":
+            return f"open {what}{at} {window}"
+        if spec["kind"] == "backlog":
+            return f"open {what} created{at} {window}"
+        return f"{what} placed{at} {window}"
 
     def shortage_by(self, spec: dict, dim: str) -> Result:
         f = self.focus(spec)
@@ -438,9 +450,9 @@ def run_supply_task(eng: SupplyEngine, task: dict, eid_prefix: str) -> tuple[dic
     if tool == "supply_measure":
         kind, status, verdict = "measure", "confirmed", "measured"
         keys = [_ref(eid, res, k, "result") for k in range(len(res.rows))]
-        claim = (f"{res.rows[1][1]} of {res.rows[0][1]} {s['label']} have a line on backorder "
+        claim = (f"{res.rows[1][1]} of the {res.rows[0][1]} {s['label']} have a line on backorder "
                  f"({res.rows[2][1]}%): {res.rows[3][1]:,} units across {res.rows[5][1]} SKUs, worth "
-                 f"{res.rows[4][1]:,.0f} on backorder.")
+                 f"INR {res.rows[4][1]:,.0f} on backorder.")
         reason = "Measured directly by the analysis engine."
     elif tool == "shortage":
         kind, status, verdict = "measure", "confirmed", "measured"

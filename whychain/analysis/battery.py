@@ -249,6 +249,14 @@ def _run(engine: Engine, tool: str, spec: dict, **params) -> Result:
     return _MEMO[key]
 
 
+def _vs(lead: str, a, b, then: str) -> str:
+    """'typically 3.0 days against 2.0 at baseline', or '... 2.0 days, the same as at baseline' when they are equal."""
+    if a == b:
+        same = then.replace("for the other orders", "as for the other orders").replace("at baseline", "as at baseline")
+        return f"{lead} {a} days, the same {same}" if same.startswith("as") else f"{lead} {a} days, the same as {then}"
+    return f"{lead} {a} days against {b} {then}"
+
+
 def _row(res: Result, first_col_value: str) -> int:
     return next(i for i, r in enumerate(res.rows) if str(r[0]) == first_col_value)
 
@@ -295,23 +303,26 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
                                                  "ref_p80_days", "share_of_rise_pct")]
         then = ("at baseline" if spec["mode"] == "time" else
                 "in places at a similar distance" if spec.get("compare_with") else "for the other orders")
-        claim = (f"{r[1].capitalize()}: typically {r[2]} days against {r[3]} {then}; four in five orders within {r[4]} days "
-                 f"against {r[5]}. " + (f"Had this stage stayed as it was {then}, {sh}% of the {rise}-point rise "
+        claim = (f"{r[1].capitalize()}: {_vs('typically', r[2], r[3], then)}; "
+                 f"{_vs('four in five orders within', r[4], r[5], then)}. "
+                 + (f"Had this stage stayed as it was {then}, {sh}% of the {rise}-point rise "
                                        f"(from {ref_rate}% to {focus_rate}% late) would not have happened."
                                        if sh is not None and sh > 0 else
                                        f"This stage moved the other way (share of the {rise}-point rise, from "
                                        f"{ref_rate}% to {focus_rate}% late: {sh}%)."))
         if rise is None or rise <= 0.5:
             verdict, kind = "inconclusive", "hypothesis"
-            claim = (f"{r[1].capitalize()}: typically {r[2]} days against {r[3]}; four in five orders within {r[4]} days against "
-                     f"{r[5]}. There is no rise to explain in this scope ({focus_rate}% vs {ref_rate}% late).")
+            claim = (f"{r[1].capitalize()}: {_vs('typically', r[2], r[3], then)}; "
+                     f"{_vs('four in five orders within', r[4], r[5], then)}. There is no rise to explain in this scope "
+                     f"({focus_rate}% vs {ref_rate}% late).")
             keys = [k for k in keys if k["column"] != "share_of_rise_pct"]
             share, reason = None, "Not applicable: the late rate did not rise in this scope."
         elif share is not None and share >= CAUSE_SHARE and "stage_moved" in res.columns \
                 and not r[res.columns.index("stage_moved")]:
             verdict = "refutes"
-            reason = (f"The stage itself barely changed (typically {r[2]} vs {r[3]} days, four in five within {r[4]} "
-                      f"vs {r[5]}), so its {sh}% share of the rise is noise in the counterfactual, not a cause.")
+            reason = (f"The stage itself barely changed ({_vs('typically', r[2], r[3], then)}; "
+                      f"{_vs('four in five within', r[4], r[5], then)}), so its {sh}% share of the rise is noise in the "
+                      "counterfactual, not a cause.")
         elif share is not None and share >= CAUSE_SHARE:
             verdict, status, is_cause = "supports", "confirmed", True
             reason = f"Explains {sh}% of the rise (cause threshold: {int(CAUSE_SHARE * 100)}%)."

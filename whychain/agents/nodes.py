@@ -616,7 +616,7 @@ _CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]")
 
 
 def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: Ctx | None = None,
-                answer_rules: list[float] | None = None) -> tuple[str, str, dict]:
+                answer_rules: list[float] | None = None, policy: list[float] | None = None) -> tuple[str, str, dict]:
     """Number-check the brief's own text. Each line's numbers must come from the evidence that line cites, from a
     supported number in a finding, or from an action figure that passed its own check. Others are marked inline.
     answer_rules: rule thresholds the model was shown in its facts (e.g. "rose by 25% or more"); the model-written
@@ -640,6 +640,8 @@ def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: C
         body = re.sub(r"^\s*\d+\.\s", lambda m: " " * len(m.group(0)), line)  # list numbers aren't claims
         evs = [all_ev[i] for i in _CITE.findall(line) if i in all_ev]
         extra = list(supported) + (list(answer_rules or []) if in_answer else [])
+        if line.startswith("| A") and policy:
+            extra += list(policy)   # an action row may state the configured approval threshold (policy, not data)
         if not in_answer:
             # lines written by code may use any cell of the computed tables they cite, and the rule constants;
             # the model-written answer gets the strict check
@@ -727,7 +729,9 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
         sup = summ.get("top_supplier")
         if sup:
             try:
-                out = optimize_rebalance(ctx.harness, {"supplier_id": sup}, spec["warehouses"] or None, 7, 14)
+                # the question's own scope: its supplier, and its categories when it names some
+                opt_scope = {"supplier_id": sup, **({"categories": spec["categories"]} if spec.get("categories") else {})}
+                out = optimize_rebalance(ctx.harness, opt_scope, spec["warehouses"] or None, 7, 14)
                 sm = out.get("summary", {})
                 ok = bool(out.get("verified")) and out.get("outcome") == "verified_optimal"
                 ctx.tracer.event("optimize", agent, task_id="A", evidence_id="A.P1" if ok else None, ok=ok,
@@ -735,21 +739,30 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
                                  truck_units=sm.get("truck_units"), air_units=sm.get("air_units"),
                                  unfilled_units=sm.get("unfilled_units"), objective_inr=out.get("objective_inr"))
                 if ok and (sm.get("truck_units") or sm.get("air_units")):
+                    from whychain.optimize import orders_covered
+
+                    covered, short_orders = orders_covered(ctx.harness, opt_scope, spec["warehouses"] or None, 7,
+                                                           out.get("columns", []), out.get("rows", []))
+                    transport = round(float(sm.get("truck_cost_inr") or 0) + float(sm.get("air_cost_inr") or 0))
                     evidence["A.P1"] = {"id": "A.P1", "type": "optimization", "task_id": "A", "agent": agent,
                                         "purpose": f"cover {sup} shortages at {', '.join(spec['warehouses']) or 'the DCs'} within 7 days",
                                         **out, "row_count": len(out.get("rows", [])), "harness": ctx.harness.name}
                     lanes = ", ".join(f"{t['lane']} {t['units']:,} units" for t in sm.get("trucks", []))
                     by = (date.fromisoformat(str(ctx.as_of)[:10]) + timedelta(days=7)).isoformat()
+                    what = f"{sup}'s {' and '.join(c.lower() for c in spec['categories'])}" if spec.get("categories") \
+                        else f"{sup}'s SKUs"
                     add(f"Transfer stock to cover the {sup} shortage: {lanes or 'air freight only'}"
                         + (f", plus {sm['air_units']:,} units by air" if sm.get("air_units") else ""),
                         f"Proven-optimal plan (Optiagent, duality certificate): {sm.get('truck_units', 0):,} units by truck"
                         f" and {sm.get('air_units', 0):,} by air, covering {round(100 * (sm.get('covered_share') or 0))}% "
-                        f"of the {sm.get('need_units', 0):,} units of {sup}'s SKUs backordered at "
+                        f"of the {sm.get('need_units', 0):,} units of {what} backordered at "
                         f"{', '.join(spec['warehouses']) or 'the DCs'} with a promised date on or before {by}. That "
                         "includes orders already past their promised date, which still need the stock, not only the "
                         "ones due next week"
                         + (f"; {sm['unfilled_units']:,} units can't arrive in time" if sm.get("unfilled_units") else "")
-                        + ".", [late["task_id"]], ["A.P1"], cost=out.get("objective_inr"))
+                        + f". It fully covers {covered} of the {short_orders} orders short in that scope. The cost is "
+                        "transport only (trucks and air surcharge); units that can't arrive in time are lost sales, not "
+                        "a cost of this action.", [late["task_id"]], ["A.P1"], cost=transport, orders=covered)
             except Exception as e:
                 ctx.tracer.event("agent_error", agent, error=f"optimizer failed: {e}"[:200])
         add(f"Chase the late purchase orders from {summ.get('top_supplier_name') or sup} and plan around "
@@ -1236,7 +1249,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         for f in context:
             lines.append(f"- {f['claim']} {_cites(f)}")
         for q in quotes[:4]:
-            lines.append(f"- {q.get('title') or q.get('doc_id')} ({str(q.get('sent_at') or '')[:10]}): "
+            when = str(q.get("sent_at") or "")[:10]
+            lines.append(f"- {q.get('title') or q.get('doc_id')}{f' ({when})' if when and when != 'None' else ''}: "
                          f"\"{q['quote']}\" [{q['id']}]")
     acts = state.get("actions", [])
     if acts:
@@ -1287,7 +1301,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         answer = headline + (f" {measure['claim']} {_cites(measure)}" if measure else "")
     md = f"## Answer\n{answer}\n\n{body}"
     rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS]
-    md, headline, brief_check = check_brief(md, headline, state, acts, ctx, answer_rules=rules)
+    threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
+    md, headline, brief_check = check_brief(md, headline, state, acts, ctx, answer_rules=rules,
+                                            policy=[float(threshold)] if threshold else None)
     ctx.tracer.event("agent_end", agent, headline=headline, invalid_citations_removed=[])
     return {"brief": md, "headline": headline, "lessons": [], "brief_check": brief_check}
 
