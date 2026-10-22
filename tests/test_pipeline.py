@@ -14,12 +14,14 @@ from whychain.trace import Tracer
 from tests.fake_llm import FakeLLM
 
 
-def make_ctx(tmp_path):
+def make_ctx(tmp_path, fixed_analyses=False):
+    """fixed_analyses=False sends the question through the open-ended agent loop (planner, evaluator, executor),
+    which is what these tests script; the computed analyses have their own tests."""
     tracer = Tracer(runs_dir=tmp_path)
     harness = LocalHarness("kaveri")
     memory = Memory(url="http://127.0.0.1:9", local_path=tmp_path / "memory.json")  # always offline in tests
     return Ctx(llm=FakeLLM(tracer), harness=harness, tracer=tracer, memory=memory, settings=Settings(runs_dir=tmp_path),
-               as_of=AS_OF, catalog_text=catalog_text(harness.catalog()))
+               as_of=AS_OF, catalog_text=catalog_text(harness.catalog()), fixed_analyses=fixed_analyses)
 
 
 def test_full_run(tmp_path):
@@ -71,3 +73,17 @@ def test_action_executor(tmp_path):
     assert check["source"] == "X.Q1" and check["rows"] and "shortfall" in check["columns"]
     # a table that doesn't come from one of the agent's own queries is discarded
     assert [r["title"] for r in out["rejected"]] == ["Invented table"]
+
+
+def test_supply_route(tmp_path):
+    """The same question with the computed analyses on: the supply battery answers it from the data, and the brief
+    names the planted cause (Voltix POs held at the Chennai port)."""
+    ctx = make_ctx(tmp_path, fixed_analyses=True)
+    res = investigate("Why are so many Pune orders at risk next week?", ctx=ctx)
+    assert res["status"] == "ok", res.get("brief")
+    assert res["analysis"]["kind"] == "supply"
+    causes = [f for f in res["findings"] if (f.get("fixed") or {}).get("is_cause")]
+    assert causes, [f.get("claim") for f in res["findings"]]
+    text = " ".join(f["claim"] for f in causes)
+    assert "S-14" in text and "Chennai" in text
+    assert all(e in res["evidence"] for f in res["findings"] for e in f["evidence_ids"])

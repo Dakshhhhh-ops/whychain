@@ -27,6 +27,7 @@ class Ctx:
     as_of: str
     catalog_text: str = ""
     dataset: object = None  # whychain.datasets.Dataset; None in unit tests (treated as the simulated distributor)
+    fixed_analyses: bool = True  # False: every question goes through the open-ended agent loop (agent-loop tests)
 
 
 @dataclass

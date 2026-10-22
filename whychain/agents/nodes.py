@@ -11,6 +11,7 @@ from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
 from whychain.harness.base import catalog_text
 from whychain.analysis import get_engine
 from whychain.analysis.battery import battery_applies, plan_battery, run_task, build_scope
+from whychain.analysis.supply import SUPPLY_TOOLS, get_supply_engine, plan_supply, run_supply_task, supply_kind
 from whychain.grounding import check_numbers, figure_supported, numbers_in
 from whychain.llm import LLMError, extract_json
 
@@ -290,11 +291,47 @@ def plan_with_battery(state: dict, ctx: Ctx, eng) -> dict | None:
                          "context_events": b["context_events"]}}
 
 
+def plan_with_supply(state: dict, ctx: Ctx, seng) -> dict | None:
+    """Round 1 for a stock, backlog or orders-at-risk question: the supply battery, run by code."""
+    agent = "Planner"
+    try:
+        b = plan_supply(state["question"], seng)
+    except Exception as e:
+        ctx.tracer.event("agent_error", agent, error=f"supply battery failed, using the model planner: {e}"[:300])
+        return None
+    new = [{"id": f"T{i}", "round": 1, "type": "measure" if t["tool"] in ("supply_measure", "shortage") else "hypothesis",
+            "statement": t["statement"], "agent": "tool", "tool": t["tool"], "scope": t["scope"], "params": t["params"],
+            "checks": [f"analysis engine: {t['tool']}"], "priority": 1, "addresses_gap": None}
+           for i, t in enumerate(b["tasks"], 1)]
+    new.append({"id": f"T{len(new) + 1}", "round": 1, "type": "hypothesis", "agent": "docs", "context_only": True,
+                "statement": "The written record (contracts, policies, email) explains the shortage",
+                "checks": ["search docs.documents for the suppliers, SKUs, places and dates in question"],
+                "priority": 2, "addresses_gap": None})
+    spec = b["spec"]
+    symptom = (f"Shortage: {spec['kind'].replace('_', ' ')}, {spec['label']}"
+               + (f", {', '.join(spec['warehouses'])}" if spec["warehouses"] else "")
+               + (f", {', '.join(spec['categories'])}" if spec["categories"] else ""))
+    ctx.tracer.event("plan", agent, round=1, symptom=symptom,
+                     reasoning=("A fixed battery of supply checks, computed by the analysis engine (no model): the "
+                                "shortage, where it sits, late inbound orders and ports, demand, reorder policy and "
+                                "duplicate orders. The Document Analyst reads the written record."),
+                     tasks=[{"id": t["id"], "agent": t["agent"], "type": t["type"], "statement": t["statement"]}
+                            for t in new])
+    return {"tasks": new, "open_tasks": new, "round": 1, "symptom": symptom,
+            "analysis": {"kind": "supply", "spec": spec, "named_events": []}}
+
+
 def plan(state: dict, ctx: Ctx) -> dict:
     agent = "Planner"
     rnd = state.get("round", 0) + 1
     ctx.tracer.event("agent_start", agent, round=rnd)
-    if rnd == 1 and battery_applies(state["question"]):
+    if rnd == 1 and ctx.fixed_analyses and supply_kind(state["question"]):
+        seng = get_supply_engine(ctx.harness)
+        if seng is not None:
+            out = plan_with_supply(state, ctx, seng)
+            if out is not None:
+                return out
+    if rnd == 1 and ctx.fixed_analyses and battery_applies(state["question"]):
         eng = engine_for(ctx)
         if eng is not None:
             out = plan_with_battery(state, ctx, eng)
@@ -371,7 +408,10 @@ def investigate_tool(t: dict, ctx: Ctx) -> dict:
     agent = f"Analysis engine {t['id']}"
     ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"])
     try:
-        f, evidence = run_task(engine_for(ctx), t, t["id"])
+        if t.get("tool") in SUPPLY_TOOLS:
+            f, evidence = run_supply_task(get_supply_engine(ctx.harness), t, t["id"])
+        else:
+            f, evidence = run_task(engine_for(ctx), t, t["id"])
     except Exception as e:
         f = {"statement": t["statement"], "type": t["type"], "verdict": "inconclusive",
              "claim": f"The analysis could not be computed: {str(e)[:200]}", "key_numbers": [], "evidence_ids": [],
@@ -649,6 +689,93 @@ def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str
     return out, removed
 
 
+def act_supply(state: dict, ctx: Ctx) -> dict:
+    """Actions for a supply question, sized in code: a proven-optimal stock transfer (Optiagent) when supply is late,
+    computed reorder points when demand outran the policy, and a cancellation list for duplicates."""
+    from whychain.optimize import optimize_rebalance
+
+    agent = "Risk & Action"
+    v = state.get("verdicts", {})
+    tasks = {t["id"]: t for t in state.get("tasks", [])}
+    spec = state["analysis"]["spec"]
+    cur = getattr(ctx.dataset, "currency", "")
+    threshold = getattr(ctx.dataset, "approval_threshold", ctx.settings.approval_threshold_inr)
+    evidence, actions = {}, []
+    confirmed = {tasks[f["task_id"]].get("tool"): f for f in state["findings"]
+                 if v.get(f["task_id"], {}).get("is_cause") and f["task_id"] in tasks}
+
+    def ev_of(f):
+        return state["evidence"].get(f["evidence_ids"][0], {}) if f and f.get("evidence_ids") else {}
+
+    def add(title, steps, addresses, ev_ids, cost=None, orders=None, approval=None):
+        reasons = list(approval or [])
+        if cost is not None and cost > threshold:
+            reasons.append(f"cost {cur} {cost:,.0f} exceeds the {cur} {threshold:,.0f} threshold")
+        actions.append({"id": f"A{len(actions) + 1}", "title": title, "steps": steps, "addresses": addresses,
+                        "orders_protected": orders, "value_protected_inr": None, "est_cost_inr": cost,
+                        "currency": cur, "confidence": 1.0, "evidence": ev_ids, "unsupported_figures": [],
+                        "needs_approval": bool(reasons), "approval_reasons": reasons, "decision": "pending",
+                        "time_to_effect": "this week", "policy_notes": ""})
+
+    late = confirmed.get("inbound") or confirmed.get("port")
+    if late:
+        summ = ev_of(late).get("summary", {})
+        sup = summ.get("top_supplier")
+        if sup:
+            try:
+                out = optimize_rebalance(ctx.harness, {"supplier_id": sup}, spec["warehouses"] or None, 7, 14)
+                sm = out.get("summary", {})
+                ok = bool(out.get("verified")) and out.get("outcome") == "verified_optimal"
+                ctx.tracer.event("optimize", agent, task_id="A", evidence_id="A.P1" if ok else None, ok=ok,
+                                 outcome=out.get("outcome"), need_units=sm.get("need_units"),
+                                 truck_units=sm.get("truck_units"), air_units=sm.get("air_units"),
+                                 unfilled_units=sm.get("unfilled_units"), objective_inr=out.get("objective_inr"))
+                if ok and (sm.get("truck_units") or sm.get("air_units")):
+                    evidence["A.P1"] = {"id": "A.P1", "type": "optimization", "task_id": "A", "agent": agent,
+                                        "purpose": f"cover {sup} shortages at {', '.join(spec['warehouses']) or 'the DCs'} within 7 days",
+                                        **out, "row_count": len(out.get("rows", [])), "harness": ctx.harness.name}
+                    lanes = ", ".join(f"{t['lane']} {t['units']:,} units" for t in sm.get("trucks", []))
+                    add(f"Transfer stock to cover the {sup} shortage: {lanes or 'air freight only'}"
+                        + (f", plus {sm['air_units']:,} units by air" if sm.get("air_units") else ""),
+                        f"Proven-optimal plan (Optiagent, duality certificate): {sm.get('truck_units', 0):,} units by truck"
+                        f" and {sm.get('air_units', 0):,} by air, covering {round(100 * (sm.get('covered_share') or 0))}% "
+                        f"of the {sm.get('need_units', 0):,} units needed within 7 days"
+                        + (f"; {sm['unfilled_units']:,} units can't arrive in time" if sm.get("unfilled_units") else "")
+                        + ".", [late["task_id"]], ["A.P1"], cost=out.get("objective_inr"))
+            except Exception as e:
+                ctx.tracer.event("agent_error", agent, error=f"optimizer failed: {e}"[:200])
+        add(f"Chase the late purchase orders from {summ.get('top_supplier_name') or sup} and plan around "
+            f"{summ.get('top_port') or 'the port'}",
+            "Ask the supplier for revised ETAs; reroute through an open port or by air where the transfer plan "
+            "doesn't cover the need.", [late["task_id"]], late["evidence_ids"])
+    pol = confirmed.get("policy") or confirmed.get("demand")
+    if pol:
+        pev = ev_of(confirmed["policy"]) if confirmed.get("policy") else {}
+        stale = [r for r in pev.get("rows", []) if len(r) > 7 and r[7] == "stale"][:5]
+        detail = "; ".join(f"{r[1]} at {r[0]} {r[2]} -> {r[5]}" for r in stale)
+        promos = ev_of(confirmed["demand"]).get("summary", {}).get("promos") if confirmed.get("demand") else []
+        add("Raise reorder points to recent demand" + (f": {detail}" if detail else ""),
+            "Recompute reorder points from recent daily demand over the supplier lead time plus safety stock, and "
+            "review them monthly." + (f" Share the promotion calendar ({', '.join(promos)}) with planning before "
+                                      "campaigns start." if promos else ""),
+            [pol["task_id"]], ([confirmed["policy"]["evidence_ids"][0]] if confirmed.get("policy") else [])
+            + ([confirmed["demand"]["evidence_ids"][0]] if confirmed.get("demand") else []))
+    dup = confirmed.get("duplicates")
+    if dup:
+        summ = ev_of(dup).get("summary", {})
+        ids = summ.get("extra_order_ids", [])
+        add(f"Cancel the duplicate orders and fix the {summ.get('channel') or 'order'} connector",
+            f"These orders repeat an earlier order's external reference: {', '.join(ids[:15])}"
+            + (" and more" if len(ids) > 15 else "") + ". Cancel them after confirming with the customer, then "
+            "stop the connector creating repeats.", [dup["task_id"]], dup["evidence_ids"],
+            approval=["cancels customer orders"])
+    ctx.tracer.event("agent_end", agent, actions=[(a["id"], a["title"], a["needs_approval"]) for a in actions])
+    for a in actions:
+        if a["needs_approval"]:
+            ctx.tracer.event("escalation", agent, action_id=a["id"], title=a["title"], reasons=a["approval_reasons"])
+    return {"actions": actions, "risks": [], "evidence": evidence}
+
+
 def act_battery(state: dict, ctx: Ctx) -> dict:
     """Actions for a late-delivery question, from templates per confirmed cause, sized with computed tables.
     No model: every figure is a cell of a cited result."""
@@ -755,6 +882,8 @@ def act(state: dict, ctx: Ctx) -> dict:
         ctx.tracer.event("agent_skip", agent, note="No confirmed causes; no actions proposed")
         return {"actions": [], "risks": []}
     ctx.tracer.event("agent_start", agent, causes=[f["task_id"] for f in confirmed])
+    if state.get("analysis", {}).get("kind") == "supply":
+        return act_supply(state, ctx)
     if state.get("analysis"):
         return act_battery(state, ctx)
     optimizer = getattr(ctx.dataset, "optimizer", True)
@@ -878,7 +1007,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     v = state.get("verdicts", {})
     tasks = {t["id"]: t for t in state.get("tasks", [])}
     fs = state["findings"]
-    measure = next((f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "measure"), None)
+    supply = state.get("analysis", {}).get("kind") == "supply"
+    measure = next((f for f in fs if tasks.get(f["task_id"], {}).get("tool") in ("measure", "supply_measure")), None)
     causes = sorted([f for f in fs if v.get(f["task_id"], {}).get("is_cause") and v[f["task_id"]]["status"] == "confirmed"],
                     key=lambda f: -(v[f["task_id"]].get("share_of_symptom") or 0) if isinstance(
                         v[f["task_id"]].get("share_of_symptom"), float) else 1)
@@ -893,7 +1023,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
 
     def share_txt(f):
         sh = v[f["task_id"]].get("share_of_symptom")
-        return f" ({round(100 * sh, 1)}% of the rise)" if isinstance(sh, float) else ""
+        what = "of the short units" if supply else "of the rise"
+        return f" ({round(100 * sh, 1)}% {what})" if isinstance(sh, float) else ""
 
     # headline, in code
     if event_f:
@@ -940,7 +1071,14 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     stage_causes = [f for f in causes if tasks.get(f["task_id"], {}).get("tool") == "stage"]
     stage_sh = [round(100 * v[f["task_id"]]["share_of_symptom"], 1) for f in stage_causes
                 if isinstance(v[f["task_id"]].get("share_of_symptom"), float)]
-    lines += ["", "## How sure we are",
+    if supply:
+        lines += ["", "## How sure we are",
+                  "- Each check reports the share of the short units it is involved in. Shares overlap: one SKU can be "
+                  "both late inbound and under a stale reorder point.",
+                  "- Every number above was computed by the analysis engine from the cited results, and checked "
+                  "against their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
+    else:
+        lines += ["", "## How sure we are",
               (f"- The confirmed stages ({' and '.join(f'{x}%' for x in stage_sh)}) together explain "
                f"{round(sum(stage_sh), 1)}% of the measured rise"
                + ("; the rest is mix and interactions." if sum(stage_sh) <= 100 else
