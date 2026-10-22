@@ -8,14 +8,19 @@ Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
 
 ## The problem
 
-**On real data.** In March 2018, 21.4% of orders on Olist, a Brazilian marketplace, arrived after the promised date, about double the usual rate. The order system shows that it happened, but not why. The evidence is spread across order timestamps, seller hand-over records, customer reviews and the news of the time. On the public Olist dataset (99,441 real orders), WhyChain's agents established in a few minutes:
+**On real data.** In March 2018, 19.0% of orders on Olist, a Brazilian marketplace, arrived after the promised date, against about 4–6% in a normal month. The order system shows that it happened, but not why. The evidence is spread across order timestamps, seller hand-over records, customer reviews and the news of the time.
 
-- **Where the time went:** carrier-to-customer transit, not the sellers. Transit lengthened while sellers handed orders to the carrier slightly *faster* than in January–February.
-- **Where it hit:** everywhere, but worst in Rio de Janeiro (34.5% late, against 16.8% in the rest of Brazil) and the Northeast. Rio alone accounts for about 2 of the 9 percentage points of the jump.
-- **What the events can and can't explain:** the national Correios strike (12–13 Mar) is real but too small. Lateness was already high in the two weeks *before* it, and only 63 orders fell in the strike window. The agents said so rather than blaming the strike.
-- **Ruled out with numbers:** order volume, product mix, new sellers, tighter delivery promises and data errors. They also caught a definition issue: comparing dates instead of timestamps changes the rate from 21.4% to 19.0%.
+What the raw data shows, checked independently with SQL (not by the agents):
+- **Transit:** carrier transit was about 13 days in February–March 2018, against about 8.5 in a normal month. Hand-over by sellers did not slow.
+- **Rio de Janeiro:** worst hit. Transit doubled (9.7 → 20.7 days) and late deliveries rose from 6% to 34%, against 16.8% in the rest of Brazil.
+- **The 12–13 March Correios strike:** lateness was already high before it.
 
-An independent SQL check on the raw data agrees: parcels handed to the carrier between 26 Feb and 18 Mar took about 15 days to arrive, against about 8.5 in a normal month, and Rio's transit doubled (9.7 → 20.7 days). What slowed the carrier nationally isn't in the data, and the brief lists that as an open question instead of guessing.
+What the agents concluded in the four saved runs of this question since the baseline fix, before the latest fixes:
+- **Every run:** carrier transit is the main cause (50–85% of the jump); seller hand-over, order volume and mix, and data errors are ruled out.
+- **Inconsistent:** every run *also* confirmed "the Correios strike / Rio disruption" as a partial cause (12–40%), and one headline put the strike first. The Rio part is supported by the data; the strike part is not. The planner bundled both into one hypothesis, and the Evaluator confirmed it as a whole.
+- **The first run of all** (before the baseline fix) blamed tighter delivery promises. That was wrong: its Jan–Feb baseline was itself abnormal.
+
+These runs used a timestamp definition of "late" in some steps (21.4%) and calendar dates in others (19.0%). There is now one definition: calendar dates, because the promised date has no time of day. The Evaluator now judges bundled hypotheses part by part and rejects events that start after their effect. New runs and their results are in "Results"; what is still weak is in "Known limitations".
 
 **In a simulated company,** where the agents can also act on stock: a planner sees that 26 of 32 Pune orders due next week are backordered. The answer to "why?" is spread across five systems and three inboxes:
 
@@ -32,13 +37,13 @@ A good analyst needs half a day to stitch that together. WhyChain does it in min
 
 You ask a "why" question in plain English. WhyChain then:
 
-1. **Maps the data.** The Data Scout reads the Zetaris catalog, profiles columns, proposes joins across sources and **tests every join against the data**. Joins that don't match are dropped. The map is saved to Meterless memory, so later runs skip this step.
+1. **Maps the data.** The Data Scout reads the data harness's catalog (Zetaris by design; the local DuckDB harness in every run so far), profiles columns, proposes joins across sources and **tests every join against the data**. Joins that don't match are dropped. The map is saved to Meterless memory, so later runs skip this step.
 2. **Plans competing hypotheses.** The Planner measures the symptom first, then sets up rival explanations (supply, inventory policy, demand, carrier, data quality, external events), including red herrings that need ruling out.
 3. **Investigates in parallel.**
-   - **Data Investigators** query all sources through **Zetaris** with federated SQL. They repair their own failed queries.
+   - **Data Investigators** query all sources with one SQL dialect through the data harness (see the sponsor status table for what has actually run). They repair their own failed queries.
    - The **Document Analyst** searches contracts, policies and email, and must quote them **verbatim**. Quotes are checked character by character, and invented ones are thrown away.
 4. **Challenges the findings.** The Evaluator **re-runs every cited query** to confirm the numbers reproduce. It then confirms, rejects or asks for more on each hypothesis, and checks whether the confirmed causes explain the *size* of the symptom. If not, it sends specific gaps back to the Planner, which plans another round.
-5. **Turns causes into proven-optimal actions.** For any stock shortage, the Risk & Action agent calls the **optimizer**, built on Optiagent (see below). The agent chooses only the scope, for example "Voltix SKUs, to Pune, within 7 days". Code then reads the backorders, the spare stock at other DCs (after each keeps its policy cover), the truck lanes and the air-freight terms through Zetaris. It solves the transfer problem and returns a plan with a **duality certificate**: a proof that no cheaper plan exists. It also reports any units that can't arrive in time. The agent checks penalty exposure and policy, then proposes priced fixes. Anything over the approval threshold or under 60% confidence is **escalated to a human**.
+5. **Turns causes into proven-optimal actions.** For any stock shortage, the Risk & Action agent calls the **optimizer**, built on Optiagent (see below). The agent chooses only the scope, for example "Voltix SKUs, to Pune, within 7 days". Code then reads the backorders, the spare stock at other DCs (after each keeps its policy cover), the truck lanes and the air-freight terms from the data. It solves the transfer problem and returns a plan with a **duality certificate**: a proof that no cheaper plan exists. It also reports any units that can't arrive in time. The agent checks penalty exposure and policy, then proposes priced fixes. Anything over the approval threshold or under 60% confidence is **escalated to a human**.
 6. **Does the approved work.** When a manager approves an action, the **Action Executor** prepares the deliverables that carry it out, grounded in the data:
    - stock-transfer orders (SKU by SKU, computed with SQL, never leaving the sending DC below its cover);
    - cancellation lists and parameter changes;
@@ -66,13 +71,13 @@ flowchart LR
     H -->|approved| X[Action Executor<br/>transfer orders, emails]
     R --> B[Brief + citations]
     B --> W[Write memory +<br/>World Model graph]
-    I1 & I2 & D & R -. SQL .-> Z[(Zetaris<br/>AI Data Harness)]
+    I1 & I2 & D & R -. SQL .-> Z[(Data harness<br/>Zetaris by design;<br/>local DuckDB today)]
     Z --- PG[(ERP Postgres)] & F1[WMS CSV] & F2[Carrier JSON] & F3[Procurement CSV] & F4[Signals JSON] & F5[Docs]
 ```
 
 ## Prescriptive layer: Optiagent (declared pre-existing component)
 
-WhyChain doesn't estimate the fix by hand. It reuses the author's earlier project **[Optiagent](https://github.com/Dakshhhhh-ops/Optiagent)** (MIT, pinned to commit `f0b61d5`). Optiagent is a verified-optimization engine whose rule is that *the LLM never produces the numbers*. `whychain/optimize.py` is new work: it turns an agent's scope into a transportation problem built entirely from federated data.
+WhyChain doesn't estimate the fix by hand. It reuses the author's earlier project **[Optiagent](https://github.com/Dakshhhhh-ops/Optiagent)** (MIT, pinned to commit `f0b61d5`). Optiagent is a verified-optimization engine whose rule is that *the LLM never produces the numbers*. `whychain/optimize.py` was written for WhyChain (before the build window, see "Pre-existing work"): it turns an agent's scope into a transportation problem built entirely from the data. The optimizer applies only to the simulated dataset, which has stock, lanes and freight costs; the real Olist data has no cost data, so its actions carry no computed costs (see "Known limitations").
 
 | Part of the model | Where it comes from |
 |---|---|
@@ -84,15 +89,18 @@ WhyChain doesn't estimate the fix by hand. It reuses the author's earlier projec
 
 Optiagent builds the LP, solves it (OR-Tools GLOP), re-checks the plan against the original data and attaches a **duality certificate**. If the first solver's dual prices don't close the proof (it happens on degenerate problems), WhyChain re-runs Optiagent's own certificate with the second solver's (HiGHS) prices. If neither closes it, the plan is withheld rather than shown unproven. Lanes that would carry less than 15% of a truck are dropped and the problem is re-solved, because an LP doesn't model fixed truck costs. The Action Executor's transfer order *is* this proven plan, row for row.
 
-## Sponsor technology
+## Sponsor technology: designed role and actual status
 
-| Sponsor | How WhyChain uses it |
-|---|---|
-| **Zetaris** | The only path from agents to data. The Postgres ERP and the CSV/JSON file stores are registered once (`scripts/register_zetaris.py`). Agents then write one Spark SQL query that joins, say, `erp.sales_orders` with `carrier.shipments` and `procurement.purchase_orders`, with no data copied. The Scout discovers the data model from the Zetaris catalog, and every claim in the brief carries the exact Zetaris query behind it. |
-| **Meterless** | `meterless_bridge/` runs the **real H-MEM and World Model reference engines** (Apache-2.0, unmodified, conformance suites green). H-MEM holds findings with provenance, and its consolidation promotes them to long-term memory, so the second investigation starts from the first one's conclusions. The World Model event-sources every agent step and builds a cause graph (e.g. `S-14 → implicated_in → late Voltix POs → causes → Pune backorders`). **Nightshift** serves the Document Analyst's model on the local GPU, so contracts and email never leave the machine. |
-| **NVIDIA** | **NIM** serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`) for every agent: with reasoning ("thinking") switched on for the Planner and Evaluator, and off, in JSON mode, for the agents that write SQL, read documents and write the brief. Nightshift can use the local **NVIDIA GPU (CUDA)**. |
-| **Cursor** | Development environment for the build. *(Describe how you used it here.)* |
-| **xAI Grok** | Optional first choice for the reasoning roles when a key is set. |
+This table separates what the code is built to do from what has actually run. Every saved run so far used the **local DuckDB harness** and **NVIDIA NIM** only.
+
+| Sponsor | Designed role | Status today |
+|---|---|---|
+| **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py --dataset olist`), and agents write federated Spark SQL across them. | **Not yet connected.** The REST client in `whychain/harness/zetaris.py` has never talked to a live instance, and its response parser is a best guess at the format. Until it is connected, agents query the same table names through the local DuckDB harness (`WHYCHAIN_HARNESS=local`), which the UI labels "local-duckdb". |
+| **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines unmodified. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** H-MEM's reference embedder is a hash-based mock, so similarity recall is weak; WhyChain filters recalled findings itself (see "Known limitations"). **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
+| **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
+| **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
+
+Development environment: the hackathon asks for Cursor. *(To be completed by the author with how it was actually used; nothing is claimed here yet.)*
 
 Every model call goes through one OpenAI-compatible client with role-based fallback:
 
@@ -131,7 +139,7 @@ python scripts/register_zetaris.py               # prints the SQL; --apply runs 
 python -m whychain.doctor
 ```
 
-With `WHYCHAIN_HARNESS=local`, the same sources and table names are served by DuckDB (ERP read live from Postgres). Agents write the same Spark SQL either way; it's translated with sqlglot. This exists for offline development and as a fallback if Zetaris is unreachable during a demo. The UI always shows which harness answered.
+With `WHYCHAIN_HARNESS=local`, the same sources and table names are served by DuckDB (ERP read live from Postgres). Agents write the same Spark SQL either way; it's translated with sqlglot. This exists for offline development and as a fallback if Zetaris is unreachable. **Every run so far has used it**, because Zetaris is not yet connected. The UI always shows which harness answered.
 
 ## Usage
 
@@ -207,10 +215,12 @@ Olist has no warehouse stock to move, so the optimizer and stock-transfer delive
 
 ## Results
 
-Run `python -m evals.run_evals` to regenerate `evals/results.md`.
+Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `evals/results.md`. A case passes "root cause found" when the expected terms appear, as whole words, in a cause the Evaluator confirmed or in the headline. Keyword scoring is crude; read the briefs too.
 
 <!-- RESULTS -->
-*(results table goes here after the first full evaluation run)*
+**First real-data pass (22 Oct, 14:00 IST, before the fixes in "Known limitations"):** 2 of 3 Olist cases passed. The truckers' strike case failed: the agents concluded "no measurable delay". In fact, parcels handed to the carrier in the strike week took 10.5 days against about 8 normally, and 15.5% were late against about 4%. The effect was averaged over a broad window, and hidden because Olist lengthened promises for new orders during the strike. The weekly-exposure rule added afterwards was written in response to that failure, so this case is no longer an unseen test. The full Kaveri suite has not yet been run end to end with a real model.
+
+*(The table for the current version is added here when the re-run finishes.)*
 
 ## Reliability
 
@@ -218,7 +228,9 @@ Run `python -m evals.run_evals` to regenerate `evals/results.md`.
 |---|---|
 | Read-only SQL guard (one `SELECT` / `WITH` / `SHOW` / `DESCRIBE`) | Agents changing data |
 | SQL self-repair loop | Failed queries stopping a task |
-| Evidence re-execution | Numbers that don't reproduce |
+| Evidence re-execution | Cited results that aren't the real output of their query (it does **not** check reasoning) |
+| Numbers check | Numbers in a finding that aren't in its cited rows (a finding that fails cannot be confirmed); action costs and counts the data doesn't contain (removed and escalated) |
+| Question-similarity filter on memory | Findings from an unrelated investigation being reused |
 | Verbatim quote verification | Invented quotes |
 | Citation filter | Citations to evidence that doesn't exist |
 | Join tests | Bad joins in the data map |
@@ -226,6 +238,21 @@ Run `python -m evals.run_evals` to regenerate `evals/results.md`.
 | Local harness fallback | Zetaris being unreachable during a demo |
 | Bounded rounds (`WHYCHAIN_MAX_ROUNDS`) | Endless revise loops |
 | Deterministic escalation thresholds | Expensive actions going ahead without a human |
+
+## Known limitations
+
+This project was reviewed critically on 22 Oct. Each point and what was done about it:
+
+| Problem | Status |
+|---|---|
+| Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
+| Zetaris, Nightshift and Grok are described as integrated but have never run. | The README now separates the designed role from the actual status. All runs so far used the local DuckDB harness and cloud NVIDIA NIM. |
+| The headline real-data finding did not reproduce consistently: strike attribution varied, and the rate flipped between 21.4% and 19.0%. | There is now one definition of late. Bundled hypotheses are judged part by part, and events must precede their effect. The README states what was consistent and what wasn't. Run-to-run variation remains, because these are language models at temperature 0.2. |
+| Re-running a query on static data proves little. | Added the numbers check (see "Reliability"). It catches invented numbers, not flawed logic. Survivorship, circular comparisons and bundled hypotheses are prompt-level rules for the Evaluator, so they can still slip through. |
+| The agents invented money on the real dataset (e.g. "BRL 5,000"). | Figures that aren't in the cited data are removed and the action is escalated. Olist has no cost data, so its actions show "not computed". Only the simulated dataset has proven-optimal costs (the optimizer). |
+| Memory carried findings across unrelated questions. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are now reused only when they come from a similar question (word overlap ≥ 0.4), and memories are labelled as hints, never evidence. |
+| Prompts used the planted culprits as examples. | Removed: the S-14 optimizer example, the EDI/external_ref lesson, the "strike" search example and the port join path. |
+| The eval scorer matched substrings ("rio" in "period"). | Terms now match at word boundaries, and short terms must be whole words. The Olist ground truth was computed by the author with SQL, and the Kaveri causes were planted by the author, so neither is independent. |
 
 ## Repository layout
 
@@ -243,10 +270,43 @@ scripts/           Zetaris source registration
 tests/             end-to-end wiring test with a scripted model
 ```
 
-## Pre-existing components
+## Pre-existing work (built before the build window)
 
-- `optiagent-core` (installed from `github.com/Dakshhhhh-ops/Optiagent`, commit `f0b61d5`, MIT): the author's earlier verified-optimization engine (LP builder, solver, plan checks, duality certificate, sensitivity analysis). Built before the hackathon and used unmodified as a library. The integration (`whychain/optimize.py`, the `optimize` agent action, the UI) is new.
+The build window opened on **22 Oct 2026 at 05:30 IST**. Much of this project was written before that, between **21 Oct 23:04 IST and 22 Oct about 03:05 IST**. No work happened between 03:05 and 13:25 IST (the laptop was asleep). Everything from **22 Oct 13:25 IST** onward is in-window.
+
+The repository was only created at 13:37 IST. So the first commits (`9b47209` to `1845287`, all at 13:44 IST) import the pre-window code together with the first in-window changes. Every later commit is in-window work.
+
+**Third-party and earlier components**
+- `optiagent-core` (installed from `github.com/Dakshhhhh-ops/Optiagent`, commit `f0b61d5`, MIT): the author's earlier verified-optimization engine (LP builder, solver, plan checks, duality certificate, sensitivity analysis). Built before the hackathon and used unmodified as a library.
 - `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied unmodified from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included).
-- Open-source libraries listed in `pyproject.toml` and `meterless_bridge/package.json`.
+- Open-source libraries listed in `pyproject.toml`, `frontend/package.json` and `meterless_bridge/package.json`.
 - The Olist dataset is third-party public data (CC BY-NC-SA 4.0), downloaded by `datagen/olist.py` and not included in the repository.
-- The project scaffold, data generator and first version of the agent pipeline were written on 21 Oct 2026, before the build window opened, and are declared here and on the submission form.
+
+**Written before the window (21 Oct 23:04 – 22 Oct 03:05 IST)**
+- Data:
+  - the Kaveri simulator, its documents and Postgres loader;
+  - the Olist loader (`datagen/olist.py`);
+  - the 16 researched external events and 13 news briefs (`datagen/olist_events.json`).
+- Harness: the Zetaris REST client (never yet run against a live instance) and the local DuckDB harness with sqlglot translation.
+- The full agent graph: Memory, Data Scout, Planner, Investigators, Document Analyst, Evaluator with revise loop, Risk & Action, Reporter, and the Action Executor.
+- The LLM client: NVIDIA NIM / Nemotron, role-based fallback chains and retries.
+- The Optiagent integration (`whychain/optimize.py`, the `optimize` action).
+- The Meterless bridge service (`meterless_bridge/server.ts`).
+- The FastAPI server with live event streaming.
+- The React app: control tower, investigation view, brief, evidence, memory, data sources, dataset switch, and the monthly chart with event markers.
+- Tooling: the Kaveri eval cases and scorer, the wiring tests, `doctor`, the CLI and `start.cmd`.
+- First versions of this README and `PLAN.md`.
+
+**Written in the window (from 22 Oct 13:25 IST)**: see `git log` from `dd939d3` onward. The changes bundled into the 13:44 commits:
+- the README's real-data sections;
+- per-dataset Zetaris registration;
+- the `--dataset` option for the CLI, `investigate()` and evals;
+- the three Olist eval cases.
+
+Later commits:
+- the Reporter rewrite;
+- the JSON fallback for reasoning models;
+- the Regions view;
+- incomplete-run marking;
+- the weekly-exposure rule for dated events;
+- everything addressing the review in "Known limitations".
