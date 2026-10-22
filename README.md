@@ -216,9 +216,13 @@ Olist has no warehouse stock to move, so the optimizer and stock-transfer delive
 Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `evals/results.md`. A case passes "root cause found" when the expected terms appear, as whole words, in a cause the Evaluator confirmed or in the headline. Keyword scoring is crude; read the briefs too.
 
 <!-- RESULTS -->
-**First real-data pass (22 Oct, 14:00 IST, before the fixes in "Known limitations"):** 2 of 3 Olist cases passed. The truckers' strike case failed: the agents concluded "no measurable delay". In fact, parcels handed to the carrier in the strike week took 10.5 days against about 8 normally, and 15.5% were late against about 4%. The effect was averaged over a broad window, and hidden because Olist lengthened promises for new orders during the strike. The weekly-exposure rule added afterwards was written in response to that failure, so this case is no longer an unseen test. The full Kaveri suite has not yet been run end to end with a real model.
+**Status on 22 Oct, 16:00 IST: no full evaluation of the current version has finished yet.** What exists so far:
 
-*(The table for the current version is added here when the re-run finishes.)*
+- **First real-data pass (14:00 IST, older version):** 2 of 3 Olist development cases passed. The truckers' strike case failed: the agents said "no measurable delay", but parcels handed to the carrier in the strike week took 10.5 days against about 8, and 15.5% were late against about 4%.
+- **Kaveri (simulated) runs at 14:48–15:20 IST:** not a valid measurement. Two eval scripts ran at once by mistake. NVIDIA rate limits (429) crashed three runs within seconds and cut the others short; one run's planner also produced no usable tasks. These failures led to the machine-wide call limit, the longer rate-limit back-off, provider cooldowns, the per-run time limit and the empty-plan fallback.
+- **March 2018 (O1) across runs:** carrier transit was always the main cause. The strike was confirmed as a partial cause in some runs and rejected in others, which the scorer now counts as a failure.
+
+Results for the current version, including repeated runs of the same questions and the "Models used" column, will be added here when they finish. Until then, treat the numbers above as development notes, not results.
 
 ## Reliability
 
@@ -243,7 +247,7 @@ Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `eva
 |---|---|
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
 | Zetaris, Nightshift and Grok have never run. | All runs used the local DuckDB harness and cloud NVIDIA NIM (see the sponsor table). Model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. |
-| Results vary from run to run. | Language models at temperature 0.2 do not give identical answers. "Results" reports repeated runs of the same question, not one good run. |
+| Results vary from run to run. | Language models at temperature 0.2 do not give identical answers: the strike verdict for March 2018 has flipped between runs. Repeated runs are planned but not yet reported (see "Results"). |
 | Reasoning errors can still get through. | The numbers check proves a number came from the data, not that the reasoning is right. Selection on the outcome, circular explanations, bundled hypotheses and causes that come after their effect are rules in the Evaluator's prompt, not code. |
 | No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
 | Weak memory recall. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are reused only when they come from a similar question (word overlap ≥ 0.4); memories are hints, never evidence. |

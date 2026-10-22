@@ -21,6 +21,19 @@ from whychain.graph import investigate
 HERE = Path(__file__).resolve().parent
 
 
+MODEL_NAMES = {"nim": "Nemotron 3.5", "nim-reason": "Nemotron 3.5 (thinking)", "nim-backup": "Nemotron 3 Ultra",
+               "xai": "Grok", "nightshift": "Nightshift", "ollama": "Ollama"}
+
+
+def models_used(by_provider: dict | None) -> str:
+    """Share of model calls per model, e.g. 'Nemotron 3.5 80%, Nemotron 3 Ultra 20%'."""
+    if not by_provider:
+        return "—"
+    total = sum(by_provider.values()) or 1
+    return ", ".join(f"{MODEL_NAMES.get(k, k)} {round(100 * v / total)}%"
+                     for k, v in sorted(by_provider.items(), key=lambda kv: -kv[1]))
+
+
 def term_pattern(term: str) -> re.Pattern:
     """A synonym must start at a word boundary. Short terms (4 letters or fewer, like "rio", "port", "edi", "air") must
     be whole words; longer ones are stems and may continue ("consolidat" matches "consolidated")."""
@@ -48,7 +61,8 @@ def score(case: dict, res: dict) -> dict:
     distractor_confirmed = any(matches(statements, g) for g in case.get("distractors") or [])
     headline = str(res.get("headline", ""))
     blamed = [rx for rx in case.get("headline_must_not") or [] if re.search(rx, headline, re.I)]
-    herring_checked = bool(case.get("distractors") or case.get("headline_must_not"))
+    # no confirmed cause = nothing was attributed, so there is no red-herring result to credit
+    herring_checked = bool(case.get("distractors") or case.get("headline_must_not")) and bool(causes)
     actions_text = " ".join(f"{a.get('title', '')} {a.get('steps', '')}" for a in res.get("actions", [])).lower()
     expected = case.get("expected_actions") or []
     action_ok = all(matches(actions_text, g) for g in expected) if expected else None
@@ -84,12 +98,12 @@ def main() -> None:
               f"herring_avoided={s['red_herring_avoided']} action={s['action_ok']} rounds={s['rounds']} "
               f"{s['seconds']}s  {s['headline'][:80]}")
     (HERE / "results.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
-    md = ["| Case | Dataset | Held out | Root cause found | Red herring avoided | Right action | Rounds | Evidence | Model calls | Time | Run |",
-          "|---|---|---|---|---|---|---|---|---|---|---|"]
+    md = ["| Case | Dataset | Held out | Root cause found | Red herring avoided | Right action | Rounds | Evidence | Model calls | Models used | Time | Run |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s in rows:
         md.append(f"| {s['id']} | {s['dataset']} | {'yes' if s['held_out'] else ''} | {'✅' if s['root_cause'] else '❌'} {s['groups_hit']} | "
                   f"{'—' if s['red_herring_avoided'] is None else '✅' if s['red_herring_avoided'] else '❌'} | {'—' if s['action_ok'] is None else '✅' if s['action_ok'] else '❌'} | {s['rounds']} | "
-                  f"{s['evidence']} | {s['model_calls']} | {s['seconds']}s | `{s['run_id']}` |")
+                  f"{s['evidence']} | {s['model_calls']} | {models_used(s.get('providers'))} | {s['seconds']}s | `{s['run_id']}` |")
     n = len(rows) or 1
     held = [r for r in rows if r["held_out"]]
     if held:

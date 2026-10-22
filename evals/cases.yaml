@@ -74,7 +74,7 @@
   distractors:
     - [strike, greve]
   headline_must_not:
-    - "(due to|because of|caused by|triggered by|driven by|after)\\s+(the\\s+)?(correios\\s+)?(national\\s+)?(postal\\s+)?strike"
+    - "(due to|because of|caused by|triggered by|driven by|after|following)\\s+((the|a|an)\\s+)?(correios\\s+)?(national\\s+)?(postal\\s+)?(workers'?\\s+)?strike"
 
 - id: O2-black-friday-2017
   dataset: olist
@@ -120,7 +120,7 @@
   distractors:
     - [carnival, carnaval, holiday]
   headline_must_not:
-    - "(due to|because of|caused by|triggered by|driven by)\\s+(the\\s+)?(carnival|carnaval|holiday)"
+    - "(due to|because of|caused by|triggered by|driven by|after|following)\\s+((the|a|an)\\s+)?(carnival|carnaval|holiday)"
     - "^yes\\b"
 
 - id: H2-northeast-delays
