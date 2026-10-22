@@ -1,0 +1,21 @@
+{
+  "name": "whychain-meterless-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local HTTP bridge exposing the Meterless H-MEM and World Model reference engines to WhyChain's Python agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx server.ts",
+    "smoke": "node smoke.mjs",
+    "conformance": "tsx engines/hmem/conformance/runner.ts && tsx engines/world-model/conformance/runner.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}

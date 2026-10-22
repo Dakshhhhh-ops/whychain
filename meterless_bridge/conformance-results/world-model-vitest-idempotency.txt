@@ -1,0 +1,21 @@
+
+> @meterless/world-model-reference@0.1.0 test
+> vitest run
+
+
+ RUN  v3.2.7 C:/Users/daksh/OneDrive/Desktop/genai works/meterless_bridge/engines/world-model/reference
+
+ ✓ test/smoke.test.ts (10 tests) 25ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  23:08:19
+   Duration  1.18s (transform 215ms, setup 0ms, collect 238ms, tests 25ms, environment 0ms, prepare 196ms)
+
+run 1: processed=3 clusters=1 changed=true
+run 2: processed=0 skipped=3 changed=false
+diff: empty
+run 1: processed=3 clusters=1 changed=true
+run 2: processed=1 skipped=2 changed=true
+diff: NON-EMPTY
+exit=0

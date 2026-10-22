@@ -1,0 +1,14 @@
+
+> @meterless/hmem-reference@0.1.0 test
+> vitest run
+
+
+ RUN  v2.1.9 C:/Users/daksh/OneDrive/Desktop/genai works/meterless_bridge/engines/hmem/reference
+
+ ✓ test/smoke.test.ts (10 tests) 15ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  23:08:14
+   Duration  1.77s (transform 1.03s, setup 0ms, collect 1.06s, tests 15ms, environment 0ms, prepare 310ms)
+
