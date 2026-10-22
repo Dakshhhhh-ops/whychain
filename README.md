@@ -42,7 +42,7 @@ You ask a "why" question in plain English. WhyChain then:
 3. **Investigates in parallel.**
    - **Data Investigators** query all sources with one SQL dialect through the data harness (see the sponsor status table for what has actually run). They repair their own failed queries.
    - The **Document Analyst** searches contracts, policies and email, and must quote them **verbatim**. Quotes are checked character by character, and invented ones are thrown away.
-4. **Challenges the findings.** The Evaluator **re-runs every cited query** to confirm the numbers reproduce. It then confirms, rejects or asks for more on each hypothesis, and checks whether the confirmed causes explain the *size* of the symptom. If not, it sends specific gaps back to the Planner, which plans another round.
+4. **Challenges the findings.** Code **re-runs every cited query** and **checks every number in each finding against the exact cells it cites** (see "Reliability"). The Evaluator sees the result, then confirms, rejects or asks for more on each hypothesis, and checks whether the confirmed causes explain the *size* of the symptom. If not, it sends specific gaps back to the Planner, which plans another round.
 5. **Turns causes into proven-optimal actions.** For any stock shortage, the Risk & Action agent calls the **optimizer**, built on Optiagent (see below). The agent chooses only the scope, for example "Voltix SKUs, to Pune, within 7 days". Code then reads the backorders, the spare stock at other DCs (after each keeps its policy cover), the truck lanes and the air-freight terms from the data. It solves the transfer problem and returns a plan with a **duality certificate**: a proof that no cheaper plan exists. It also reports any units that can't arrive in time. The agent checks penalty exposure and policy, then proposes priced fixes. Anything over the approval threshold or under 60% confidence is **escalated to a human**.
 6. **Does the approved work.** When a manager approves an action, the **Action Executor** prepares the deliverables that carry it out, grounded in the data:
    - stock-transfer orders (SKU by SKU, computed with SQL, never leaving the sending DC below its cover);
@@ -97,20 +97,18 @@ This table separates what the code is built to do from what has actually run. Ev
 |---|---|---|
 | **Zetaris** | The single path from agents to data. Sources are registered once (`scripts/register_zetaris.py --dataset olist`), and agents write federated Spark SQL across them. | **Not yet connected.** The REST client in `whychain/harness/zetaris.py` has never talked to a live instance, and its response parser is a best guess at the format. Until it is connected, agents query the same table names through the local DuckDB harness (`WHYCHAIN_HARNESS=local`), which the UI labels "local-duckdb". |
 | **Meterless** | H-MEM memory with provenance and the World Model cause graph, via `meterless_bridge/`, which runs the reference engines unmodified. Nightshift would serve the Document Analyst's model locally. | **H-MEM and World Model: used in every run.** H-MEM's reference embedder is a hash-based mock, so similarity recall is weak; WhyChain filters recalled findings itself (see "Known limitations"). **Nightshift: not installed.** The Document Analyst currently runs on NVIDIA's cloud, so documents *are* sent to NIM. |
-| **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
+| **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
 | **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
 
-Development environment: the hackathon asks for Cursor. *(To be completed by the author with how it was actually used; nothing is claimed here yet.)*
+Every model call goes through one OpenAI-compatible client with role-based fallback. Providers that aren't configured are skipped, so **with today's configuration every chain runs entirely on NVIDIA's NIM endpoint**: Nemotron 3.5 Super, then a different model, Nemotron 3 Ultra. That covers one model being overloaded, which is the usual NIM failure, but not an outage of the NIM endpoint itself. Grok or Nightshift would make the chain independent.
 
-Every model call goes through one OpenAI-compatible client with role-based fallback:
-
-| Role | Used by | Fallback order |
+| Role | Used by | Order (configured today in bold) |
 |---|---|---|
-| `reason` | Planner, Evaluator | Grok → Nemotron (thinking) → Nemotron → Nightshift |
-| `work` | Data Scout, Data Investigators, Risk & Action, Reporter, Action Executor | Nemotron → Grok → Nemotron (thinking) → Nightshift |
-| `local` | Document Analyst | Nightshift → Nemotron → Ollama |
+| `reason` | Planner, Evaluator | Grok → **Nemotron 3.5 (thinking)** → **Nemotron 3 Ultra** → **Nemotron 3.5** → Nightshift |
+| `work` | Data Scout, Data Investigators, Risk & Action, Reporter, Action Executor | **Nemotron 3.5** → **Nemotron 3 Ultra** → Grok → **Nemotron 3.5 (thinking)** → Nightshift |
+| `local` | Document Analyst | Nightshift → **Nemotron 3.5** → **Nemotron 3 Ultra** → Ollama |
 
-Transient errors (5xx, rate limits, timeouts) are retried with back-off before a call falls through to the next provider. The trace records every retry and fallback.
+Transient errors (5xx, rate limits, timeouts) are retried with back-off: twice when another provider follows, four times on the last one. The trace records every retry and fallback.
 
 ## Setup (clean machine)
 
@@ -165,7 +163,7 @@ python -m pytest -q tests                        # wiring test (no API keys need
 | **Investigation (live)** | Agents stream their work as it happens (Server-Sent Events). A stage tracker runs Recall → Map data → Plan → Investigate → Challenge → Act → Report. The hypothesis board updates as findings and verdicts arrive, including the Evaluator's send-backs, and the activity feed shows every query, document read, re-verification and escalation. |
 | **Brief** | The answer, with every number citing clickable evidence; recommended actions with cost and approve/reject (decisions are written to Meterless memory); risks; lessons saved. Export to Markdown or print to PDF. |
 | **Deliverables** | After approval, the Action Executor's output appears on the action card: transfer orders, cancellation lists and draft emails, each downloadable. |
-| **Regions** (real data) | A tile map of Brazil's 27 states. It shows how much each state's late-delivery rate rose in the month the question is about, against the six months before, and outlines the states named in the confirmed causes. Hover a state for its late rate and carrier transit time. |
+| **Regions** (real data) | A tile map of Brazil's 27 states. It shows how much each state's late-delivery rate rose in the month the question is about, against a normal baseline (the six months before, leaving out months that were abnormal nationally), and outlines the states named in the confirmed causes. Hover a state for its late rate and carrier transit time. |
 | **Network** (simulated company) | The supply network with the confirmed cause's path lit up, e.g. Voltix → Chennai port → Pune DC. |
 | **Evidence** | Every SQL result (query, rows, re-verification badge) and every document quote (verified word for word). |
 | **Memory & graph** | What was recalled from earlier runs, the cause graph in the Meterless World Model, and the data map's verified joins. |
@@ -229,30 +227,28 @@ Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `eva
 | Read-only SQL guard (one `SELECT` / `WITH` / `SHOW` / `DESCRIBE`) | Agents changing data |
 | SQL self-repair loop | Failed queries stopping a task |
 | Evidence re-execution | Cited results that aren't the real output of their query (it does **not** check reasoning) |
-| Numbers check | Numbers in a finding that aren't in its cited rows (a finding that fails cannot be confirmed); action costs and counts the data doesn't contain (removed and escalated) |
+| Numbers check (`whychain/grounding.py`) | Numbers no cited cell supports. Agents point each key number at an exact cell (result, column, row), and code checks that cell. Arithmetic is allowed only when the wording implies it ("from A to B", "X of Y") and only between numbers of the same unit in that sentence. A finding with more than a third of its numbers unsupported cannot be confirmed. Applied to findings, to action figures (which must equal a cell; others are removed and the action escalated) and to every line of the brief (unsupported numbers are marked "(unverified)" in the text). On a probe of 1,000 fabricated numbers, 3% pass (the first version passed 93%); see `tests/test_grounding_probe.py`. |
 | Question-similarity filter on memory | Findings from an unrelated investigation being reused |
 | Verbatim quote verification | Invented quotes |
 | Citation filter | Citations to evidence that doesn't exist |
 | Join tests | Bad joins in the data map |
-| Model fallback chain | One provider failing the whole run |
+| Model fallback chain | One model failing the whole run (today both models sit on the same NVIDIA endpoint, so not an NVIDIA outage) |
 | Local harness fallback | Zetaris being unreachable during a demo |
 | Bounded rounds (`WHYCHAIN_MAX_ROUNDS`) | Endless revise loops |
 | Deterministic escalation thresholds | Expensive actions going ahead without a human |
 
 ## Known limitations
 
-This project was reviewed critically on 22 Oct. Each point and what was done about it:
-
-| Problem | Status |
+| Limitation | Where it stands |
 |---|---|
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
-| Zetaris, Nightshift and Grok are described as integrated but have never run. | The README now separates the designed role from the actual status. All runs so far used the local DuckDB harness and cloud NVIDIA NIM. |
-| The headline real-data finding did not reproduce consistently: strike attribution varied, and the rate flipped between 21.4% and 19.0%. | There is now one definition of late. Bundled hypotheses are judged part by part, and events must precede their effect. The README states what was consistent and what wasn't. Run-to-run variation remains, because these are language models at temperature 0.2. |
-| Re-running a query on static data proves little. | Added the numbers check (see "Reliability"). It catches invented numbers, not flawed logic. Survivorship, circular comparisons and bundled hypotheses are prompt-level rules for the Evaluator, so they can still slip through. |
-| The agents invented money on the real dataset (e.g. "BRL 5,000"). | Figures that aren't in the cited data are removed and the action is escalated. Olist has no cost data, so its actions show "not computed". Only the simulated dataset has proven-optimal costs (the optimizer). |
-| Memory carried findings across unrelated questions. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are now reused only when they come from a similar question (word overlap ≥ 0.4), and memories are labelled as hints, never evidence. |
-| Prompts used the planted culprits as examples. | Removed: the S-14 optimizer example, the EDI/external_ref lesson, the "strike" search example and the port join path. |
-| The eval scorer matched substrings ("rio" in "period"). | Terms now match at word boundaries, and short terms must be whole words. The Olist ground truth was computed by the author with SQL, and the Kaveri causes were planted by the author, so neither is independent. |
+| Zetaris, Nightshift and Grok have never run. | All runs used the local DuckDB harness and cloud NVIDIA NIM (see the sponsor table). Model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. |
+| Results vary from run to run. | Language models at temperature 0.2 do not give identical answers. "Results" reports repeated runs of the same question, not one good run. |
+| Reasoning errors can still get through. | The numbers check proves a number came from the data, not that the reasoning is right. Selection on the outcome, circular explanations, bundled hypotheses and causes that come after their effect are rules in the Evaluator's prompt, not code. |
+| No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
+| Weak memory recall. | H-MEM's reference embedder is a hash mock, and the bridge's recall threshold is 0.15. Findings are reused only when they come from a similar question (word overlap ≥ 0.4); memories are hints, never evidence. |
+| Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. H1–H3 are held out: added after the last prompt change, with ground truth computed with SQL before any agent ran them. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
+| Crude scoring. | Eval terms match at word boundaries; red herrings are judged on confirmed hypotheses and the headline. Keyword scoring still can't judge an argument; read the briefs. |
 
 ## Repository layout
 

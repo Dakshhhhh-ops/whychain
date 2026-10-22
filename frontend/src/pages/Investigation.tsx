@@ -282,7 +282,7 @@ function RegionsTab({ state, result, question }: { state: LiveState; result?: Ru
         title={data.month ? `Late deliveries by state, ${label}` : "Late deliveries by state, all orders"}
         subtitle={
           data.month
-            ? `Orders placed in ${label}, against the six months before (${data.baseline}). ${causeText ? "States named in the confirmed causes are outlined." : "Outlines appear once the Evaluator confirms a cause."}`
+            ? `Orders placed in ${label}, against a normal baseline: ${data.baseline}. ${causeText ? "States named in the confirmed causes are outlined." : "Outlines appear once the Evaluator confirms a cause."}`
             : "No month in the question, so this shows every delivered order."
         }
         right={

@@ -281,9 +281,9 @@ WITH o AS (SELECT c.customer_state AS state, date_format(o.order_purchase_timest
 SELECT state,
        SUM(CASE WHEN month = '{month}' THEN 1 ELSE 0 END) AS orders,
        ROUND(100.0 * AVG(CASE WHEN month = '{month}' THEN late END), 1) AS late_pct,
-       ROUND(100.0 * AVG(CASE WHEN month < '{month}' THEN late END), 1) AS base_late_pct,
+       ROUND(100.0 * AVG(CASE WHEN month IN ({base_months}) THEN late END), 1) AS base_late_pct,
        ROUND(AVG(CASE WHEN month = '{month}' THEN transit END), 1) AS transit_days,
-       ROUND(AVG(CASE WHEN month < '{month}' THEN transit END), 1) AS base_transit_days
+       ROUND(AVG(CASE WHEN month IN ({base_months}) THEN transit END), 1) AS base_transit_days
 FROM o GROUP BY state ORDER BY state"""
 
 
@@ -302,13 +302,25 @@ def olist_regions(h: DataHarness, month: str | None = None) -> dict:
                             "late_pct": _f(r["late_pct"]), "base_late_pct": None, "transit_days": None,
                             "base_transit_days": None} for r in rows]}
     base_start = _shift_month(month, -6)
-    rows = _rows(h, OLIST_REGIONS_SQL.format(month=month, base_start=base_start), limit=40)
+    # a normal baseline: the six months before, minus any month that was itself abnormal nationally (a peak season or
+    # another incident), i.e. late rate above 1.5x the window's median
+    window = [_shift_month(month, -k) for k in range(6, 0, -1)]
+    national = {t["month"]: t["late_pct"] for t in (
+        {"month": r["month"], "late_pct": _f(r["late_pct"])} for r in _rows(h, OLIST_MONTHLY_SQL, limit=100))}
+    rates = [national[m] for m in window if m in national]
+    med = _median(rates) if rates else 0.0
+    base = [m for m in window if m in national and national[m] <= 1.5 * med] or [m for m in window if m in national]
+    excluded = [m for m in window if m in national and m not in base]
+    rows = _rows(h, OLIST_REGIONS_SQL.format(month=month, base_start=base_start,
+                                             base_months=", ".join(f"'{m}'" for m in base) or "''"), limit=40)
     states = [{"state": r["state"], "name": BR_STATES.get(r["state"], r["state"]), "orders": int(_f(r["orders"])),
                "late_pct": _f(r["late_pct"], None), "base_late_pct": _f(r["base_late_pct"], None),
                "transit_days": _f(r["transit_days"], None), "base_transit_days": _f(r["base_transit_days"], None)}
               for r in rows if _f(r["orders"]) > 0]
-    return {"month": month, "baseline": f"{_month_name(base_start)} to {_month_name(_shift_month(month, -1))}",
-            "states": states}
+    label = f"{_month_name(window[0])} to {_month_name(window[-1])}"
+    if excluded:
+        label += ", leaving out " + " and ".join(_month_name(m) for m in excluded) + " (abnormal nationally)"
+    return {"month": month, "baseline": label, "baseline_months": base, "excluded_months": excluded, "states": states}
 
 
 def olist_overview(h: DataHarness) -> dict:
