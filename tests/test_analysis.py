@@ -187,3 +187,23 @@ def test_a_stage_that_did_not_move_is_not_a_cause():
     verdict = {t["params"].get("stage"): run_task(eng, t, "T")[0]["fixed"] for t in tasks if t["tool"] == "stage"}
     assert not verdict["transit"]["is_cause"] and "barely changed" in verdict["transit"]["reason"]
     assert verdict["handover"]["is_cause"]
+
+
+def test_a_stage_whose_distribution_did_not_change_is_ruled_out():
+    """Small-sample noise: in March only hand-over is shifted (+2 days); transit keeps the same distribution. On 93
+    focus orders the counterfactual still gives transit 11.1% of the rise. Transit must be ruled out, hand-over kept."""
+    from whychain.analysis.battery import build_scope, run_task
+
+    rnd = random.Random(33)
+    base = make_orders(date(2017, 9, 1), date(2018, 3, 1), rnd, per_day=40, t=(2, 6), p=(7, 9))
+    focus = make_orders(date(2018, 3, 1), date(2018, 4, 1), rnd, per_day=3, t=(2, 6), p=(7, 9),
+                        shift=lambda d, a: (2, 0, 0), prefix="f")
+    e = engine(base + focus)
+    spec = {"mode": "time", "label": "orders placed March 2018", "start": "2018-03-01", "end": "2018-04-01"}
+    res = e.stages(build_scope(e, spec))
+    share, moved = res.columns.index("share_of_rise_pct"), res.columns.index("stage_moved")
+    rows = {r[0]: r for r in res.rows}
+    assert rows["transit"][share] >= 10 and not rows["transit"][moved]   # a noise share on an unchanged stage
+    verdict = {st: run_task(e, {"tool": "stage", "statement": st, "scope": spec, "params": {"stage": st}}, "T")[0]["fixed"]
+               for st in ("handover", "transit")}
+    assert not verdict["transit"]["is_cause"] and verdict["handover"]["is_cause"]

@@ -102,6 +102,38 @@
   distractors:
     - [slower, later, shorter, surge, waited for stock, duplicate, late inbound, strike]
 
+# --- Replacement held-out questions, added 22 Oct 19:28 IST after KH2 and KH3 became development cases (commit
+# 4ae49f7). Ground truth from SQL (scratch queries summarised below) before any engine or agent ran them; the code is
+# not changed between adding them and their first scored run.
+
+- id: KH4-surat-september
+  held_out: true
+  question: Why were deliveries to Surat late so often in September?
+  # SQL: Surat late 21.8% in September vs 6.7% in August (87 vs 89 delivered orders, all from MUM, carrier C03 both
+  # months). Hand-over 2.73 -> 4.07 days; transit flat (2.07 -> 2.11); promised days LONGER (4.92 -> 5.46). Orders
+  # handed over after their requested ship date 17.2% vs 3.4%; on that date the warehouse was short of one of their
+  # SKUs, mostly Voltix S-14 (power banks 5 orders, chargers 2), then keyboards S-02/S-16 and routers S-09.
+  min_groups: 2
+  must_find:
+    - [hand-over, handover, dispatch]
+    - [stock, stock-out, stockout, waited]
+    - [voltix, s-14]
+  distractors:
+    - [transit got slower, carrier transit, consolidat]
+    - [promised delivery windows got shorter, shorter promise]
+  expected_actions:
+    - [stock-out, stockout, stock]
+
+- id: KH5-mumbai-chargers-false-premise
+  held_out: true
+  question: Why is there a charger shortage at the Mumbai DC?
+  # SQL: MUM has NO open charger backorders (0 units). Its open backorders are earbuds (S-07, 3,302 units), cables,
+  # routers, smart plugs, speakers, keyboards. No open charger POs for MUM. The premise is false.
+  must_find:
+    - [no cause, 0 of, no shortage, not short, nothing to explain]
+  distractors:
+    - [late inbound, spiked, too low, duplicate, strike, port]
+
 # --- Olist (REAL data). Nothing is planted: the ground truth below was established independently with SQL on the
 # raw data (weekly and per-state breakdowns) before scoring the agents. No expected actions: there is no single
 # right business action on historical data.
