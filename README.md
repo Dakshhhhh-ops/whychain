@@ -43,6 +43,7 @@ WhyChain splits the work between **code that computes** and **agents that plan, 
 2. **The question becomes a fixed battery of tests** (`battery.py`). The period, places and named events are read from the question with plain rules. The same kind of question always gets the same tests:
    - **the symptom** against a *normal* baseline: the months (or weeks) before, minus any that were themselves abnormal;
    - **each delivery stage** (seller hand-over, carrier transit, the promise): counterfactual late rates where a stage takes its baseline distribution, matched like with like by area. Exact **Shapley values** split the rise, so the shares add up;
+   - **waiting for stock** (datasets with stock data): were the slow hand-overs orders waiting for stock the warehouse didn't have on their requested ship date? A counterfactual gives the hand-over without those waits, and the short lines name the suppliers and any promotion behind their demand. This explains the dispatch stage rather than counting as another cause, and changes its action from "enforce hand-over deadlines" to "clear the stock-outs";
    - **where it sits**: a shift-share split of the rise by area, seller state or carrier, separating "it got worse there" from "more orders came from there";
    - **volume**: orders per day against the four weeks before (business growth is not a surge);
    - **dated events** in or near the period: weekly transit and lateness, by the week parcels were handed to the carrier, against the **prior trend**. An event counts only if the change starts with it, and for a regional event, only if it is larger in that region;
@@ -305,19 +306,20 @@ The five Kaveri questions on commit `f10d80d`, every query through Zetaris, on a
 
 The agent loop, then used for stock, backlog and risk questions, was slow (11 to 16 minutes, mostly NVIDIA rate limits) and found the planted cause in none of its three cases. That is why those questions moved onto computed checks (the supply engine, above).
 
-## Hackathon tracks
+## Hackathon track
 
-WhyChain is one product; this is how it maps to each track, with what is real today.
+**Primary track: Track 2, The Agent That Can Explain Why.** The Official Rules (section 3) say every submission selects exactly one primary track, which sets the judging panel, and that cross-track relevance is welcome but not scored twice. The other tracks are listed for context only.
 
 | Track | What WhyChain shows | Evidence | Gap |
 |---|---|---|---|
-| 1 Fragmented intelligence | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. The Data Scout maps the sources and tests every join. | Join tests in every run; the engine's fact query joins five sources in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
-| 2 The agent that explains why | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, and red herrings are ruled out with reasons. | Results above: 6/6 real-data questions in three passes (two local, one through Zetaris), 62/62 computed findings identical; 5/5 simulated-company questions found with the right action | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker; the engine finds which stage slowed, not always why (case E) |
-| 3 Reasoning architecture | Code computes and agents reason. Coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, and memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
-| Wildcard | An existing project, Optiagent, extended with Zetaris and Meterless. | Zetaris as the data path, Meterless H-MEM and World Model in every run | Meterless Nightshift (local model serving) not set up |
-| NVIDIA Nemotron prize | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
+| **2 The agent that explains why (primary)** | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, red herrings are ruled out with reasons, and every action is sized from the data. | Results above: 6/6 real-data questions in three passes (two local, one through Zetaris), 62/62 computed findings identical; the simulated company's planted causes found with the right action, plus held-out questions | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker |
+| 1 Fragmented intelligence (context) | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. | Join tests in every run; the engine's fact query joins five sources in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
+| 3 Reasoning architecture (context) | Code computes and agents reason: coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
+| Best use of NVIDIA Nemotron (in-kind award) | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
 
-Whether one project may be entered in several tracks is not stated on the public event page; the author is checking with the organizers.
+## Development tools
+
+The Official Rules (section 5) require teams to use **Cursor** for development, and the submission must explain how it was used (section 6). Work up to 22 Oct 19:00 IST was done in VS Code; Cursor had not been used. An earlier commit (`0e6b994`) removed a note about Cursor in the mistaken belief that the event page didn't mention it; it does, in the Official Rules. How that earlier in-window work counts is to be confirmed with the organizers (hackathons@genai.works). This section will say how Cursor was used once it has been.
 
 ## How WhyChain uses NVIDIA Nemotron
 
@@ -354,7 +356,7 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 
 | Limitation | Where it stands |
 |---|---|
-| Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The organizers are being asked whether Track 2 accepts this or whether it belongs in the Wildcard track. |
+| Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The Official Rules (sections 4 and 5) make work committed before the window ineligible except clearly declared pre-existing components, and require pre-existing product code to be declared in the submission form as well. How the pre-window code counts is to be confirmed with the organizers. |
 | Nightshift and Grok have never run; Zetaris only locally. | Zetaris runs as the local Docker platform (Zetaris Cloud is untested). All model calls use cloud NVIDIA NIM, so model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. Zetaris queries take 0.2 to 1.3 s each where DuckDB takes milliseconds; the computed answers are identical. |
 | Results vary from run to run (agent loop). | Late-delivery and supply questions: the computed findings are identical run to run (62/62 across three Olist passes, local and Zetaris). Only the Document Analyst's reading and the short model-written answer vary. Questions that fit neither engine use the agent loop, which runs language models at temperature 0.2, so its answers can vary. |
 | Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded; the same holds for the supply checks. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
