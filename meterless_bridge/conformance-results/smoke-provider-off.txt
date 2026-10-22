@@ -1,0 +1,66 @@
+Bridge smoke test, METERLESS_EMBEDDER=mock. 2026-10-22 19:32 IST, WhyChain commit 23fadb2
+spawning bridge on http://127.0.0.1:19764 with data dir C:\Users\daksh\AppData\Local\Temp\meterless-bridge-smoke-agLS1E
+PASS  GET /health ok + both engines  -- {"hmem":true,"world":true}
+PASS  GET /health version  -- 0.1.0
+INFO  embedder: mock (deterministic token hash)
+PASS  GET / lists routes
+PASS  POST /memory/write (finding)  -- mem-1 tier=working
+PASS  POST /memory/write (finding)  -- mem-2 tier=working
+PASS  POST /memory/write (fact)  -- mem-3 tier=working
+PASS  POST /memory/write (hypothesis)  -- mem-4 tier=short_term
+PASS  POST /memory/write (lesson)  -- mem-5 tier=working
+PASS  POST /memory/write rejects missing provenance.source (H-MEM contract)  -- "source" is required and must be a non-empty string
+PASS  POST /memory/write rejects unknown kind
+PASS  POST /memory/recall returns ranked items  -- 4 items, top=mem-5 score=0.3205
+PASS  recall item shape {id,content,kind,provenance,confidence,tier,score}
+PASS  recall returns reinjection context block
+PASS  recall with tags filter  -- mem-1
+PASS  recall provenance carries query
+PASS  recall with kinds + run_id filter
+PASS  recall min_score threshold honoured
+PASS  POST /memory/feedback wrong -> -0.20 + review tag  -- confidence=0.2
+PASS  GET /memory/item returns record + ledger history  -- 3 ledger entries
+PASS  POST /memory/consolidate dry_run previews, mutates nothing  -- would promote 4
+PASS  POST /memory/consolidate promotes working -> long_term  -- promoted=4 tiers={"short_term":1,"working":0,"long_term":4}
+PASS  consolidate ran the engine sleep cycle  -- sleep-1792677742519
+PASS  hypothesis marked wrong was NOT promoted
+PASS  promoted memory now recalls as long_term
+PASS  GET /memory/audit returns trail  -- 17 total; actions=read,promote,feedback,create
+PASS  audit trail has create/read/feedback/promote
+PASS  audit filters (run_id, action)
+PASS  POST /memory/dream returns proposals  -- 1 proposals
+PASS  GET /memory/dream lists pending
+PASS  POST /memory/dream/approve materializes long_term memory with lineage  -- insight -> mem-6 derived_from=mem-2,mem-3
+PASS  POST /memory/dream/reject unknown -> 404
+PASS  POST /world/events event_id retry is deduplicated
+PASS  POST /world/events returns {seq}  -- 4,10,15,30,38
+PASS  seq strictly increasing
+PASS  POST /world/events rejects unknown entity ref (no partial write)
+PASS  POST /world/events requires type
+PASS  GET /world/events?run_id lists the run's events in order  -- 1:run_started 2:plan 3:sql_query 4:claim_rejected 5:run_completed
+PASS  event shape {seq, type, actor, payload, at}
+PASS  GET /world/events since_seq for polling
+PASS  GET /world/events raw=1 exposes engine WorldEvents
+PASS  GET /world/state status derived from facts  -- completed
+PASS  state has run facts (question, root_cause)
+PASS  state steps summary + current step  -- {"run_started":1,"plan":1,"sql_query":1,"claim_rejected":1,"run_completed":1}
+PASS  state bitemporal timeline (closed edges)
+PASS  state causal relations
+PASS  coded names keyed exactly (Supplier S-14 / S-15 stay distinct)  -- supplier:whychain:supplier s-14 supplier:whychain:supplier s-15
+PASS  free-text names use engine fuzzy resolution (strike/strikes auto-merged)  -- [["Chennai port strike","Chennai port strikes"]]
+PASS  state entities with facts
+PASS  GET /world/state (no run_id) lists runs
+PASS  GET /world/state unknown run -> 404
+PASS  GET /world/audit
+PASS  restart: memory records survive  -- 6 records, tiers={"short_term":1,"working":0,"long_term":5}
+PASS  restart: world events survive (replayed)  -- 43 events
+PASS  restart: derived state identical (status, facts, relations)
+PASS  restart: event_id dedupe index rebuilt from log
+PASS  run B recalls run A's memories (compounding)  -- mem-5[long_term] mem-2[long_term] mem-1[long_term] mem-3[long_term] mem-6[long_term]
+PASS  run B writes a repeat finding
+PASS  run B consolidate: sleep synthesizes the cross-run duplicate  -- synthesized=1; backup backup-1 created; synthesized mem-8 from mem-1, mem-7
+PASS  synthesized memory has lineage (derived_from both runs)  -- mem-8 derived_from=mem-1,mem-7
+PASS  POST /memory/restore from disk backup  -- restored 5
+PASS  restore is audited
+
+61/61 checks passed

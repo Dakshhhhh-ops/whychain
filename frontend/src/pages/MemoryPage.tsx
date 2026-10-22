@@ -37,11 +37,16 @@ export function MemoryPage() {
       ) : (
         <>
           <Card className="mt-6">
-            <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-5">
               <Stat label="Memories" value={data.count} hint={data.status.online ? "Meterless H-MEM" : "local file (bridge offline)"} />
               <Stat label="Long-term" value={tiers.long_term ?? "—"} hint="promoted by consolidation" />
               <Stat label="Working" value={tiers.working ?? "—"} hint="recent findings" />
               <Stat label="Short-term" value={tiers.short_term ?? "—"} hint="unconfirmed hypotheses" />
+              <Stat
+                label="Recall embeddings"
+                value={!data.status.online ? "—" : data.status.embedder?.includes("nemotron") ? "Nemotron" : "Mock"}
+                hint={data.status.embedder ?? "not reported by the bridge"}
+              />
             </div>
           </Card>
           <div className="mt-5 flex gap-1.5">

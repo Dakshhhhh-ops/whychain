@@ -1,0 +1,14 @@
+Recall demo, 2026-10-22 19:33: 6 findings, 6 reworded questions.
+  mock:   mock (deterministic token hash)
+  nvidia: nvidia/nemotron-3-embed-1b
+
+question                                                           wanted       mock  Nemotron
+Why can't our suppliers' goods get into the country?               port            1         1
+Why does the courier only go to that town twice a week now?        milk_run        4         1
+Did a marketing campaign empty our headphone shelves?              promo           1         1
+Are customers' systems sending us the same purchase twice?         duplicates      2         1
+Did the monsoon hold up the warehouse?                             rain            3         2
+Why are parcels leaving the warehouse later than they used to?     stock_wait      6         1
+
+mock: right finding first in 2/6
+Nemotron: right finding first in 5/6

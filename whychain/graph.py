@@ -108,8 +108,19 @@ def make_ctx(harness_pref: str | None = None, listener=None, tracer: Tracer | No
     return ctx, notes
 
 
+_VERSION: dict | None = None
+
+
 def code_version() -> dict:
-    """The commit the code was at, and whether code folders had uncommitted changes (results cite it)."""
+    """The commit the code was at when this process first ran an investigation (the code it loaded), and whether code
+    folders had uncommitted changes then. Results cite it."""
+    global _VERSION
+    if _VERSION is None:
+        _VERSION = _git_version()
+    return _VERSION
+
+
+def _git_version() -> dict:
     import subprocess
 
     root = Path(__file__).resolve().parent.parent

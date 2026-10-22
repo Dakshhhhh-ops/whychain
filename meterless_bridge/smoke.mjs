@@ -90,6 +90,7 @@ async function main() {
   let r = await get("/health");
   check("GET /health ok + both engines", r.status === 200 && r.data.ok && r.data.engines.hmem && r.data.engines.world, JSON.stringify(r.data.engines));
   check("GET /health version", typeof r.data.version === "string", r.data.version);
+  console.log(`INFO  embedder: ${r.data.embeddings?.embedder ?? "(not reported)"}${r.data.embeddings?.dim ? ` (${r.data.embeddings.dim} dimensions)` : ""}`);
   r = await get("/");
   check("GET / lists routes", r.status === 200 && Array.isArray(r.data.routes) && r.data.routes.length >= 15);
 

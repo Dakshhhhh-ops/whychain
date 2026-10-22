@@ -53,6 +53,11 @@ def main() -> None:
     try:
         h = httpx.get(f"{SETTINGS.meterless_url}/health", timeout=3).json()
         line(bool(h.get("ok")), "Meterless bridge", f"engines {h.get('engines')} · {h.get('memory', {}).get('records')} memories")
+        emb = h.get("embeddings") or {}
+        line(bool(emb.get("active")) if emb else None, "  H-MEM embeddings",
+             (f"{emb.get('embedder')} · {emb.get('failures', 0)} failed calls"
+              + (f" (last: {emb.get('last_error')})" if emb.get("last_error") else "")) if emb
+             else "not reported (bridge predates Nemotron embeddings: restart it)")
     except Exception:
         line(False, "Meterless bridge", f"not reachable at {SETTINGS.meterless_url} (cd meterless_bridge && npm start)")
     # models
