@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from whychain.agents import prompts as P
 from whychain.agents.executor import Ctx, fill, run_loop, verify_quotes
@@ -614,9 +614,12 @@ RULE_CONSTANTS = [10.0, 25.0, 1.5, 2.0, 5.0, 80.0]   # thresholds named in coded
 _CITE = re.compile(r"\[([A-Z][A-Za-z0-9]*\.[QDPA]\d+)\]")
 
 
-def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: Ctx | None = None) -> tuple[str, str, dict]:
+def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: Ctx | None = None,
+                answer_rules: list[float] | None = None) -> tuple[str, str, dict]:
     """Number-check the brief's own text. Each line's numbers must come from the evidence that line cites, from a
-    supported number in a finding, or from an action figure that passed its own check. Others are marked inline."""
+    supported number in a finding, or from an action figure that passed its own check. Others are marked inline.
+    answer_rules: rule thresholds the model was shown in its facts (e.g. "rose by 25% or more"); the model-written
+    answer may repeat those, and nothing else that isn't a supported number."""
     evidence = state.get("evidence", {})
     supported: list[float] = []
     for f in state.get("findings", []):
@@ -635,7 +638,7 @@ def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: C
             in_answer = line.strip().lower() == "## answer"
         body = re.sub(r"^\s*\d+\.\s", lambda m: " " * len(m.group(0)), line)  # list numbers aren't claims
         evs = [all_ev[i] for i in _CITE.findall(line) if i in all_ev]
-        extra = list(supported)
+        extra = list(supported) + (list(answer_rules or []) if in_answer else [])
         if not in_answer:
             # lines written by code may use any cell of the computed tables they cite, and the rule constants;
             # the model-written answer gets the strict check
@@ -735,11 +738,15 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
                                         "purpose": f"cover {sup} shortages at {', '.join(spec['warehouses']) or 'the DCs'} within 7 days",
                                         **out, "row_count": len(out.get("rows", [])), "harness": ctx.harness.name}
                     lanes = ", ".join(f"{t['lane']} {t['units']:,} units" for t in sm.get("trucks", []))
+                    by = (date.fromisoformat(str(ctx.as_of)[:10]) + timedelta(days=7)).isoformat()
                     add(f"Transfer stock to cover the {sup} shortage: {lanes or 'air freight only'}"
                         + (f", plus {sm['air_units']:,} units by air" if sm.get("air_units") else ""),
                         f"Proven-optimal plan (Optiagent, duality certificate): {sm.get('truck_units', 0):,} units by truck"
                         f" and {sm.get('air_units', 0):,} by air, covering {round(100 * (sm.get('covered_share') or 0))}% "
-                        f"of the {sm.get('need_units', 0):,} units needed within 7 days"
+                        f"of the {sm.get('need_units', 0):,} units of {sup}'s SKUs backordered at "
+                        f"{', '.join(spec['warehouses']) or 'the DCs'} with a promised date on or before {by}. That "
+                        "includes orders already past their promised date, which still need the stock, not only the "
+                        "ones due next week"
                         + (f"; {sm['unfilled_units']:,} units can't arrive in time" if sm.get("unfilled_units") else "")
                         + ".", [late["task_id"]], ["A.P1"], cost=out.get("objective_inr"))
             except Exception as e:
@@ -1026,6 +1033,26 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         what = "of the short units" if supply else "of the rise"
         return f" ({round(100 * sh, 1)}% {what})" if isinstance(sh, float) else ""
 
+    # A disrupted port is why inbound orders are late, not a second cause beside them: show one chain.
+    held_by: dict[str, dict] = {}
+    if supply:
+        tool = {f["task_id"]: tasks.get(f["task_id"], {}).get("tool") for f in causes}
+        inb = next((f for f in causes if tool[f["task_id"]] == "inbound"), None)
+        port = next((f for f in causes if tool[f["task_id"]] == "port"), None)
+        if inb and port:
+            causes = [f for f in causes if f is not port]
+            held_by[inb["task_id"]] = port
+
+    def cause_txt(f):
+        port = held_by.get(f["task_id"])
+        if not port:
+            return _short(f["statement"]) + share_txt(f)
+        summ = state["evidence"].get((port.get("evidence_ids") or [""])[0], {}).get("summary", {})
+        name = summ.get("top_port")
+        why = str((summ.get("port_status") or {}).get(name, "")).split(": ", 1)[-1].strip().lower()
+        held = (f", held up at {name}" + (f" by a {why}" if why else "")) if name else ", held up at a disrupted port"
+        return _short(f["statement"]) + held + share_txt(f)
+
     # headline, in code
     if event_f:
         e = event_f[0]
@@ -1034,7 +1061,7 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         headline = (f"{'Yes' if st == 'confirmed' else 'No'}: {name} "
                     f"{'delayed deliveries' if st == 'confirmed' else 'did not cause the delays'}. {v[e['task_id']]['reason']}")
     elif causes:
-        top = " and ".join(_short(f["statement"]) + share_txt(f) for f in causes[:2])
+        top = (", and " if held_by else " and ").join(cause_txt(f) for f in causes[:2])
         headline = f"Main causes: {top}."
         if measure:
             headline = measure["claim"].split(":")[0] + f". {headline}"
@@ -1045,6 +1072,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     if causes:
         for i, f in enumerate(causes, 1):
             lines.append(f"{i}. **{f['statement']}**{share_txt(f)}. {f['claim']} {_cites(f)}")
+            if f["task_id"] in held_by:
+                port = held_by[f["task_id"]]
+                lines.append(f"   - Why they are late: {port['claim']} {_cites(port)}")
     else:
         lines.append("No cause passed the tests.")
     if where:
@@ -1073,8 +1103,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
                 if isinstance(v[f["task_id"]].get("share_of_symptom"), float)]
     if supply:
         lines += ["", "## How sure we are",
-                  "- Each check reports the share of the short units it is involved in. Shares overlap: one SKU can be "
-                  "both late inbound and under a stale reorder point.",
+                  "- Each check reports the share of the short units it is involved in (for duplicates: the units "
+                  "the extra copies order). Shares overlap: one SKU can be both late inbound and under a stale "
+                  "reorder point.",
                   "- Every number above was computed by the analysis engine from the cited results, and checked "
                   "against their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
     else:
@@ -1091,7 +1122,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     body = "\n".join(lines)
 
     facts = "\n".join([f"HEADLINE: {headline}"] + ([f"SYMPTOM: {measure['claim']} {_cites(measure)}"] if measure else [])
-                      + [f"CAUSE: {f['statement']}{share_txt(f)}: {f['claim']} {_cites(f)}" for f in causes[:3]]
+                      + [f"CAUSE: {f['statement']}{share_txt(f)}: {f['claim']} {_cites(f)}"
+                         + (f" WHY: {held_by[f['task_id']]['claim']} {_cites(held_by[f['task_id']])}"
+                            if f["task_id"] in held_by else "") for f in causes[:3]]
                       + [f"RULED OUT: {f['statement']}: {v[f['task_id']]['reason']}" for f in ruled[:5]])
     answer = ""
     try:
@@ -1103,7 +1136,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     if len(answer) < 40:
         answer = headline + (f" {measure['claim']} {_cites(measure)}" if measure else "")
     md = f"## Answer\n{answer}\n\n{body}"
-    md, headline, brief_check = check_brief(md, headline, state, acts, ctx)
+    rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS]
+    md, headline, brief_check = check_brief(md, headline, state, acts, ctx, answer_rules=rules)
     ctx.tracer.event("agent_end", agent, headline=headline, invalid_citations_removed=[])
     return {"brief": md, "headline": headline, "lessons": [], "brief_check": brief_check}
 

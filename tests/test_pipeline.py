@@ -87,3 +87,10 @@ def test_supply_route(tmp_path):
     text = " ".join(f["claim"] for f in causes)
     assert "S-14" in text and "Chennai" in text
     assert all(e in res["evidence"] for f in res["findings"] for e in f["evidence_ids"])
+    # the port is shown as why the inbound orders are late, not as a second cause with the same share
+    assert "held up at Chennai" in res["headline"]
+    roots = res["brief"].split("## Root causes")[1].split("\n## ")[0]
+    assert "Why they are late" in roots and "**A disrupted port" not in roots
+    # the transfer says what it covers (overdue orders too), so it isn't read against the next-week count
+    transfer = next(a for a in res["actions"] if a["title"].startswith("Transfer"))
+    assert "past their promised date" in transfer["steps"]

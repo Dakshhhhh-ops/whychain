@@ -52,3 +52,13 @@ def test_key_number_on_a_row_beyond_the_stored_sample():
     keys = [{"value": 500, "evidence": "T1.Q1", "column": "orders", "where": {"month": "2018-05"}}]
     c = check_claim("May had 500 orders", ev, keys, fetch=lambda table: full)
     assert c["missing"] == [] and c["key_numbers"]["verified"] == 1
+
+
+def test_answer_may_repeat_only_the_rule_thresholds_it_was_shown():
+    from whychain.agents.nodes import check_brief
+
+    md = "## Answer\nOrders did not rise by 25% or more, and 40% of them were late.\n\n## Root causes\n- none"
+    shown, _, rep = check_brief(md, "Headline", {"evidence": {}, "findings": []}, [], answer_rules=[25.0])
+    assert rep["unverified"] == ["40%"] and "25% or more" in shown   # the threshold it was given passes
+    _, _, rep = check_brief(md, "Headline", {"evidence": {}, "findings": []}, [])
+    assert rep["unverified"] == ["40%", "25%"]                        # without it, the strict answer check flags it

@@ -335,7 +335,10 @@ class SupplyEngine:
                       "measured", POLICY_SQL)
 
     def duplicates(self, spec: dict) -> Result:
-        f = self.focus(spec).drop_duplicates("order_id")
+        """Extra copies of orders (same external reference). Judged like the other checks: the units the copies
+        order, against the units short in scope (for a backlog, the copies are what inflate it)."""
+        fl = self.focus(spec)
+        f = fl.drop_duplicates("order_id")
         all_orders = self.lines().drop_duplicates("order_id")
         refs = all_orders.groupby("external_ref")["order_id"].nunique()
         dup_refs = set(refs[refs > 1].index)
@@ -345,11 +348,16 @@ class SupplyEngine:
         extra = dups[~dups["order_id"].isin(first["order_id"])]
         n = len(f)
         by_channel = extra.groupby("channel")["order_id"].nunique().sort_values(ascending=False)
+        units = int(fl[fl["order_id"].isin(set(extra["order_id"]))]["qty"].sum())
+        short = int(fl["backordered_qty"].sum())
         rows = [["orders in scope", n], ["orders sharing an external reference with another order", len(dups)],
                 ["extra copies (beyond the first order of each reference)", len(extra)],
-                ["share of orders in scope that are extra copies (%)", pct(len(extra) / n) if n else None]]
+                ["share of orders in scope that are extra copies (%)", pct(len(extra) / n) if n else None],
+                ["units ordered on the extra copies", units], ["units short in scope", short],
+                ["extra-copy units as a share of the short units (%)", pct(units / short) if short else None]]
         rows += [[f"extra copies via channel {c}", int(v)] for c, v in by_channel.items()]
-        summary = {"extra": len(extra), "share": len(extra) / n if n else 0.0,
+        summary = {"extra": len(extra), "share": len(extra) / n if n else 0.0, "units": units,
+                   "unit_share": units / short if short else 0.0,
                    "channel": by_channel.index[0] if len(by_channel) else None,
                    "extra_order_ids": sorted(extra["order_id"].astype(str))[:200]}
         method = ("Orders that share an external reference (the customer's own order number) with another order; "
@@ -449,9 +457,9 @@ def run_supply_task(eng: SupplyEngine, task: dict, eid_prefix: str) -> tuple[dic
         if tool == "inbound":
             claim = (f"{res.rows[row][9]}% of the short units are SKUs with a late inbound purchase order"
                      + (f"; most late units are from {s['top_supplier']} ({s['top_supplier_name']}), coming through "
-                        f"{s['top_port']}" if s.get("top_supplier") else "") + ". Latest: "
-                     + "; ".join(f"{r[0]} {r[3]} {r[4]:,} units, ETA {r[6]} vs expected {r[5]} ({r[7]} days late)"
-                                 for r in top) + ".")
+                        f"{s['top_port']}" if s.get("top_supplier") else "") + "."
+                     + (" Latest: " + "; ".join(f"{r[0]} {r[3]} {r[4]:,} units, ETA {r[6]} vs expected {r[5]} "
+                                                f"({r[7]} days late)" for r in top) + "." if top else ""))
         else:
             ports = "; ".join(f"{p} ({st})" for p, st in s["port_status"].items()) or "none"
             claim = (f"{res.rows[row][9]}% of the short units are SKUs whose late inbound orders come through a port "
@@ -497,13 +505,17 @@ def run_supply_task(eng: SupplyEngine, task: dict, eid_prefix: str) -> tuple[dic
         keys = [_ref(eid, res, k, "result") for k in range(len(res.rows))]
         claim = (f"{res.rows[2][1]} of {res.rows[0][1]} orders in scope are extra copies of an earlier order with the "
                  f"same external reference ({res.rows[3][1]}%)" + (f", mostly via channel {s['channel']}" if s["channel"] else "")
-                 + ".")
-        share = s["share"]
-        if s["share"] >= 0.02 and s["extra"] >= 3:
+                 + f". The copies order {res.rows[4][1]:,} units, {res.rows[6][1]}% as many as the {res.rows[5][1]:,} "
+                 "units short.")
+        share = s["unit_share"]
+        if share >= SUPPLY_SHARE and s["extra"] >= 3:
             status, is_cause, verdict = "confirmed", True, "supports"
-            reason = f"{res.rows[3][1]}% of the orders in scope are duplicates (threshold: 2%)."
+            reason = (f"The copies order units equal to {pct(share)}% of the shortage "
+                      f"(cause threshold: {int(SUPPLY_SHARE * 100)}%).")
         else:
-            verdict, reason = "refutes", "Too few duplicates to matter."
+            verdict = "refutes"
+            reason = (f"The copies order units equal to only {pct(share)}% of the shortage "
+                      f"(cause threshold: {int(SUPPLY_SHARE * 100)}%).")
     elif tool == "volume_orders":
         keys = [_ref(eid, res, k, "result") for k in range(len(res.rows))]
         claim = (f"{res.rows[0][1]} new orders a day in the window vs {res.rows[1][1]} in the four weeks before "
