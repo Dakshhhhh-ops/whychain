@@ -91,13 +91,21 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
           Removed figures the agent stated but its cited data does not contain: {a.unsupported_figures.join(", ")}
         </p>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-[12px] sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-[12px] sm:grid-cols-4">
         <div>
           <div className="text-slate-500">Protects</div>
           <div className="font-medium tabular-nums text-slate-800">
-            {a.orders_protected ? `${a.orders_protected} orders` : "—"}
-            {a.value_protected_inr ? ` · ${money(Number(a.value_protected_inr), a.currency)}` : ""}
+            {a.orders_protected ? `${a.orders_protected.toLocaleString("en-IN")} orders` : "—"}
           </div>
+        </div>
+        <div>
+          <div className="text-slate-500" title="What the orders it would have turned on time are worth. Not the cost of the fix.">
+            Value at stake
+          </div>
+          <div className="font-medium tabular-nums text-slate-800">
+            {a.value_protected_inr ? money(Number(a.value_protected_inr), a.currency) : "—"}
+          </div>
+          {!!a.low_reviews && <div className="text-[11px] text-slate-500">{a.low_reviews.toLocaleString("en-IN")} left a 1–2★ review</div>}
         </div>
         <div>
           <div className="text-slate-500">Takes effect</div>
@@ -196,8 +204,24 @@ function ExportBar({ result }: { result: RunResult }) {
   );
 }
 
+/** The brief's sections: the manager summary, the body, and "How we know" (the detail behind each line). */
+function splitBrief(md: string) {
+  let summary = "";
+  let how = "";
+  const main: string[] = [];
+  for (const part of ("\n" + md).split(/\n(?=## )/)) {
+    const t = part.trim();
+    if (!t) continue;
+    if (t.startsWith("## Summary")) summary = t.replace(/^## Summary\s*/, "");
+    else if (t.startsWith("## How we know")) how = t.replace(/^## How we know\s*/, "");
+    else main.push(t);
+  }
+  return { summary, how, main: main.join("\n\n") };
+}
+
 export function BriefView({ result, onOpen, onDecided }: { result: RunResult; onOpen: (id: string) => void; onDecided: () => void }) {
   const known = result.evidence ?? {};
+  const parts = splitBrief(result.brief ?? "");
   const actions = result.actions ?? [];
   const currency = actions[0]?.currency ?? (result.dataset === "olist" ? "BRL" : "INR");
   return (
@@ -213,8 +237,24 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
           </div>
           <h2 className="mt-1.5 text-xl font-semibold leading-snug tracking-tight text-slate-900">{result.headline || "Investigation complete"}</h2>
         </div>
+        {parts.summary && (
+          <div className="mx-6 mb-5 rounded-xl bg-brand-50/60 px-5 py-3.5 ring-1 ring-brand-100">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-brand-700">In short</div>
+            <Markdown text={parts.summary} onOpen={onOpen} known={known} />
+          </div>
+        )}
         <div className="border-t border-slate-100 px-6 py-5">
-          <Markdown text={result.brief ?? ""} onOpen={onOpen} known={known} />
+          <Markdown text={parts.main} onOpen={onOpen} known={known} />
+          {parts.how && (
+            <details className="group mt-5 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 print:block">
+              <summary className="cursor-pointer select-none text-[13px] font-semibold text-slate-700">
+                How we know <span className="font-normal text-slate-500">· the medians, percentiles and counterfactuals behind each line</span>
+              </summary>
+              <div className="mt-3">
+                <Markdown text={parts.how} onOpen={onOpen} known={known} />
+              </div>
+            </details>
+          )}
         </div>
         {result.brief_check && result.brief_check.checked > 0 && (
           <div

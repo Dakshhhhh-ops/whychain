@@ -101,16 +101,18 @@ def build_inputs(h: DataHarness, scope: dict, to_warehouses=None, deadline_days:
 
 
 def orders_covered(h: DataHarness, scope: dict, to_warehouses, deadline_days: int, columns: list[str],
-                   rows: list[list]) -> tuple[int, int]:
-    """(orders the plan fully covers, orders short in scope). The plan's truck and air units go to backordered lines
-    (in scope, due by the deadline) at each DC, oldest promise first; an order counts once all its lines are covered."""
+                   rows: list[list], with_value: bool = False):
+    """(orders the plan fully covers, orders short in scope[, the covered orders' total value]). The plan's truck and
+    air units go to backordered lines (in scope, due by the deadline) at each DC, oldest promise first; an order
+    counts once all its lines are covered."""
     from collections import defaultdict
 
     w = scope_where(scope)
     as_of = getattr(h, "as_of", None) or "2026-10-21"
     dcs = _list(to_warehouses)
     dc_filter = f" AND {_in('o.warehouse_id', dcs, DC, 'warehouse')}" if dcs else ""
-    lines = _rows(h, " ".join(f"""SELECT o.order_id, o.warehouse_id, ol.sku, ol.backordered_qty AS units, o.promised_date
+    lines = _rows(h, " ".join(f"""SELECT o.order_id, o.warehouse_id, ol.sku, ol.backordered_qty AS units, o.promised_date,
+        o.order_value_inr AS order_value
         FROM erp.order_lines ol JOIN erp.sales_orders o ON o.order_id = ol.order_id JOIN erp.skus s ON s.sku = ol.sku
         WHERE o.status = 'BACKORDERED' AND ol.backordered_qty > 0 AND {w}
           AND CAST(o.promised_date AS DATE) <= date_add(DATE'{as_of}', {int(deadline_days)}){dc_filter}""".split()))
@@ -128,7 +130,11 @@ def orders_covered(h: DataHarness, scope: dict, to_warehouses, deadline_days: in
         else:
             supply[k] = 0.0
             uncovered.add(str(x["order_id"]))
-    return len(short - uncovered), len(short)
+    covered = short - uncovered
+    if not with_value:
+        return len(covered), len(short)
+    value = {str(x["order_id"]): float(x.get("order_value") or 0) for x in lines}
+    return len(covered), len(short), round(sum(value[o] for o in covered))
 
 
 MIN_TRUCK_FILL = 0.15  # a lane carrying less than this share of a truck isn't worth a truck: drop it and re-solve

@@ -98,6 +98,7 @@ class Engine:
         self._raw_rows = 0
         self._events: pd.DataFrame | None = None
         self._reviews: pd.DataFrame | None = None
+        self._stars: pd.Series | None = None
         self._stock: pd.DataFrame | None = None
         self._lock = threading.Lock()
         self.memo: dict[tuple, "Result"] = {}  # battery results by (tool, scope, params), see battery._run
@@ -165,6 +166,58 @@ class Engine:
 
     def provenance(self) -> str:
         return self.m.sql
+
+    def order_stars(self) -> pd.Series:
+        """Review stars per order (mean if an order has several reviews); empty if the dataset has no reviews."""
+        if getattr(self, "_stars", None) is None:
+            rv = self.reviews()
+            if rv.empty or "review_score" not in rv.columns:
+                self._stars = pd.Series(dtype=float)
+            else:
+                sc = pd.to_numeric(rv["review_score"], errors="coerce")
+                self._stars = sc.groupby(rv["order_id"]).mean().dropna()
+        return self._stars
+
+    def _value(self, g: pd.DataFrame) -> float:
+        """What a set of orders is worth: the sum of their price (order value), 0 if the data has no price."""
+        return float(pd.to_numeric(g["price"], errors="coerce").fillna(0).sum()) if "price" in g.columns else 0.0
+
+    def _low_reviews(self, g: pd.DataFrame) -> int:
+        """How many of these orders left a 1- or 2-star review."""
+        st = self.order_stars()
+        if st.empty:
+            return 0
+        return int((st.reindex(g["order_id"]) <= 2).sum())
+
+    def value_at_stake(self, s: Scope) -> Result:
+        """What the late orders are worth, and how their customers rated them against the on-time orders of the same
+        scope. The value at stake is the late orders' own value (price) and freight; what fixing them would cost is
+        not in the data."""
+        F = s.focus
+        late, ok = F[F["late"] == 1], F[F["late"] == 0]
+        cur = self.m.currency
+        rows = [["orders", len(late), len(ok)],
+                [f"order value ({cur})", round(self._value(late)), round(self._value(ok))]]
+        if "freight" in F.columns:
+            fr = pd.to_numeric(F["freight"], errors="coerce").fillna(0)
+            rows.append([f"freight paid ({cur})", round(float(fr[F["late"] == 1].sum())), round(float(fr[F["late"] == 0].sum()))])
+        st = self.order_stars()
+        summary = {"currency": cur, "late_orders": len(late), "late_value": round(self._value(late))}
+        if not st.empty:
+            sl, so = st.reindex(late["order_id"]).dropna(), st.reindex(ok["order_id"]).dropna()
+            rows += [["orders with a review", len(sl), len(so)],
+                     ["mean review stars", r1(sl.mean()) if len(sl) else None, r1(so.mean()) if len(so) else None],
+                     ["1- or 2-star reviews", int((sl <= 2).sum()), int((so <= 2).sum())],
+                     ["1- or 2-star, % of reviews", pct((sl <= 2).mean()) if len(sl) else None,
+                      pct((so <= 2).mean()) if len(so) else None]]
+            summary.update(late_stars=r1(sl.mean()) if len(sl) else None, ontime_stars=r1(so.mean()) if len(so) else None)
+        method = ("The focus orders, split into late and on time: their number, order value (the sum of item prices) "
+                  + ("and freight paid, " if "freight" in F.columns else "")
+                  + ("and the stars their customers gave in reviews (an order with several reviews counts their mean)."
+                     if not st.empty else "(no reviews in this dataset).")
+                  + " This is the value at stake, not the cost of fixing it, which the data doesn't hold.")
+        return Result("value_at_stake", "What the late orders are worth", ["measure", "late", "on_time"], rows,
+                      summary, method, "measured", self.provenance())
 
     def stock_lines(self) -> pd.DataFrame:
         """Order lines with the warehouse's stock of the SKU on the order's requested ship date (if the dataset has
@@ -672,16 +725,18 @@ class Engine:
                 continue
             p80 = float(np.quantile(r["t"], 0.8))
             capped = g["handover"] + pd.to_timedelta(np.minimum(g["t"], p80), unit="D")
-            saved = int(((g["late"] == 1) & (capped <= g["promised"])).sum())
+            won = g[(g["late"] == 1) & (capped <= g["promised"])]
+            saved = len(won)
             rows.append([str(seg), len(g), r1(g["t"].mean()), r1(r["t"].mean()), r1(p80), int(g["late"].sum()), saved,
-                         "same area" if same else s.ref_label])
+                         "same area" if same else s.ref_label, round(self._value(won)), self._low_reviews(won)])
         rows.sort(key=lambda x: -x[6])
         method = ("For each area where transit got slower: mean transit days in the focus vs its reference, and the "
                   "late orders that would have arrived on time had each parcel's transit been at most the reference's "
-                  "80th percentile (hand-over unchanged).")
+                  "80th percentile (hand-over unchanged); those orders' value and how many left a 1- or 2-star review.")
         return Result("transit_fix", "Transit back to normal, by area",
                       [dim, "orders", "mean_transit_days", "ref_mean_transit_days", "ref_p80_transit_days",
-                       "late_orders", "on_time_at_normal_transit", "reference"], rows[:10],
+                       "late_orders", "on_time_at_normal_transit", "reference", "value_of_those_orders",
+                       "those_with_1_2_star_review"], rows[:10],
                       {"dimension": dim, "saved": sum(x[6] for x in rows)}, method, "measured", self.provenance())
 
     def handover_fix(self, s: Scope) -> Result:
@@ -702,16 +757,18 @@ class Engine:
             if p80 != p80 or g["h"].mean() <= normal:
                 continue  # no normal to compare with, or not slower than normal
             capped = g["delivered"] - pd.to_timedelta(np.maximum(g["h"] - p80, 0), unit="D")
-            saved = int(((g["late"] == 1) & (capped <= g["promised"])).sum())
+            won = g[(g["late"] == 1) & (capped <= g["promised"])]
+            saved = len(won)
             rows.append([str(seg), str(g[where].mode().iat[0]) if where else "", len(g), r1(g["h"].mean()), r1(normal),
-                         r1(p80), int(g["late"].sum()), saved])
+                         r1(p80), int(g["late"].sum()), saved, round(self._value(won)), self._low_reviews(won)])
         rows.sort(key=lambda x: -x[7])
         method = ("For each sender with 10+ focus orders whose mean hand-over got slower than its normal (its own "
                   "reference orders, or the whole reference if it had fewer than 10): the late orders that would have "
                   "arrived on time had hand-over been at most its normal 80th percentile (transit unchanged).")
         return Result("handover_fix", f"Hand-over back to normal, by {self.m.dims.get(dim, dim)}",
                       [dim, "based_in", "orders", "mean_handover_days", "normal_mean_handover_days",
-                       "normal_p80_handover_days", "late_orders", "on_time_at_normal_handover"], rows[:10],
+                       "normal_p80_handover_days", "late_orders", "on_time_at_normal_handover", "value_of_those_orders",
+                       "those_with_1_2_star_review"], rows[:10],
                       {"dimension": dim, "saved": sum(x[7] for x in rows)}, method, "measured", self.provenance())
 
     def window_buffer(self, s: Scope, days: int, start: date | None = None, end: date | None = None) -> Result:
@@ -722,12 +779,16 @@ class Engine:
             g = g[(g["handover"] >= pd.Timestamp(start)) & (g["handover"] <= pd.Timestamp(end or start))]
         late = int(g["late"].sum())
         late_after = int((g["delivered"] > g["promised"] + pd.Timedelta(days=int(days))).sum())
+        won = g[(g["late"] == 1) & (g["delivered"] <= g["promised"] + pd.Timedelta(days=int(days)))]
         rows = [["orders", len(g)], ["late orders", late], ["promise extended by (days)", int(days)],
-                ["late with the extended promise", late_after], ["late orders avoided", late - late_after]]
+                ["late with the extended promise", late_after], ["late orders avoided", late - late_after],
+                [f"value of those orders ({self.m.currency})", round(self._value(won))],
+                ["of those, orders with a 1- or 2-star review", self._low_reviews(won)]]
         method = ("The same orders recounted against their promised date plus the extension"
                   + (f", for parcels handed to the carrier from {start} to {end or start}." if start else "."))
         return Result("window_buffer", "Promise extension for a window", ["measure", "result"], rows,
-                      {"avoided": late - late_after, "days": int(days)}, method, "measured", self.provenance())
+                      {"avoided": late - late_after, "days": int(days), "value": round(self._value(won)),
+                       "low_reviews": self._low_reviews(won)}, method, "measured", self.provenance())
 
     def promise_buffer(self, s: Scope, dim: str | None = None, quantile: float = 0.8) -> Result:
         """Prescriptive: how many days to add to each segment's promise so that (in the focus orders) the given
@@ -745,8 +806,9 @@ class Engine:
             late_now = int(g["late"].sum())
             late_buf = int(((g["d"]) > (g["p"] + buf)).sum())
             total_avoided += late_now - late_buf
+            won = g[(g["late"] == 1) & (g["d"] <= g["p"] + buf)]
             rows.append([str(seg), len(g), r1(med_p), r1(pq), buf, late_now, late_buf, pct(late_now / len(g)),
-                         pct(late_buf / len(g))])
+                         pct(late_buf / len(g)), round(self._value(won)), self._low_reviews(won)])
         rows.sort(key=lambda r: -(r[5] - r[6]))
         summary = {"segments_needing_buffer": sum(1 for r in rows if r[4] > 0), "late_avoided": total_avoided,
                    "quantile": quantile, "dimension": dim}
@@ -755,7 +817,8 @@ class Engine:
                   "the same orders against promise + buffer.")
         return Result("promise_buffer", f"Promise buffer by {self.m.dims.get(dim, dim)}",
                       [dim, "orders", "median_promised_days", f"p{int(quantile * 100)}_delivery_days", "buffer_days",
-                       "late_orders", "late_with_buffer", "late_pct", "late_pct_with_buffer"],
+                       "late_orders", "late_with_buffer", "late_pct", "late_pct_with_buffer", "value_of_orders_avoided",
+                       "those_with_1_2_star_review"],
                       rows[:15], summary, method, "measured", self.provenance())
 
 

@@ -141,11 +141,12 @@ export type Action = {
   steps?: string;
   addresses?: string[];
   orders_protected?: number | null;
-  value_protected_inr?: number | null;
+  value_protected_inr?: number | null;   // value at stake: what the orders it would protect are worth
+  low_reviews?: number | null;            // how many of those orders left a 1- or 2-star review
   est_cost_inr: number | null;
   unsupported_figures?: string[];
   time_to_effect?: string;
-  confidence: number;
+  confidence?: number;
   policy_notes?: string;
   evidence: string[];
   needs_approval: boolean;

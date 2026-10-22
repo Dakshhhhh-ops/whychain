@@ -90,7 +90,12 @@ def test_supply_route(tmp_path):
     # the port is shown as why the inbound orders are late, not as a second cause with the same share
     assert "held up at Chennai" in res["headline"]
     roots = res["brief"].split("## Root causes")[1].split("\n## ")[0]
-    assert "Why they are late" in roots and "**A disrupted port" not in roots
+    assert "held up at Chennai" in roots and "**A disrupted port" not in roots
+    how = res["brief"].split("## How we know")[1]
+    assert "Why they are late" in how            # the port's own numbers are in the detail, under the cause
+    # the manager summary comes first, in money
+    summary = res["brief"].split("## Summary")[1].split("\n## ")[0]
+    assert "What happened" in summary and "What to do" in summary and "INR" in summary
     # the transfer says what it covers (overdue orders too), so it isn't read against the next-week count
     transfer = next(a for a in res["actions"] if a["title"].startswith("Transfer"))
     assert "past their promised date" in transfer["steps"]

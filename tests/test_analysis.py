@@ -281,3 +281,23 @@ def test_where_it_happened_is_left_out_when_nothing_rose():
                      "params": {"dim": "area"}}, "T")[0]
     assert f["fixed"]["status"] != "confirmed" and f["fixed"]["reason"].startswith("Not applicable")
     assert "of the rise from" not in f["claim"]
+
+
+def test_the_value_at_stake_is_the_late_orders_own_value_and_reviews():
+    """Olist, March 2018: the late orders' value and freight, and their review stars against on-time orders; each
+    sized action carries the value and the low reviews of exactly the orders it would have turned on time."""
+    from whychain.analysis import get_engine
+    from whychain.analysis.battery import build_scope
+    from whychain.harness.local import LocalHarness
+
+    e = get_engine(LocalHarness("olist"))
+    sc = build_scope(e, {"mode": "time", "label": "orders placed March 2018", "start": "2018-03-01", "end": "2018-04-01"})
+    r = {row[0]: row for row in e.value_at_stake(sc).rows}
+    assert r["orders"][1] == int(sc.focus["late"].sum()) == 1328
+    assert r["order value (BRL)"][1] == round(float(sc.focus.loc[sc.focus["late"] == 1, "price"].sum()))
+    assert r["mean review stars"][1] < r["mean review stars"][2]          # late orders are rated lower
+    pb = e.promise_buffer(sc)
+    vi, li = pb.columns.index("value_of_orders_avoided"), pb.columns.index("those_with_1_2_star_review")
+    for row in pb.rows:
+        avoided = row[5] - row[6]
+        assert (row[vi] > 0) == (avoided > 0) and 0 <= row[li] <= avoided

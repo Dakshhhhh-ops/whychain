@@ -164,6 +164,7 @@ def plan_battery(question: str, engine: Engine, as_of: date) -> dict:
     geo = engine.m.map_within
     add("measure", f"Measure the symptom: late deliveries for {primary['label']}, against "
         + ("a normal baseline" if time_mode else "the other orders"), primary)
+    add("value_at_stake", "What the late orders are worth, and how their customers rated them", primary)
     hand_label = "Sellers handed orders to the carrier later" if engine.m.region_map else "Warehouses dispatched orders later"
     add("stage", hand_label + (" than normal" if time_mode else " than elsewhere"), primary, stage="handover")
     if engine.m.stock_sql:  # datasets with stock data: was dispatch held up by stock-outs?
@@ -242,6 +243,8 @@ def _run(engine: Engine, tool: str, spec: dict, **params) -> Result:
             _MEMO[key] = engine.event(params["event_id"], s)
         elif tool == "stock_wait":
             _MEMO[key] = engine.stock_wait(s)
+        elif tool == "value_at_stake":
+            _MEMO[key] = engine.value_at_stake(s)
         elif tool == "promise_buffer":
             _MEMO[key] = engine.promise_buffer(s, params.get("dim"))
         else:
@@ -297,6 +300,29 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
                  f"{ref_rate}% for {s['reference']}: a difference of {res.rows[di][3]} points (confidence interval "
                  f"{res.rows[di][4]} to {res.rows[di][5]}).")
         verdict, status, reason = "measured", "confirmed", "Measured directly by the analysis engine."
+    elif tool == "value_at_stake":
+        kind = "measure"
+        s = res.summary
+        rows = {str(r[0]): (i, r) for i, r in enumerate(res.rows)}
+        cur = s["currency"]
+        money = (lambda v: f"R$ {v:,}") if cur == "BRL" else (lambda v: f"{cur} {v:,}")
+        iv, rv = rows[f"order value ({cur})"]
+        keys += [_ref(eid, res, rows["orders"][0], "late"), _ref(eid, res, iv, "late")]
+        claim = f"The {s['late_orders']:,} late orders were worth {money(rv[1])} (order value)"
+        if f"freight paid ({cur})" in rows:
+            fi, fr = rows[f"freight paid ({cur})"]
+            keys.append(_ref(eid, res, fi, "late"))
+            claim += f", with {money(fr[1])} of freight paid on them"
+        if "mean review stars" in rows and rows["mean review stars"][1][1] is not None:
+            si, sr = rows["mean review stars"]
+            pi, pr = rows["1- or 2-star, % of reviews"]
+            keys += [_ref(eid, res, si, "late"), _ref(eid, res, si, "on_time"), _ref(eid, res, pi, "late"),
+                     _ref(eid, res, pi, "on_time")]
+            claim += (f". Their customers gave them {sr[1]} stars on average, against {sr[2]} for the orders that "
+                      f"arrived on time; {pr[1]}% of their reviews were 1 or 2 stars, against {pr[2]}%")
+        claim += "."
+        verdict, status = "measured", "confirmed"
+        reason = "Measured directly by the analysis engine: the value at stake, not what a fix would cost."
     elif tool == "stage":
         st = params["stage"]
         i = _row(res, st)

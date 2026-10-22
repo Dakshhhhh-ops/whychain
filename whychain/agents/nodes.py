@@ -631,7 +631,7 @@ def check_brief(md: str, headline: str, state: dict, actions: list[dict], ctx: C
         c = check_numbers(f["claim"], finding_evidence(f, evidence), f.get("key_numbers"))
         supported += [n.value for n in numbers_in(f["claim"]) if c["support"].get(n.raw, "missing") != "missing"]
     for a in actions:
-        supported += [float(a[k]) for k in ("est_cost_inr", "value_protected_inr", "orders_protected")
+        supported += [float(a[k]) for k in ("est_cost_inr", "value_protected_inr", "orders_protected", "low_reviews")
                       if isinstance(a.get(k), (int, float))]
     checked, unverified = 0, []
     all_ev = {**evidence, **{e: ev for a in actions for e in a.get("evidence", []) if (ev := evidence.get(e))}}
@@ -717,13 +717,13 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
     def ev_of(f):
         return state["evidence"].get(f["evidence_ids"][0], {}) if f and f.get("evidence_ids") else {}
 
-    def add(title, steps, addresses, ev_ids, cost=None, orders=None, approval=None):
+    def add(title, steps, addresses, ev_ids, cost=None, orders=None, approval=None, value=None):
         reasons = list(approval or [])
         if cost is not None and cost > threshold:
             reasons.append(f"cost {cur} {cost:,.0f} exceeds the {cur} {threshold:,.0f} threshold")
         actions.append({"id": f"A{len(actions) + 1}", "title": title, "steps": steps, "addresses": addresses,
-                        "orders_protected": orders, "value_protected_inr": None, "est_cost_inr": cost,
-                        "currency": cur, "confidence": 1.0, "evidence": ev_ids, "unsupported_figures": [],
+                        "orders_protected": orders, "value_protected_inr": value or None, "est_cost_inr": cost,
+                        "currency": cur, "evidence": ev_ids, "unsupported_figures": [],
                         "needs_approval": bool(reasons), "approval_reasons": reasons, "decision": "pending",
                         "time_to_effect": "this week", "policy_notes": ""})
 
@@ -745,8 +745,9 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
                 if ok and (sm.get("truck_units") or sm.get("air_units")):
                     from whychain.optimize import orders_covered
 
-                    covered, short_orders = orders_covered(ctx.harness, opt_scope, spec["warehouses"] or None, 7,
-                                                           out.get("columns", []), out.get("rows", []))
+                    covered, short_orders, covered_value = orders_covered(
+                        ctx.harness, opt_scope, spec["warehouses"] or None, 7, out.get("columns", []),
+                        out.get("rows", []), with_value=True)
                     transport = round(float(sm.get("truck_cost_inr") or 0) + float(sm.get("air_cost_inr") or 0))
                     evidence["A.P1"] = {"id": "A.P1", "type": "optimization", "task_id": "A", "agent": agent,
                                         "purpose": f"cover {sup} shortages at {', '.join(spec['warehouses']) or 'the DCs'} within 7 days",
@@ -766,7 +767,8 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
                         + (f"; {sm['unfilled_units']:,} units can't arrive in time" if sm.get("unfilled_units") else "")
                         + f". It fully covers {covered} of the {short_orders} orders short in that scope. The cost is "
                         "transport only (trucks and air surcharge); units that can't arrive in time are lost sales, not "
-                        "a cost of this action.", [late["task_id"]], ["A.P1"], cost=transport, orders=covered)
+                        "a cost of this action.", [late["task_id"]], ["A.P1"], cost=transport, orders=covered,
+                        value=covered_value)
             except Exception as e:
                 ctx.tracer.event("agent_error", agent, error=f"optimizer failed: {e}"[:200])
         add(f"Chase the late purchase orders from {summ.get('top_supplier_name') or sup} and plan around "
@@ -815,11 +817,15 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
     stages = {tasks[f["task_id"]]["params"].get("stage"): f for f in causes
               if tasks.get(f["task_id"], {}).get("tool") == "stage"}
     cur = getattr(ctx.dataset, "currency", "")
+    has_reviews = bool(eng.m.reviews_sql)
 
-    def add(title, steps, addresses, ev_ids, orders=None, approval=None):
+    def add(title, steps, addresses, ev_ids, orders=None, approval=None, value=None, low=None):
+        # value: what the orders it would have turned on time are worth (the value at stake, not the cost of the
+        # fix); low: how many of them left a 1- or 2-star review. Both are sums over the cited table's rows.
         actions.append({"id": f"A{len(actions) + 1}", "title": title, "steps": steps, "addresses": addresses,
-                        "orders_protected": orders, "value_protected_inr": None, "est_cost_inr": None,
-                        "currency": cur, "confidence": 1.0, "evidence": ev_ids, "unsupported_figures": [],
+                        "orders_protected": orders, "value_protected_inr": value or None, "low_reviews": low,
+                        "est_cost_inr": None,
+                        "currency": cur, "evidence": ev_ids, "unsupported_figures": [],
                         "needs_approval": bool(approval), "approval_reasons": approval or [], "decision": "pending",
                         "time_to_effect": "next orders", "policy_notes": ""})
 
@@ -835,7 +841,8 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                     f"Set each area's promised window so that four in five orders arrive within it. On the orders "
                     f"in question, this would have turned {avoided} late deliveries into on-time ones in these areas.",
                     [stages.get("transit", stages.get("promise"))["task_id"]], ["A.A1"], avoided,
-                    ["changes what customers are promised"])
+                    ["changes what customers are promised"], value=sum(r[9] for r in need),
+                    low=sum(r[10] for r in need) if has_reviews else None)
         except Exception as e:
             ctx.tracer.event("agent_error", agent, error=f"promise buffer failed: {e}"[:200])
     n_ev = [2]   # A.A1 is the promise buffer, A.A2 the carrier options
@@ -866,7 +873,7 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                           f"within {r[4]:g} days" for r in top)
                 + ". Agree these recovery targets with the carriers serving the areas, and alert when an area's "
                 "weekly average transit moves a day above normal.", [f["task_id"]], [eid_t] + f["evidence_ids"][:1],
-                saved)
+                saved, value=sum(r[8] for r in top), low=sum(r[9] for r in top) if has_reviews else None)
         else:
             add("Escalate carrier transit performance with the carrier, with weekly transit monitoring by area",
                 "Share the transit figures with the carrier, agree recovery targets, and alert when an area's weekly "
@@ -927,7 +934,8 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                           f"{r[4]} normally, over {r[2]:,} orders; {r[7]} of its {r[6]} late orders would have been on "
                           f"time at its normal pace" for r in top)
                 + ". Agree a hand-over deadline with each at its normal pace, and review it weekly.",
-                [f["task_id"]], [eid_h] + f["evidence_ids"][:1], saved)
+                [f["task_id"]], [eid_h] + f["evidence_ids"][:1], saved, value=sum(r[8] for r in top),
+                low=sum(r[9] for r in top) if has_reviews else None)
         else:
             add("Enforce hand-over deadlines with the slowest senders",
                 "Rank sellers (or warehouses) by late hand-overs in the period and agree corrective plans.",
@@ -947,7 +955,8 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                 f"{vs.get('focus_orders_per_day')} orders a day before the next peak, and extend promises by {days} "
                 f"{'day' if days == 1 else 'days'} for orders placed in it: on these orders that would have avoided "
                 f"{avoided} of {late} late deliveries.", [f["task_id"]], [eid_w] + f["evidence_ids"][:1], avoided,
-                ["changes what customers are promised"])
+                ["changes what customers are promised"], value=res_w.summary.get("value"),
+                low=res_w.summary.get("low_reviews") if has_reviews else None)
         except Exception as e:
             ctx.tracer.event("agent_error", agent, error=f"surge plan failed: {e}"[:200])
     for f in causes:
@@ -968,7 +977,8 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                        f"{avoided} of {late} late deliveries on these orders. " if late else "")
                     + "When a comparable event starts, extend the promise for parcels in transit and tell the "
                     "customers.", [f["task_id"]], [eid_w] + f["evidence_ids"][:1], avoided or None,
-                    ["changes what customers are promised"])
+                    ["changes what customers are promised"], value=res_w.summary.get("value") if avoided else None,
+                    low=res_w.summary.get("low_reviews") if avoided and has_reviews else None)
             except Exception as e:
                 ctx.tracer.event("agent_error", agent, error=f"event playbook failed: {e}"[:200])
         if t.get("tool") == "segments":
@@ -1141,6 +1151,10 @@ def _no_shortage(state: dict, measure: dict) -> bool:
     return rows.get("orders with a backordered line") == 0
 
 
+def _money(cur: str, v) -> str:
+    return f"R$ {v:,.0f}" if cur == "BRL" else f"{cur} {v:,.0f}"
+
+
 def report_battery(state: dict, ctx: Ctx) -> dict:
     """Brief for a battery run: built from the coded verdicts; the model only phrases a short answer."""
     agent = "Reporter"
@@ -1163,6 +1177,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
     word = "gap" if (state.get("analysis", {}).get("primary") or {}).get("mode") == "segment" else "rise"
     event_f = [f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "event"
                and tasks[f["task_id"]].get("params", {}).get("event_id") in named]
+    impact = next((f for f in fs if tasks.get(f["task_id"], {}).get("tool") == "value_at_stake"
+                   and v.get(f["task_id"], {}).get("status") == "confirmed"), None)
+    cur = getattr(ctx.dataset, "currency", "")
 
     def share_txt(f):
         sh = v[f["task_id"]].get("share_of_symptom")
@@ -1208,6 +1225,19 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         why = str((summ.get("port_status") or {}).get(name, "")).split(": ", 1)[-1].strip().lower()
         held = (f", held up at {name}" + (f" by a {why}" if why else "")) if name else ", held up at a disrupted port"
         return _short(f["statement"]) + held + share_txt(f)
+
+    def held_txt(f):
+        """', mostly orders waiting for stock of X SKUs' or ', held up at <port>': the reason under a cause."""
+        port = held_by.get(f["task_id"])
+        if not port:
+            return ""
+        summ = state["evidence"].get((port.get("evidence_ids") or [""])[0], {}).get("summary", {})
+        if tool_of.get(port["task_id"]) == "stock_wait":
+            names = [x[1] for x in summ.get("suppliers", [])[:2]]
+            return ", mostly orders waiting for stock" + (f" of {' and '.join(names)} SKUs" if names else "")
+        name = summ.get("top_port")
+        why = str((summ.get("port_status") or {}).get(name, "")).split(": ", 1)[-1].strip().lower()
+        return (f", held up at {name}" + (f" by a {why}" if why else "")) if name else ", held up at a disrupted port"
 
     # A stage re-tested against a fairer comparison (places at a similar distance) is the same cause, checked
     # again: shown under it, not as a second cause (its share would double-count the rise).
@@ -1275,17 +1305,22 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         headline = f"{untested} {headline}"
 
     lines = ["## Root causes"]
+    how = []   # the detail behind each line (medians, percentiles, counterfactuals), shown folded in the app
     if causes:
         for i, f in enumerate(causes, 1):
-            lines.append(f"{i}. **{f['statement']}**{share_txt(f)}. {f['claim']} {_cites(f)}")
+            lines.append(f"{i}. **{f['statement']}**{share_txt(f)}{held_txt(f)}. {_cites(f)}")
+            how.append(f"- **{f['statement']}**{share_txt(f)}: {f['claim']} {_cites(f)}")
             if f["task_id"] in held_by:
                 why = held_by[f["task_id"]]
                 label = "Why dispatch slowed" if tool_of.get(why["task_id"]) == "stock_wait" else "Why they are late"
-                lines.append(f"   - {label}: {why['claim']} {_cites(why)}")
+                how.append(f"   - {label}: {why['claim']} {_cites(why)}")
             for label, g in also.get(f["task_id"], []):
-                lines.append(f"   - {label}{share_txt(g)}: {g['claim']} {_cites(g)}")
+                lines.append(f"   - {label}{share_txt(g)}. {_cites(g)}")
+                how.append(f"   - {label}{share_txt(g)}: {g['claim']} {_cites(g)}")
     else:
         lines.append("No cause passed the tests.")
+    if impact:
+        how.append(f"- **{impact['statement']}**: {impact['claim']} {_cites(impact)}")
     if where:
         lines += ["", "## Where it happened"] + [f"- {f['claim']} {_cites(f)}" for f in where]
     lines += ["", "## Ruled out"] + ([f"- **{f['statement']}**: {v[f['task_id']]['reason']} {_cites(f)}" for f in ruled]
@@ -1300,26 +1335,30 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
                          f"\"{q['quote']}\" [{q['id']}]")
     acts = state.get("actions", [])
     if acts:
-        cur = getattr(ctx.dataset, "currency", "")
-        lines += ["", "## Recommended actions", "| Action | Protects | Est. cost | Approval |", "|---|---|---|---|"]
+        lines += ["", "## Recommended actions", "| Action | Protects | Value at stake | Est. cost | Approval |",
+                  "|---|---|---|---|---|"]
         for a in acts:
             prot = f"{int(a['orders_protected']):,} orders" if isinstance(a.get("orders_protected"), (int, float)) and a.get("orders_protected") else "—"
-            cost = f"{cur} {a['est_cost_inr']:,.0f}" if isinstance(a.get("est_cost_inr"), (int, float)) else "not computed (no cost data)"
+            val = (_money(cur, a["value_protected_inr"]) if isinstance(a.get("value_protected_inr"), (int, float))
+                   and a.get("value_protected_inr") else "—")
+            if val != "—" and a.get("low_reviews"):
+                val += f" ({a['low_reviews']:,} left a 1- or 2-star review)"
+            cost = _money(cur, a["est_cost_inr"]) if isinstance(a.get("est_cost_inr"), (int, float)) else "not computed (no cost data)"
             appr = "needs approval: " + "; ".join(a.get("approval_reasons") or []) if a.get("needs_approval") else "within limits"
-            lines.append(f"| {a['id']}. {a.get('title', '')} {''.join(f'[{e}]' for e in a.get('evidence', [])[:2])} | {prot} | {cost} | {appr} |")
+            lines.append(f"| {a['id']}. {a.get('title', '')} {''.join(f'[{e}]' for e in a.get('evidence', [])[:2])} | {prot} | {val} | {cost} | {appr} |")
     last = state["evaluations"][-1] if state.get("evaluations") else {}
     stage_causes = [f for f in causes if tasks.get(f["task_id"], {}).get("tool") == "stage"]
     stage_sh = [round(100 * v[f["task_id"]]["share_of_symptom"], 1) for f in stage_causes
                 if isinstance(v[f["task_id"]].get("share_of_symptom"), float)]
     if supply:
-        lines += ["", "## How sure we are",
+        lines += ["", "## How we know"] + how + [
                   "- Each check reports the share of the short units it is involved in (for duplicates: the units "
                   "the extra copies order). Shares overlap: one SKU can be both late inbound and under a stale "
                   "reorder point.",
                   "- Every number above was computed by the analysis engine from the cited results, and checked "
                   "against their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
     else:
-        lines += ["", "## How sure we are",
+        lines += ["", "## How we know"] + how + [
               (f"- The confirmed stages ({' and '.join(f'{x}%' for x in stage_sh)}) together explain "
                f"{round(sum(stage_sh), 1)}% of the measured {word}"
                + ("; the rest is mix and interactions." if sum(stage_sh) <= 100 else
@@ -1330,6 +1369,45 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
               "- Every number above was computed by the analysis engine from the cited results, and checked against "
               "their cells. Verdicts follow fixed rules (see the README), not a model's judgement."]
     body = "\n".join(lines)
+
+    def _event_name(f):
+        return f["statement"].split(" (")[0]
+
+    if event_f or not measure:
+        what = headline
+    elif supply:
+        what = f"{measure['claim']} {_cites(measure)}"
+    else:
+        what = measure["claim"].split(":")[0] + f". {_cites(measure)}"
+    if impact and not (measure and not supply and _no_rise(state, measure)):
+        what += f" {impact['claim']} {_cites(impact)}"
+    if causes:
+        parts = [cause_txt(f) for f in causes[:3]]
+        why = (", ".join(parts[:-1]) + " and " + parts[-1]) if len(parts) > 1 else parts[0]
+        why = why[0].upper() + why[1:] + "."
+    elif measure and ((supply and _no_shortage(state, measure)) or (not supply and _no_rise(state, measure))):
+        why = "Nothing to explain: the problem the question assumes isn't in the data."
+    else:
+        why = "No single cause passed the tests."
+    ruled_events = [_event_name(f) for f in ruled if tasks.get(f["task_id"], {}).get("tool") == "event"][:3]
+    if ruled_events and not event_f:
+        why += " Ruled out: " + "; ".join(ruled_events) + "."
+    todo = []
+    for a in sorted(acts, key=lambda a: -(a.get("value_protected_inr") or 0))[:2]:
+        bits = []
+        if isinstance(a.get("orders_protected"), (int, float)) and a.get("orders_protected"):
+            bits.append(f"{int(a['orders_protected']):,} orders")
+        if isinstance(a.get("value_protected_inr"), (int, float)) and a.get("value_protected_inr"):
+            bits.append(f"{_money(cur, a['value_protected_inr'])} of orders at stake"
+                        + (f", {a['low_reviews']:,} with a 1- or 2-star review" if a.get("low_reviews") else ""))
+        if isinstance(a.get("est_cost_inr"), (int, float)):
+            bits.append(f"costs {_money(cur, a['est_cost_inr'])}")
+        bits.append("needs approval" if a.get("needs_approval") else "within limits")
+        todo.append(f"{a['id']}. {a.get('title', '').split(':')[0]} ({'; '.join(bits)})")
+    todo_txt = " ".join(t + "." for t in todo) if todo else (
+        "Nothing: there is no problem to fix." if why.startswith("Nothing to explain") else
+        "No action could be sized from the data.")
+    summary = f"- **What happened:** {what}\n- **Why:** {why}\n- **What to do:** {todo_txt}"
 
     if event_f:
         # the event test (by the week parcels were handed over) answers the question; the late rate of orders placed
@@ -1346,7 +1424,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
                       + [f"CAUSE: {f['statement']}{share_txt(f)}: {f['claim']} {_cites(f)}"
                          + (f" WHY: {held_by[f['task_id']]['claim']} {_cites(held_by[f['task_id']])}"
                             if f["task_id"] in held_by else "") for f in causes[:3]]
-                      + [f"RULED OUT: {f['statement']}: {v[f['task_id']]['reason']}" for f in ruled[:5]])
+                      + [f"RULED OUT: {f['statement']}: {v[f['task_id']]['reason']}" for f in ruled[:5]]
+                      + ([f"VALUE AT STAKE: {impact['claim']} {_cites(impact)}"] if impact else []))
     answer = ""
     try:
         res = ctx.llm.chat("work", ANSWER_PROMPT, f"QUESTION: {state['question']}\n\nFACTS:\n{facts}", agent=agent,
@@ -1358,7 +1437,7 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         # no model answer (the model failed or returned nothing): the computed headline, said plainly
         answer = (headline + (f" {_cites(measure)}" if measure else "")
                   + " (Written by code: the language model was unavailable for this summary.)")
-    md = f"## Answer\n{answer}\n\n{body}"
+    md = f"## Summary\n{summary}\n\n## Answer\n{answer}\n\n{body}"
     # the answer may repeat rule thresholds and the numbers in the code-written ruled-out reasons it was given
     rules = [n.value for n in numbers_in(facts) if n.value in RULE_CONSTANTS] + \
         [n.value for f in ruled[:5] for n in numbers_in(str(v[f["task_id"]].get("reason", "")))]
