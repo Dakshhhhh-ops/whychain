@@ -97,6 +97,7 @@ class Engine:
         self._raw_rows = 0
         self._events: pd.DataFrame | None = None
         self._reviews: pd.DataFrame | None = None
+        self._stock: pd.DataFrame | None = None
         self._lock = threading.Lock()
         self.memo: dict[tuple, "Result"] = {}  # battery results by (tool, scope, params), see battery._run
 
@@ -163,6 +164,20 @@ class Engine:
 
     def provenance(self) -> str:
         return self.m.sql
+
+    def stock_lines(self) -> pd.DataFrame:
+        """Order lines with the warehouse's stock of the SKU on the order's requested ship date (if the dataset has
+        stock data). 'short' means the warehouse held less than the line needed that day."""
+        if self._stock is None:
+            d = self._query_df(self.m.stock_sql) if self.m.stock_sql else pd.DataFrame()
+            if not d.empty:
+                for c in ("qty", "on_hand"):
+                    d[c] = pd.to_numeric(d[c], errors="coerce")
+                d["req"] = pd.to_datetime(d["requested_ship_date"], errors="coerce").dt.normalize()
+                d["order_day"] = pd.to_datetime(d["order_date"], errors="coerce").dt.normalize()
+                d["short"] = d["on_hand"] < d["qty"]
+            self._stock = d
+        return self._stock
 
     # ------------------------------------------------------------------ scopes
     def _apply(self, df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
@@ -454,6 +469,83 @@ class Engine:
                   "(+0.5 day) or transit (+1 day) slowed with it.")
         return Result("volume", "Order volume", ["group", "orders", "orders_per_day", "mean_handover_days",
                       "mean_transit_days"], rows, summary, method, verdict, self.provenance())
+
+    def stock_wait(self, s: Scope) -> Result:
+        """Was dispatch held up by stock-outs? An order waited for stock if it was handed over after its requested
+        ship date and, on that date, its warehouse held less of one of its SKUs than the line needed. The hand-over
+        the focus orders would have had without those waits: the waiting orders take the others' mean."""
+        L = self.stock_lines()
+        per = L.groupby("order_id").agg(short=("short", "any"), req=("req", "first")).reset_index()
+
+        def mark(df: pd.DataFrame) -> pd.DataFrame:
+            d = df.merge(per, on="order_id", how="left")
+            d["waited"] = d["short"].fillna(False).astype(bool) & (d["handover"] > d["req"])
+            return d
+
+        def mean(x) -> float:
+            return float(x.mean()) if len(x) else float("nan")
+
+        f, r = mark(s.focus), mark(s.ref)
+        hf, hr = mean(f["h"]), mean(r["h"])
+        h_wait, h_other = mean(f.loc[f["waited"], "h"]), mean(f.loc[~f["waited"], "h"])
+        cf = mean(f["h"].where(~f["waited"], h_other)) if f["waited"].any() and (~f["waited"]).any() else hf
+        slow = hf - hr
+        share = (hf - cf) / slow if slow > 0 else None
+        held = L[L["order_id"].isin(set(f.loc[f["waited"], "order_id"])) & L["short"]]
+        sup = (held.groupby(["supplier_id", "supplier_name"])
+               .agg(orders=("order_id", "nunique"), category=("category", lambda c: c.mode().iat[0]))
+               .sort_values("orders", ascending=False).reset_index())
+        # what the held SKUs' stock went to: their units ordered at the same warehouses in the focus period
+        pairs = set(zip(held["warehouse_id"], held["sku"]))
+        if s.period:
+            a, b = pd.Timestamp(s.period[0]), pd.Timestamp(s.period[1])
+        else:
+            a, b = s.focus["purchase"].min(), s.focus["purchase"].max() + pd.Timedelta(days=1)
+        in_pairs = pd.Series([p in pairs for p in zip(L["warehouse_id"], L["sku"])], index=L.index)
+        demand = L[(L["order_day"] >= a) & (L["order_day"] < b) & in_pairs]
+        total = demand["qty"].sum()
+        promo_share = demand.loc[demand["promo_code"].notna(), "qty"].sum() / total if total else 0.0
+        codes = demand["promo_code"].dropna().value_counts()
+        rows = [["delivered orders", len(f), len(r)],
+                ["orders that waited for stock (%)", pct(f["waited"].mean()) if len(f) else None,
+                 pct(r["waited"].mean()) if len(r) else None],
+                ["mean hand-over, orders that waited (days)", r1(h_wait), r1(mean(r.loc[r["waited"], "h"]))],
+                ["mean hand-over, other orders (days)", r1(h_other), r1(mean(r.loc[~r["waited"], "h"]))],
+                ["mean hand-over, all orders (days)", r1(hf), r1(hr)],
+                ["mean hand-over without the stock waits (days)", r1(cf), None],
+                ["share of the hand-over slowdown from stock waits (%)",
+                 round(100 * share, 1) if share is not None else None, None]]
+        def promo_of(sid: str) -> tuple[float, str | None]:
+            d = demand[demand["supplier_id"] == sid]
+            if not d["qty"].sum():
+                return 0.0, None
+            code = d["promo_code"].dropna().value_counts()
+            return (float(d.loc[d["promo_code"].notna(), "qty"].sum() / d["qty"].sum()),
+                    str(code.index[0]) if len(code) else None)
+
+        top = [(x.supplier_id, x.supplier_name, x.category, int(x.orders), *promo_of(x.supplier_id))
+               for x in sup.head(3).itertuples()]
+        for sid, name, cat, n, ps, _code in top:
+            rows.append([f"orders held for {sid} ({name}, mostly {cat})", n, None])
+            rows.append([f"{sid} units ordered on a promotion in the period (%)", pct(ps), None])
+        rows.append(["held SKUs' units ordered on a promotion in the period (%)", pct(promo_share), None])
+        summary = {"waited": int(f["waited"].sum()), "share": share,
+                   "slowdown_days": r1(slow) if slow == slow else None,
+                   "suppliers": [list(t) for t in top],
+                   "warehouses": {str(k): int(v) for k, v in
+                                  f.loc[f["waited"], "warehouse_id"].value_counts().items()}
+                   if "warehouse_id" in f else {},
+                   "promo_share": float(promo_share), "promo_code": str(codes.index[0]) if len(codes) else None}
+        method = ("An order waited for stock if it was handed to the carrier after its requested ship date and, on that "
+                  "date, its warehouse held less of one of its SKUs than the line needed (wms.inventory_snapshots). "
+                  "Counterfactual: the waiting orders take the mean hand-over of the other focus orders. Suppliers are "
+                  "counted on the lines that were short.")
+        if not slow > 0 or summary["waited"] < 5:
+            verdict = "measured"          # nothing to explain, or too few waits to judge
+        else:
+            verdict = "supports" if share >= 0.25 else "refutes"
+        return Result("stock_wait", "Orders waiting for stock", ["measure", "focus", "reference"], rows, summary,
+                      method, verdict, self.m.stock_sql + "\n-- joined to the order facts:\n" + self.provenance())
 
     def data_quality(self, s: Scope) -> Result:
         """Could the rise be an artefact? Missing or impossible dates, orders left out, duplicates, and how much the

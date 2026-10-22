@@ -38,6 +38,8 @@ class FactModel:
     region_map: dict[str, str] = field(default_factory=dict)   # map_within value -> region (adds a "region" dim)
     region_source: str = ""                    # the column region_map applies to
     reviews_sql: str = ""                      # optional: order_id, review text, for text mentions
+    stock_sql: str = ""                        # optional: one row per order line with the warehouse's stock of that
+                                               # SKU on the order's requested ship date (datasets with stock data)
     currency: str = "BRL"
     unit: str = "orders"
 
@@ -83,6 +85,14 @@ LEFT JOIN carrier.shipments s ON s.order_id = o.order_id""",
           "service_type": "service type", "channel": "channel", "customer_tier": "customer tier"},
     map_within="dest_city",
     currency="INR",
+    stock_sql="""SELECT o.order_id, o.warehouse_id, o.order_date, o.requested_ship_date, o.promo_code, ol.sku, ol.qty,
+       k.category, k.supplier_id, p.name AS supplier_name, i.on_hand
+FROM erp.sales_orders o
+JOIN erp.order_lines ol ON ol.order_id = o.order_id
+JOIN erp.skus k ON k.sku = ol.sku
+LEFT JOIN procurement.suppliers p ON p.supplier_id = k.supplier_id
+LEFT JOIN wms.inventory_snapshots i ON i.warehouse_id = o.warehouse_id AND i.sku = ol.sku
+  AND CAST(i.snapshot_date AS DATE) = CAST(o.requested_ship_date AS DATE)""",
 )
 
 MODELS = {"olist": OLIST, "kaveri": KAVERI}

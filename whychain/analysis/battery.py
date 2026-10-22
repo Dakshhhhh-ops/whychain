@@ -165,6 +165,8 @@ def plan_battery(question: str, engine: Engine, as_of: date) -> dict:
         + ("a normal baseline" if time_mode else "the other orders"), primary)
     hand_label = "Sellers handed orders to the carrier later" if engine.m.region_map else "Warehouses dispatched orders later"
     add("stage", hand_label + (" than normal" if time_mode else " than elsewhere"), primary, stage="handover")
+    if engine.m.stock_sql:  # datasets with stock data: was dispatch held up by stock-outs?
+        add("stock_wait", "Orders waited for stock, which slowed dispatch", primary)
     add("stage", "Carrier transit got slower" if time_mode else "Carrier transit takes longer", primary, stage="transit")
     add("stage", "Promised delivery windows got shorter" if time_mode
         else "Promised windows are too short for the delivery time", primary, stage="promise")
@@ -236,6 +238,8 @@ def _run(engine: Engine, tool: str, spec: dict, **params) -> Result:
             _MEMO[key] = engine.text(s)
         elif tool == "event":
             _MEMO[key] = engine.event(params["event_id"], s)
+        elif tool == "stock_wait":
+            _MEMO[key] = engine.stock_wait(s)
         elif tool == "promise_buffer":
             _MEMO[key] = engine.promise_buffer(s, params.get("dim"))
         else:
@@ -341,6 +345,42 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         else:
             reason = ("Volume did not rise enough, or the chain did not slow with it.")
             status = "rejected" if res.verdict == "refutes" else "needs_more"
+    elif tool == "stock_wait":
+        s = res.summary
+        rows = res.rows
+        keys += [_ref(eid, res, k, c) for k in (1, 2, 3, 4) for c in ("focus", "reference")
+                 if rows[k][res.columns.index(c)] is not None]
+        keys += [_ref(eid, res, 5, "focus")]
+        held = [(i, r) for i, r in enumerate(rows) if str(r[0]).startswith("orders held for ")]
+        keys += [_ref(eid, res, i, "focus") for i, _ in held]
+        sups = []
+        for (i, r), (sid, name, cat, n, ps, code) in zip(held, s["suppliers"]):
+            txt = f"{sid} ({name}, mostly {cat}): {n} orders"
+            if ps >= 0.2 and code:
+                keys.append(_ref(eid, res, i + 1, "focus"))
+                txt += f", with {rows[i + 1][1]}% of its units in the period ordered on promotion {code}"
+            sups.append(txt)
+        ref_name = "baseline" if spec["mode"] == "time" else "reference"
+        claim = (f"{rows[1][1]}% of the delivered orders waited for stock (handed to the carrier after their requested "
+                 f"ship date while the warehouse held too little of one of their SKUs), against {rows[1][2]}% in the "
+                 f"{ref_name}. They took {rows[2][1]} days to hand over, against {rows[3][1]} for the other orders. "
+                 f"Without the waits, hand-over would have averaged {rows[5][1]} days, against {rows[4][1]} actual and "
+                 f"{rows[4][2]} in the {ref_name}.")
+        if sups:
+            claim += " Held for SKUs from " + "; ".join(sups) + "."
+        sh = s["share"]   # a share of the hand-over slowdown, not of the late-rate rise: kept in the claim only
+        if res.verdict == "supports":
+            verdict, status, kind = "supports", "confirmed", "measure"
+            reason = ("Waiting for stock accounts for " + ("all" if sh >= 1 else f"{round(100 * sh, 1)}%")
+                      + " of the hand-over slowdown (threshold: 25%). It explains the dispatch stage; it is not "
+                      "counted as a separate cause.")
+        elif res.verdict == "refutes":
+            verdict = "refutes"
+            reason = "Hand-over slowed, but waiting for stock accounts for less than 25% of it."
+        else:
+            verdict, kind = "inconclusive", "hypothesis"
+            reason = (f"Only {s['waited']} orders waited for stock: too few to judge." if s["waited"] < 5
+                      and (s.get("slowdown_days") or 0) > 0 else "Hand-over did not slow in this scope.")
     elif tool == "data_quality":
         s = res.summary
         keys += [_ref(eid, res, k, "result") for k in range(len(res.rows))]

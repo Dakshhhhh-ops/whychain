@@ -853,7 +853,23 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
                     ["changes a carrier contract or allocation"])
         except Exception as e:
             ctx.tracer.event("agent_error", agent, error=f"carrier options failed: {e}"[:200])
-    if "handover" in stages:
+    stock = next((g for g in state["findings"] if tasks.get(g["task_id"], {}).get("tool") == "stock_wait"
+                  and v.get(g["task_id"], {}).get("status") == "confirmed"), None)
+    if "handover" in stages and stock:
+        # dispatch slowed because orders sat waiting for stock: the fix is the stock, not the warehouse
+        summ = state["evidence"].get(stock["evidence_ids"][0], {}).get("summary", {})
+        sups = summ.get("suppliers", [])
+        whs = sorted(summ.get("warehouses", {}).items(), key=lambda kv: -kv[1])
+        named = "; ".join(f"{x[1]} ({x[2]})" + (f", demand lifted by promotion {x[5]}" if x[4] >= 0.2 and x[5] else "")
+                          for x in sups[:3])
+        add("Clear the stock-outs that held up dispatch" + (f": {named}" if named else ""),
+            "Orders waited for stock, not for the warehouse. For each warehouse with held orders ("
+            + ", ".join(f"{w}: {n}" for w, n in whs) + "), run a supply investigation (for example \"Why did "
+            + (f"{whs[0][0]} run out of {sups[0][2]}?" if whs and sups else "this warehouse run out of stock?")
+            + "\") to size a stock transfer and new reorder points, and chase the open purchase orders from these "
+            "suppliers. Share promotion plans with planning before campaigns start.",
+            [stages["handover"]["task_id"], stock["task_id"]], stock["evidence_ids"])
+    elif "handover" in stages:
         f = stages["handover"]
         add("Enforce hand-over deadlines with the slowest senders",
             "Rank sellers (or warehouses) by late hand-overs in the period and agree corrective plans.",
@@ -1037,8 +1053,18 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
             return f" (the extra copies order units equal to {round(100 * sh, 1)}% of the shortage)"
         return f" ({round(100 * sh, 1)}% {'of the short units' if supply else 'of the rise'})"
 
-    # A disrupted port is why inbound orders are late, not a second cause beside them: show one chain.
+    # A disrupted port is why inbound orders are late, and waiting for stock is why dispatch slowed: each is shown
+    # under the cause it explains, not as a second cause beside it.
     held_by: dict[str, dict] = {}
+    tool_of = {f["task_id"]: tasks.get(f["task_id"], {}).get("tool") for f in fs}
+    stock = next((f for f in fs if tool_of[f["task_id"]] == "stock_wait"
+                  and v.get(f["task_id"], {}).get("status") == "confirmed"), None)
+    hand = next((f for f in causes if tool_of[f["task_id"]] == "stage"
+                 and tasks[f["task_id"]].get("params", {}).get("stage") == "handover"), None)
+    if stock and hand:
+        held_by[hand["task_id"]] = stock
+    elif stock:
+        where.append(stock)
     if supply:
         tool = {f["task_id"]: tasks.get(f["task_id"], {}).get("tool") for f in causes}
         inb = next((f for f in causes if tool[f["task_id"]] == "inbound"), None)
@@ -1052,6 +1078,10 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         if not port:
             return _short(f["statement"]) + share_txt(f)
         summ = state["evidence"].get((port.get("evidence_ids") or [""])[0], {}).get("summary", {})
+        if tool_of.get(port["task_id"]) == "stock_wait":
+            names = [x[1] for x in summ.get("suppliers", [])[:2]]
+            return (_short(f["statement"]) + share_txt(f) + ", mostly orders waiting for stock"
+                    + (f" of {' and '.join(names)} SKUs" if names else ""))
         name = summ.get("top_port")
         why = str((summ.get("port_status") or {}).get(name, "")).split(": ", 1)[-1].strip().lower()
         held = (f", held up at {name}" + (f" by a {why}" if why else "")) if name else ", held up at a disrupted port"
@@ -1077,8 +1107,9 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         for i, f in enumerate(causes, 1):
             lines.append(f"{i}. **{f['statement']}**{share_txt(f)}. {f['claim']} {_cites(f)}")
             if f["task_id"] in held_by:
-                port = held_by[f["task_id"]]
-                lines.append(f"   - Why they are late: {port['claim']} {_cites(port)}")
+                why = held_by[f["task_id"]]
+                label = "Why dispatch slowed" if tool_of.get(why["task_id"]) == "stock_wait" else "Why they are late"
+                lines.append(f"   - {label}: {why['claim']} {_cites(why)}")
     else:
         lines.append("No cause passed the tests.")
     if where:

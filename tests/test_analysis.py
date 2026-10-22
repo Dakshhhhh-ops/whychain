@@ -145,3 +145,28 @@ def test_results_are_identical_on_every_run():
     assert sa.rows == sb.rows
     assert np.isclose(sum(r[-2] for r in sa.rows if r[-2] is not None), round(100 * sa.summary["rise_pp"] / 100, 2),
                       atol=0.05)
+
+
+def test_stock_waits_explain_slower_dispatch():
+    """Kaveri: dispatch slowed in Sep-Oct because orders waited for stock (the planted stock-outs: SoundWave earbuds
+    on the DIWALI26 promotion, Voltix behind the port strike); Nashik's lateness is transit, not stock."""
+    from datetime import date
+
+    from whychain.analysis import get_engine
+    from whychain.analysis.battery import plan_battery, run_task
+    from whychain.harness.local import LocalHarness
+
+    eng = get_engine(LocalHarness("kaveri"))
+    q = "Why did our overall on-time delivery rate drop in September and October compared with August?"
+    task = next(t for t in plan_battery(q, eng, date(2026, 10, 21))["tasks"] if t["tool"] == "stock_wait")
+    f, ev = run_task(eng, task, "T3")
+    assert f["fixed"]["status"] == "confirmed" and not f["fixed"]["is_cause"]
+    assert "S-07" in f["claim"] and "S-14" in f["claim"] and "DIWALI26" in f["claim"]
+    nashik = next(t for t in plan_battery("Why have deliveries to Nashik been late since September?", eng,
+                                          date(2026, 10, 21))["tasks"] if t["tool"] == "stock_wait")
+    f2, _ = run_task(eng, nashik, "T3")
+    assert f2["fixed"]["status"] != "confirmed"
+    # Olist has no stock data: the test isn't planned at all
+    olist = get_engine(LocalHarness("olist"))
+    assert not any(t["tool"] == "stock_wait" for t in plan_battery(
+        "Why did late deliveries jump to 19% for orders placed in March 2018?", olist, date(2018, 9, 1))["tasks"])
