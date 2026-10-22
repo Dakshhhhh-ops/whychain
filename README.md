@@ -304,7 +304,16 @@ Three questions added at 19:03 IST (commit `6346120`), with ground truth compute
 | KH2 Hyderabad deliveries later in September | ❌ **fail** | 2/2: dispatch slowed, orders waiting for stock | ❌ it also confirmed "carrier transit got slower" (14.6% of the rise), though transit was flat (typically 2.0 against 2.0 days) | ✅ | `20261022-191234-0dc3` |
 | KH3 Pune "rise" in October (a false premise) | ✅ pass | 1/1: no cause confirmed (the late rate fell) | — (nothing was blamed) | — | `20261022-191325-32b1` |
 
-Both KH2 and KH3 then led to code changes (commit `4ae49f7`): a stage must itself have moved to count as a cause (KH2), and a headline that says "It did not rise" when the late rate fell (KH3). **KH2 and KH3 are therefore development cases from that commit on**; replacement held-out questions are listed below them in `evals/cases.yaml`.
+Both KH2 and KH3 then led to code changes (commit `4ae49f7`): a stage must itself have moved to count as a cause (KH2), and a headline that says "It did not rise" when the late rate fell (KH3). **KH2 and KH3 are therefore development cases from that commit on.**
+
+Two replacement held-out questions were added at 19:28 IST (commit `23fadb2`, ground truth from SQL first) and run once, at 19:30 to 19:34 IST, through Zetaris on that commit, on an empty memory (Nemotron embeddings):
+
+| Case | Result | Cause found | Red herring avoided | Right action | Run |
+|---|---|---|---|---|---|
+| KH4 Surat deliveries late in September | ✅ pass | 3/3: dispatch slowed, orders waiting for stock, mostly Voltix (S-14) | ✅ (transit flat, promises longer: neither blamed) | ✅ | `20261022-193027-a920` |
+| KH5 "Charger shortage" at the Mumbai DC (a false premise: no charger backorders) | ✅ pass | 1/1: no cause confirmed | — (nothing was blamed) | — | `20261022-193243-c38c` |
+
+Held-out record so far: 5 questions, 4 passed on their first run (KH1, KH3, KH4, KH5), 1 failed (KH2). These are still the author's planted mechanisms in new scopes and wordings, so they test generality, not independence.
 
 ### Before the supply engine: Kaveri, one pass, 22 Oct 16:25 to 17:08 IST (local harness)
 
