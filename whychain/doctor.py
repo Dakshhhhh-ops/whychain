@@ -62,6 +62,9 @@ def main() -> None:
         line(False, "Meterless bridge", f"not reachable at {SETTINGS.meterless_url} (cd meterless_bridge && npm start)")
     # models
     llm = LLM()
+    if not any(p.configured for p in llm.providers.values()):
+        line(False, "models", "no model provider configured: set NVIDIA_API_KEY in .env (without one, late-delivery and "
+             "supply briefs are written by code only, and open-ended questions can't run)")
     for name, p in llm.providers.items():
         if not p.configured:
             line(None, f"model: {name}", "not configured")

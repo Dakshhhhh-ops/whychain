@@ -173,31 +173,42 @@ The Official Rules (section 6) ask for a clear explanation of four things. In br
 
 ## Setup (clean machine)
 
-Needs Python 3.11+, Node 20+, Docker.
+**Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (one dependency, `optiagent-core`, installs from GitHub, and the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
+
+**What works without what:** without Docker, the order systems are read from CSV copies; without Zetaris, every query goes to a local DuckDB copy with the same tables (the app says so); without an NVIDIA key, late-delivery and supply investigations still compute every finding and the brief's short answer is written by code (open-ended questions need a model); without the Meterless bridge, memory falls back to a local file. `python -m whychain.doctor` says which of these is in use.
+
+**On Windows**, once steps 1 to 5 have been done once, `start.cmd` starts everything (Docker, Zetaris, Postgres, the bridge, the app) and warms it up.
 
 ```bash
-# 1. Python environment
-uv venv && uv pip install -e ".[dev]"          # or: python -m venv .venv && pip install -e ".[dev]"
+# 1. Python environment (uv, or plain venv + pip)
+uv venv && uv pip install -e ".[dev]"
+#    or: py -3.12 -m venv .venv  then  .venv/Scripts/python -m pip install -e ".[dev]"   (Windows)
+#        python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"                   (macOS/Linux)
+# Activate it so `python` below is this environment:
+source .venv/Scripts/activate        # Git Bash on Windows;  PowerShell: .venv\Scripts\Activate.ps1;  macOS/Linux: source .venv/bin/activate
 
 # 2. Config
-cp .env.example .env                             # then fill in keys (see comments in the file)
+cp .env.example .env                 # then set NVIDIA_API_KEY (and the Zetaris login for step 5)
 
 # 3. The data: order systems in Postgres, other systems as files
-docker compose up -d
-python -m datagen.olist                          # real Olist data: downloads the CSVs, writes data/olist/generated/, loads Postgres
-python -m datagen.generate                       # simulated company: writes data/generated/
-python -m datagen.load_postgres
+docker compose up -d                 # Postgres on port 5433
+python -m datagen.olist              # real Olist data: ~150 MB download + build, about 6 minutes; also loads Postgres
+                                     #   (no Docker? add --no-postgres; the CSV copies are used instead)
+python -m datagen.generate           # simulated company: writes data/generated/ (seconds)
+python -m datagen.load_postgres      # loads the simulated company's order system into Postgres
 
 # 4. Meterless engines bridge (separate terminal)
-cd meterless_bridge && npm install && npm start  # http://localhost:8787
+cd meterless_bridge && npm install && npm start  # http://localhost:8787 (Nemotron embeddings if NVIDIA_API_KEY is set)
 
-# 5. Zetaris (the hackathon's local platform bundle, in its own folder):
+# 5. Zetaris: the hackathon's local platform bundle, from the event's resources, in its own folder:
 #    copy docs/zetaris-override.yml there as docker-compose.override.yml (it mounts WhyChain's data),
 #    set WHYCHAIN_DIR, docker compose up -d; put the admin login in WhyChain's .env (ZETARIS_USER/PASSWORD)
-python scripts/register_zetaris.py               # registers both datasets, then checks every table's row count
+#    and the bundle's folder as ZETARIS_DIR (for start.cmd)
+python scripts/register_zetaris.py   # registers both datasets, then checks every table's row count
 
 # 6. Check everything
 python -m whychain.doctor
+python -m pytest -q tests            # if Windows temp permissions get in the way: add --basetemp=.pytest_tmp
 ```
 
 With `WHYCHAIN_HARNESS=zetaris`, every query goes to Zetaris: Postgres through a JDBC datasource, the CSV and JSON exports as Lightning file tables read in place. With `WHYCHAIN_HARNESS=local` (or if Zetaris is unreachable), the same sources and table names are served by DuckDB, with the ERP read live from Postgres. Agents write the same Spark SQL either way; for DuckDB it's translated with sqlglot. The UI always shows which harness answered.
@@ -214,10 +225,10 @@ python -m whychain.api                           # http://localhost:8000
 # Frontend development with hot reload (proxies /api to :8000)
 cd frontend && npm run dev                       # http://localhost:5173
 
-python -m whychain.cli "Why did late deliveries jump to 21% for orders placed in March 2018?"
+python -m whychain.cli "Why did late deliveries jump to 19% for orders placed in March 2018?"
 python -m whychain.cli --dataset kaveri "Why have deliveries to Nashik been late since September?"
 python -m evals.run_evals --dataset olist        # score the real-data cases (or --dataset kaveri, or all)
-python -m pytest -q tests                        # wiring test (no API keys needed)
+python -m pytest -q tests                        # the test suite (no API keys needed)
 ```
 
 ### The app
