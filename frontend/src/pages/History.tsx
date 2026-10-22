@@ -67,7 +67,7 @@ export function History() {
                     {r.headline && <div className="mt-1 line-clamp-2 text-[12.5px] text-slate-500">{r.headline}</div>}
                   </td>
                   <td className="px-3 py-3.5 tabular-nums">
-                    {r.status === "running" ? <Badge tone="blue">Running</Badge> : r.status === "error" ? <Badge tone="red">Failed</Badge> : r.causes ?? "—"}
+                    {r.status === "running" ? <Badge tone="blue">Running</Badge> : r.status === "error" ? <Badge tone="red">Failed</Badge> : r.status === "incomplete" ? <Badge tone="amber">No brief</Badge> : r.causes ?? "—"}
                   </td>
                   <td className="px-3 py-3.5 tabular-nums text-slate-600">{r.evidence ?? "—"}</td>
                   <td className="px-3 py-3.5">

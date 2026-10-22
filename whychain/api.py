@@ -73,6 +73,8 @@ def load_result(run_id: str) -> dict:
     if not p.exists():
         raise HTTPException(404, "run not found")
     res = json.loads(p.read_text(encoding="utf-8"))
+    if res.get("status") == "ok" and len(str(res.get("brief") or "").strip()) < 200:
+        res["status"] = "incomplete"  # runs saved before this check existed
     dec = run_dir(run_id) / "decisions.json"
     if dec.exists():
         decisions = json.loads(dec.read_text(encoding="utf-8"))
