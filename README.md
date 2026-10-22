@@ -1,10 +1,32 @@
 # WhyChain
 
-**A team of AI agents that explains *why* a supply chain problem is happening, proves it with evidence from every system the company runs, and prescribes fixes that are *mathematically proven* to be the cheapest, ready for a manager to approve.**
+**A team of AI agents that explains *why* a supply chain problem is happening, proves it with evidence from every system the company runs, and prescribes fixes sized from the data (proven cheapest where costs are known), ready for a manager to approve.**
 
 Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
 
 ---
+
+## WhyChain in one minute
+
+WhyChain is for operations and fulfilment managers who see a problem on a dashboard and need to know *why*. Ask in plain English. It investigates the order system, the seller, payment and review exports, an events feed and news briefs, all through Zetaris, and returns each cause with its share of the problem, the red herrings it ruled out, quotes from the written record, and actions sized from the data.
+
+On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The brief sets a promise buffer per state (RJ +9 days, for example).
+
+| Control tower | A live investigation | The brief |
+|---|---|---|
+| ![Control tower](docs/img/control-tower.png) | ![Live investigation](docs/img/investigation-live.png) | ![Brief](docs/img/brief.png) |
+
+### See it in five minutes
+
+1. Start it: on Windows run `start.cmd` (Docker, Zetaris, Postgres, the Meterless bridge, the app, then a warm-up), or follow [Setup](#setup-clean-machine). Open http://localhost:8000.
+2. Olist (real data): click **March 2018 delay spike** under the search box. The agents stream their work; through Zetaris it takes about two to three minutes.
+3. In the brief, click any citation chip to see the computed table and its SQL ("Data via Zetaris"); scroll to **Ruled out** for the strike.
+4. Switch to **Kaveri** and run **Pune orders at risk**: the proven-optimal stock transfer, then **Approve** it to get the transfer order and supplier email.
+5. Open **Memory** (findings with provenance, recall on Nemotron embeddings) and **Data sources** (federated by Zetaris).
+
+### Contents
+
+[The problem](#the-problem) · [How it works](#how-it-works) · [Optiagent](#prescriptive-layer-optiagent-declared-pre-existing-component) · [Sponsor technology](#sponsor-technology-designed-role-and-actual-status) · [How the sponsor technologies are used](#how-the-sponsor-technologies-are-used-submission-requirement) · [Setup](#setup-clean-machine) · [Usage](#usage) · [The data](#the-data) · [Results](#results) · [Hackathon track](#hackathon-track) · [Development tools](#development-tools) · [Nemotron](#how-whychain-uses-nvidia-nemotron) · [Reliability](#reliability) · [Known limitations](#known-limitations) · [Repository layout](#repository-layout) · [Pre-existing work](#pre-existing-work-built-before-the-build-window)
 
 ## The problem
 

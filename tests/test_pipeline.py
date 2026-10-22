@@ -94,3 +94,23 @@ def test_supply_route(tmp_path):
     # the transfer says what it covers (overdue orders too), so it isn't read against the next-week count
     transfer = next(a for a in res["actions"] if a["title"].startswith("Transfer"))
     assert "past their promised date" in transfer["steps"]
+
+
+def test_a_failed_reporter_says_incomplete_and_lists_what_was_confirmed(tmp_path):
+    """The open-ended loop can hit the run's time limit before the Reporter writes: the brief must say so, list the
+    confirmed findings, and the run must be marked incomplete (not a bare 'Report generation failed')."""
+    from whychain.llm import LLMError
+
+    ctx = make_ctx(tmp_path)
+    real_chat = ctx.llm.chat
+
+    def chat(role, system, user, agent="", **kw):
+        if agent == "Reporter":
+            raise LLMError("the run's time limit was reached; no more model calls")
+        return real_chat(role, system, user, agent=agent, **kw)
+
+    ctx.llm.chat = chat
+    res = investigate("Why are so many Pune orders at risk next week?", ctx=ctx)
+    assert res["status"] == "incomplete"
+    assert res["headline"].startswith("Incomplete: the brief couldn't be written (the run's time limit was reached")
+    assert "## Confirmed findings" in res["brief"]

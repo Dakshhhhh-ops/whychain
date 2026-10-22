@@ -150,7 +150,8 @@ def investigate(question: str, harness_pref: str | None = None, listener=None, c
     try:
         final = graph.invoke({"question": question}, {"recursion_limit": 60})
         # finished, but without a written brief (e.g. the Reporter failed): don't present it as a complete answer
-        status = "ok" if len(str(final.get("brief") or "").strip()) >= 200 else "incomplete"
+        status = ("ok" if len(str(final.get("brief") or "").strip()) >= 200
+                  and not str(final.get("headline") or "").startswith("Incomplete:") else "incomplete")
     except Exception as e:
         t.event("run_error", "System", error=f"{type(e).__name__}: {e}", tb=traceback.format_exc()[-1500:])
         final, status = {"question": question, "brief": f"Run failed: {e}"}, "error"

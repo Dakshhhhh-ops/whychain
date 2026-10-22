@@ -1393,6 +1393,15 @@ def report(state: dict, ctx: Ctx) -> dict:
         if len(out["brief_markdown"]) >= 400 and "## " in out["brief_markdown"]:
             break
         ctx.tracer.event("report_retry", agent, chars=len(out["brief_markdown"]), provider=res.provider)
+    if not str(out.get("brief_markdown", "")).lstrip().startswith("#") and out.get("headline") == "Report generation failed":
+        # the model couldn't write the brief (e.g. the run's time limit): say so, and list what was confirmed
+        why = str(out.get("brief_markdown", "")).replace("Reporter unavailable: ", "").strip() or "no reply"
+        conf = [f for f in state["findings"] if v.get(f["task_id"], {}).get("status") == "confirmed"]
+        out["headline"] = (f"Incomplete: the brief couldn't be written ({why[:120]}). "
+                           + (f"{len(conf)} findings were confirmed; they are listed below." if conf
+                              else "No finding was confirmed."))
+        out["brief_markdown"] = ("## Confirmed findings\n" + "\n".join(
+            f"- **{f['statement']}**: {f['claim']} {_cites(f)}" for f in conf)) if conf else ""
     md, raw_headline = tidy_brief(str(out.get("brief_markdown", "")), str(out.get("headline", "")))
     out["headline"] = raw_headline
     # a bare task citation like [T2] becomes that task's evidence ids, so it stays clickable
