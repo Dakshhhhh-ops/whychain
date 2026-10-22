@@ -51,7 +51,12 @@ def score(case: dict, res: dict) -> dict:
     causes = [f for f in res.get("findings", []) if v.get(f["task_id"], {}).get("status") == "confirmed"
               and v[f["task_id"]].get("is_cause", True)]
     cause_text = " ".join(f"{f['statement']} {f['claim']}" for f in causes).lower()
-    found_text = cause_text + " " + str(res.get("headline", "")).lower()
+    # what the investigation established: confirmed causes AND confirmed measurements (e.g. where a rise sits), plus the
+    # headline. Red herrings are judged on confirmed causes only (below).
+    measured = [f for f in res.get("findings", []) if v.get(f["task_id"], {}).get("status") == "confirmed"
+                and f not in causes and f.get("agent_kind") != "docs"]
+    found_text = " ".join([cause_text] + [f"{f['statement']} {f['claim']}".lower() for f in measured]
+                          + [str(res.get("headline", "")).lower()])
     groups = case["must_find"]
     hit = [matches(found_text, g) for g in groups]
     need = case.get("min_groups", len(groups))
