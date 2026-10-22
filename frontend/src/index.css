@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --animate-fade-in: fade-in 0.35s ease-out both;
+  --animate-slide-in: slide-in 0.25s ease-out both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: #f6f7fb;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+.prose table { font-size: 0.85em; }
+.prose th { background: #f8fafc; }
+.prose :where(h2) { margin-top: 1.6em; font-size: 1.05rem; letter-spacing: -0.01em; }
+.prose :where(h2):first-child { margin-top: 0; }
+
+.sql-kw { color: #4f46e5; font-weight: 600; }
+.sql-fn { color: #0e7490; }
+.sql-str { color: #b45309; }
+.sql-num { color: #be185d; }
