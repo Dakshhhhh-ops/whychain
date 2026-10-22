@@ -205,6 +205,12 @@ function AnalysisBody({ ev }: { ev: AnalysisEvidence }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[14px] font-semibold text-slate-900">{ev.title}</span>
         <Badge tone={v.tone}>{v.text}</Badge>
+        {ev.harness && (
+          <Badge tone="brand">
+            <Database className="h-3 w-3" />
+            {ev.harness === "zetaris" ? "Data via Zetaris" : `Data via ${ev.harness}`}
+          </Badge>
+        )}
       </div>
       <div className="flex items-start gap-1.5 rounded-lg bg-indigo-50/70 px-3 py-2 text-[12px] leading-relaxed text-indigo-900">
         <Sigma className="mt-0.5 h-3.5 w-3.5 shrink-0" />

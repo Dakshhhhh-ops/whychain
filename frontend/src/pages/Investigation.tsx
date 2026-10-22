@@ -71,9 +71,14 @@ export function Investigation() {
       .then(async (r) => {
         if (cancelled) return;
         setQuestion(r.question);
+        // ?replay=N on a finished run plays it back N times faster than it happened (1 = real speed), labelled
+        // "Replaying": a safe fallback for a demo if the model endpoint is slow during a live take
+        const replayParam = Number(new URLSearchParams(window.location.search).get("replay") || 0);
         if (r.status === "running") {
           setTab("board");
           stream(0);
+        } else if (replayParam > 0) {
+          stream(replayParam);
         } else {
           const ev = await api.trace(id);
           if (cancelled) return;

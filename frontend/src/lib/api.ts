@@ -111,6 +111,7 @@ export type AnalysisEvidence = {
   method: string;
   verdict: string;
   sql: string;
+  harness?: string;
   notes?: string[];
 };
 

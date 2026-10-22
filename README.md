@@ -132,6 +132,23 @@ Every model call goes through one OpenAI-compatible client with role-based fallb
 
 Transient errors (5xx, rate limits, timeouts) are retried with back-off: twice when another provider follows, four times on the last one. The trace records every retry and fallback.
 
+## How the sponsor technologies are used (submission requirement)
+
+The Official Rules (section 6) ask for a clear explanation of four things. In brief:
+
+**How Zetaris is integrated.** Zetaris is the only path from WhyChain to company data. The local Zetaris platform (the hackathon's Docker bundle) federates six source systems per dataset: the order systems through a Postgres JDBC datasource, and the CSV and JSON exports as Lightning file tables read in place, so nothing is copied into a warehouse or a vector store. `scripts/register_zetaris.py` registers them and checks every table's row count against the source (26 tables, all matching). Everything queries through it: the analysis engine's order-level fact query, which joins the Postgres order system with the seller export (five tables) in one statement; the agents' own Spark SQL; the catalog the Data Scout maps; and the dashboard. Every run records `harness: zetaris`, and every cited result can be re-run through it.
+
+**How Meterless is integrated.** `meterless_bridge/` runs the Meterless reference engines as libraries behind a small HTTP service. **H-MEM** stores every confirmed and ruled-out finding with provenance (run, agent, query or document), and each new investigation recalls related past findings as hints, never as evidence. The **World Model** stores the cause-effect relations each run confirms, as a cause graph across runs. H-MEM's recall uses NVIDIA Nemotron embeddings in place of its reference mock embedder: exactly one vendored file changed, to add a provider hook (see "Pre-existing work"). Conformance passes with the provider off and on.
+
+**How Cursor was used during development.** [FOR THE AUTHOR: how Cursor was used during development]
+
+**Where NVIDIA technology contributes.** Every language-model call runs on Nemotron through NVIDIA NIM: Nemotron 3.5 Super for the agents (document reading with verified quotes, the brief's short answer, and the agent loop's planning, SQL and evaluation, with reasoning on for planning and judging), and Nemotron 3 Ultra as the fallback when 3.5 Super is overloaded. Nemotron 3 Embed (`nvidia/nemotron-3-embed-1b`) embeds every memory and recall query for Meterless H-MEM. See "How WhyChain uses NVIDIA Nemotron".
+
+**What is unique about this use.** The sponsor technologies sit where they carry weight, not decoration:
+- Zetaris carries the one federated query that every computed number traces back to, so a judge can click any figure in a brief, see its SQL and re-run it through Zetaris.
+- Meterless memory is reused only under rules (a similar question, never as evidence), and its recall runs on Nemotron embeddings: a reworded question finds the right past finding 5 times in 6, against 2 in 6 with the mock (`scripts/recall_demo.py`).
+- Nemotron reads, plans, quotes and writes, but never produces a number or a verdict: those come from code and are checked against their cells. That design cut model calls per real-data question from 50 to 70 down to 5 to 9, and made the answers reproducible run to run.
+
 ## Setup (clean machine)
 
 Needs Python 3.11+, Node 20+, Docker.
@@ -334,13 +351,13 @@ The agent loop, then used for stock, backlog and risk questions, was slow (11 to
 | Track | What WhyChain shows | Evidence | Gap |
 |---|---|---|---|
 | **2 The agent that explains why (primary)** | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, red herrings are ruled out with reasons, and every action is sized from the data. | Results above: 6/6 real-data questions in three passes (two local, one through Zetaris), 62/62 computed findings identical; the simulated company's planted causes found with the right action, plus held-out questions | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker |
-| 1 Fragmented intelligence (context) | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. | Join tests in every run; the engine's fact query joins five sources in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
+| 1 Fragmented intelligence (context) | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. | Join tests in every run; the engine's fact query joins the Postgres order system and the seller CSV export (five tables) in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
 | 3 Reasoning architecture (context) | Code computes and agents reason: coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
 | Best use of NVIDIA Nemotron (in-kind award) | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
 
 ## Development tools
 
-The Official Rules (section 5) require teams to use **Cursor** for development, and the submission must explain how it was used (section 6). Work up to 22 Oct 19:00 IST was done in VS Code; Cursor had not been used. An earlier commit (`0e6b994`) removed a note about Cursor in the mistaken belief that the event page didn't mention it; it does, in the Official Rules. How that earlier in-window work counts is to be confirmed with the organizers (hackathons@genai.works). This section will say how Cursor was used once it has been.
+The Official Rules (section 5) require teams to use **Cursor** for development, and the submission must explain how it was used (section 6). Work in the window was done in VS Code until [FOR THE AUTHOR: time development moved to Cursor]. An earlier commit (`0e6b994`) removed a note about Cursor in the mistaken belief that the event page didn't mention it; it does, in the Official Rules. How that earlier in-window work counts is to be confirmed with the organizers (hackathons@genai.works). This section will say how Cursor was used once it has been.
 
 ## How WhyChain uses NVIDIA Nemotron
 
