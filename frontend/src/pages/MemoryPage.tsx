@@ -9,6 +9,9 @@ import { when } from "../lib/format";
 import { PageHeader } from "./History";
 
 const KINDS = ["all", "finding", "fact", "lesson", "hypothesis"] as const;
+const KIND_LABEL: Record<(typeof KINDS)[number], string> = { all: "All", finding: "Findings", fact: "Facts", lesson: "Lessons", hypothesis: "Hypotheses" };
+// consolidation can wrap a memory more than once ("Synthesis: Synthesis: ..."): show the prefix once
+const tidy = (s: string) => s.replace(/^(Synthesis:\s*)+/, "Synthesis: ");
 const KIND_TONE: Record<string, "green" | "slate" | "violet" | "amber"> = { finding: "green", fact: "slate", lesson: "violet", hypothesis: "amber" };
 
 export function MemoryPage() {
@@ -23,7 +26,12 @@ export function MemoryPage() {
     () => (data?.items ?? []).filter((m) => !(m.tags ?? []).includes("data_map")).filter((m) => kind === "all" || m.kind === kind),
     [data, kind],
   );
-  const tiers = data?.tiers ?? {};
+  // tier counts for this dataset's memories (the bridge's own counts cover every dataset)
+  const tiers = useMemo(() => {
+    const t: Record<string, number> = {};
+    for (const m of (data?.items ?? []).filter((m) => !(m.tags ?? []).includes("data_map"))) t[m.tier ?? ""] = (t[m.tier ?? ""] ?? 0) + 1;
+    return t;
+  }, [data]);
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <PageHeader
@@ -59,7 +67,7 @@ export function MemoryPage() {
                   kind === k ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
                 )}
               >
-                {k === "all" ? "All" : `${k}s`}
+                {KIND_LABEL[k]}
               </button>
             ))}
           </div>
@@ -99,7 +107,7 @@ function MemoryCard({ m }: { m: MemoryItem }) {
           {m.agent} · {when(m.created_at)}
         </span>
       </div>
-      <p className="mt-2 text-[13px] leading-relaxed text-slate-800">{m.content}</p>
+      <p className="mt-2 text-[13px] leading-relaxed text-slate-800">{tidy(m.content)}</p>
       <div className="mt-3 flex flex-wrap items-center gap-4 text-[11.5px] text-slate-500">
         {typeof m.confidence === "number" && (
           <div className="flex w-44 items-center gap-2">

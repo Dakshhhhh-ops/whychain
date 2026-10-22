@@ -1157,6 +1157,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         if supply and tasks.get(f["task_id"], {}).get("tool") == "duplicates":
             # not a share of the short units: the copies' own units, measured against the shortage
             return f" (the extra copies order units equal to {round(100 * sh, 1)}% of the shortage)"
+        if not supply and sh > 1:
+            return f" ({round(100 * sh, 1)}% of the rise: more than all of it, because other factors offset part)"
         return f" ({round(100 * sh, 1)}% {'of the short units' if supply else 'of the rise'})"
 
     # A disrupted port is why inbound orders are late, and waiting for stock is why dispatch slowed: each is shown

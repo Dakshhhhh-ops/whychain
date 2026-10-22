@@ -15,6 +15,14 @@ import { applyEvent, emptyState, foldEvents, type LiveState } from "../lib/runSt
 
 type Tab = "brief" | "board" | "network" | "evidence" | "memory" | "trace";
 
+/** "N computed, M re-run": engine results are computed from the federated data; cited SQL results are re-run. */
+function evidenceHint(evidence: Record<string, Evidence>, reverified: Record<string, boolean>): string {
+  const computed = Object.values(evidence).filter((e) => e.type === "analysis" || e.type === "optimization").length;
+  const rerun = Object.values(reverified).filter(Boolean).length;
+  const parts = [computed ? `${computed} computed` : "", rerun ? `${rerun} re-verified` : ""].filter(Boolean);
+  return parts.join(", ") || "from the agents' queries";
+}
+
 export function Investigation() {
   const { id = "" } = useParams();
   const [state, setState] = useState<LiveState>(emptyState());
@@ -189,8 +197,12 @@ export function Investigation() {
         <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Root causes" value={result ? causes.length : "—"} hint={result ? `${ruledOut.length} ruled out` : undefined} />
           <Stat label="Hypotheses" value={Object.keys(state.tasks).length} hint={`${state.rounds.length} round${state.rounds.length === 1 ? "" : "s"}`} />
-          <Stat label="SQL queries" value={num(state.queries)} hint={state.sqlErrors ? `${state.sqlErrors} repaired` : "via data harness"} />
-          <Stat label="Evidence" value={result ? Object.keys(evidence).length : "—"} hint={`${Object.values(state.reverified).filter(Boolean).length} re-verified`} />
+          <Stat
+            label="SQL queries"
+            value={num(state.queries)}
+            hint={state.sqlErrors ? `${state.sqlErrors} repaired` : (result?.harness ?? state.harness) === "zetaris" ? "via Zetaris" : "via data harness"}
+          />
+          <Stat label="Evidence" value={result ? Object.keys(evidence).length : "—"} hint={evidenceHint(evidence, state.reverified)} />
           <Stat label="Model calls" value={num(state.llmCalls)} hint={state.fallbacks ? `${state.fallbacks} fallbacks` : "no fallbacks"} />
           <Stat label="Escalations" value={state.escalations.length} hint="need approval" />
         </div>
@@ -467,7 +479,10 @@ function MemoryTab({ result }: { result: RunResult }) {
             ))}
           </ul>
         ) : (
-          <EmptyState title="No graph yet">Start the Meterless bridge to record the cause graph.</EmptyState>
+          <EmptyState title="No cause graph for this run here">
+            The connected Meterless World Model has no relations for this run. Runs from evaluation passes wrote theirs to a
+            separate, temporary memory; runs started in the app record them here.
+          </EmptyState>
         )}
       </Card>
       {joins.length > 0 && (

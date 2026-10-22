@@ -69,7 +69,8 @@ def kpis_and_problems(h: DataHarness) -> tuple[dict, list[dict]]:
           SUM(CASE WHEN status = 'BACKORDERED' THEN 1 ELSE 0 END) AS backordered,
           SUM(CASE WHEN status = 'BACKORDERED' THEN order_value_inr ELSE 0 END) AS value_at_risk
         FROM erp.sales_orders
-        WHERE status IN ('OPEN', 'BACKORDERED') AND CAST(promised_date AS DATE) BETWEEN DATE'{A}' AND date_add(DATE'{A}', 7)
+        WHERE status IN ('OPEN', 'BACKORDERED')
+          AND CAST(promised_date AS DATE) BETWEEN date_add(DATE'{A}', 1) AND date_add(DATE'{A}', 7)
         GROUP BY warehouse_id""")
     dc_status = {}
     for x in dcs:
