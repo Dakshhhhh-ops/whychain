@@ -17,15 +17,25 @@ def line(ok: bool | None, name: str, detail: str) -> None:
 
 def main() -> None:
     print(f"WhyChain doctor · harness preference: {SETTINGS.harness}\n")
-    # data
-    try:
-        with psycopg.connect(SETTINGS.pg_dsn, connect_timeout=3) as c:
-            n = c.execute("SELECT COUNT(*) FROM sales_orders").fetchone()[0]
-        line(True, "Postgres ERP", f"{n} sales orders")
-    except Exception as e:
-        line(False, "Postgres ERP", f"{str(e)[:90]}  (docker compose up -d; python -m datagen.load_postgres)")
-    gen = SETTINGS.data_dir / "manifest.json"
-    line(gen.exists(), "Generated files", str(SETTINGS.data_dir) if gen.exists() else "run python -m datagen.generate")
+    # data: each dataset's files, and its live tables in Postgres
+    from whychain.datasets import DATASETS, default_key
+
+    build = {"olist": "python -m datagen.olist", "kaveri": "python -m datagen.generate; python -m datagen.load_postgres"}
+    for key, ds in DATASETS.items():
+        tag = " (default)" if key == default_key() else ""
+        if not ds.available:
+            line(False, f"Data: {key}{tag}", f"no files in {ds.data_dir}  ({build.get(key, '')})")
+            continue
+        counts = ds.manifest.get("row_counts", {})
+        summary = ", ".join(f"{v:,} {k}" for k, v in list(counts.items())[:3])
+        line(True, f"Data: {key}{tag}", f"{'real' if ds.real else 'simulated'} · as of {ds.as_of} · {summary}")
+        src, tables = next(iter(ds.pg_tables.items()))
+        try:
+            with psycopg.connect(SETTINGS.pg_dsn, connect_timeout=3) as c:
+                n = c.execute(f'SELECT COUNT(*) FROM "{ds.pg_schema}"."{tables[-1] if key == "kaveri" else tables[0]}"').fetchone()[0]
+            line(True, f"  Postgres: {src}", f"{n:,} rows in {ds.pg_schema}.{tables[-1] if key == 'kaveri' else tables[0]}")
+        except Exception as e:
+            line(None, f"  Postgres: {src}", f"{str(e).splitlines()[0][:80]}  (CSV fallback will be used; docker compose up -d)")
     if not is_placeholder(SETTINGS.zetaris_api_key):
         from whychain.harness.zetaris import ZetarisHarness
 
