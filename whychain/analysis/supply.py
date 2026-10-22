@@ -543,6 +543,8 @@ def run_supply_task(eng: SupplyEngine, task: dict, eid_prefix: str) -> tuple[dic
                       if (s.get("ratio") or 0) >= 1.25 else "Orders did not rise by 25% or more.")
     else:
         raise ValueError(tool)
+    for ev in evidence.values():   # which harness the computed numbers' data came through (shown with the evidence)
+        ev.setdefault("harness", getattr(eng.h, "name", None))
     return ({"statement": task["statement"], "type": kind, "verdict": verdict, "claim": claim, "key_numbers": keys,
              "evidence_ids": [eid], "fixed": {"status": status, "is_cause": is_cause, "share_of_symptom": share,
                                               "reason": reason}}, evidence)

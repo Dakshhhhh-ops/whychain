@@ -156,6 +156,7 @@ export function Investigation() {
             <Badge tone={(result?.memory?.backend ?? state.memoryBackend) === "meterless" ? "green" : "slate"}>
               <Brain className="h-3 w-3" />
               {(result?.memory?.backend ?? state.memoryBackend) === "meterless" ? "Meterless memory" : "Local memory"}
+              {(result?.memory?.embedder ?? state.memoryEmbedder)?.includes("nemotron") ? " · Nemotron embeddings" : ""}
             </Badge>
           </div>
         </div>

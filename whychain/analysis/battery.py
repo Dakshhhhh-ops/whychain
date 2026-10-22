@@ -449,6 +449,8 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         keys += [_ref(eid, res, k, c) for k in range(3) for c in ("mean_transit_days", "late_pct")]
     else:
         raise ValueError(tool)
+    for ev in evidence.values():   # which harness the computed numbers' data came through (shown with the evidence)
+        ev.setdefault("harness", getattr(engine.h, "name", None))
     return ({"statement": task["statement"], "type": kind, "verdict": verdict, "claim": claim, "key_numbers": keys,
              "evidence_ids": cite, "fixed": {"status": status, "is_cause": is_cause, "share_of_symptom": share,
                                              "reason": reason}}, evidence)

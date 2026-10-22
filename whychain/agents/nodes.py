@@ -839,7 +839,7 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
     def add_ev(res) -> str:
         n_ev[0] += 1
         eid = f"A.A{n_ev[0]}"
-        evidence[eid] = res.evidence(eid, "A", "Analysis engine")
+        evidence[eid] = {**res.evidence(eid, "A", "Analysis engine"), "harness": ctx.harness.name}
         return eid
 
     if "transit" in stages:

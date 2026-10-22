@@ -58,6 +58,7 @@ export type LiveState = {
   elapsed: number;
   harness?: string;
   memoryBackend?: string;
+  memoryEmbedder?: string;
   dataset?: string;
   error?: string;
   events: TraceEvent[];
@@ -99,6 +100,7 @@ export function applyEvent(s: LiveState, e: TraceEvent): LiveState {
       n.harness = e.harness;
       n.dataset = e.dataset;
       n.memoryBackend = e.memory?.backend;
+      n.memoryEmbedder = e.memory?.embedder ?? undefined;
       break;
     case "agent_start": {
       const st = stageOf(e.agent);

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import operator
+import re
 import os
 import time
 import traceback
@@ -135,6 +136,32 @@ def _git_version() -> dict:
         return {"commit": None, "dirty": None}
 
 
+# Words that make a question about this kind of data. A question with none of them (and no place, product or month
+# from the data) is answered at once instead of starting an open-ended investigation of nothing.
+_TOPIC = re.compile(
+    r"\b(late|lateness|delay\w*|deliver\w*|on[- ]time|order\w*|backorder\w*|backlog\w*|stock\w*|shortage\w*|"
+    r"short|inventory|reorder\w*|suppl\w*|purchase\w*|po|pos|carrier\w*|transit|ship\w*|freight|warehouse\w*|dc|"
+    r"dcs|seller\w*|customer\w*|review\w*|promise\w*|demand|sales|revenue|volume|return\w*|cancel\w*|"
+    r"payment\w*|strike\w*|port|ports|weather|holiday\w*|carnival|black friday|peak|promotion\w*|promo\w*|"
+    r"risk|logistic\w*|fulfil\w*|dispatch\w*|hand[- ]?over|lane\w*|price\w*|cost\w*|sku\w*|product\w*|"
+    r"january|february|march|april|may|june|july|august|september|october|november|december|20\d\d)\b", re.I)
+
+
+def on_topic(question: str, ctx: Ctx) -> bool:
+    if _TOPIC.search(question):
+        return True
+    q = question.lower()
+    try:   # a place, warehouse or category from the data also counts
+        names = {str(x).lower() for t in ctx.harness.catalog() for x in [t.source, t.table]}
+    except Exception:
+        names = set()
+    from whychain.analysis.model import BR_STATE_NAMES
+    names |= {n.lower() for n in BR_STATE_NAMES.values()}
+    names |= {w for w in ("pune", "mumbai", "chennai", "nashik", "surat", "hyderabad", "bengaluru", "thane",
+                          "kolhapur", "aurangabad", "coimbatore", "rio", "sao paulo", "são paulo", "voltix")}
+    return any(re.search(rf"\b{re.escape(n)}\b", q) for n in names if len(n) > 2)
+
+
 def investigate(question: str, harness_pref: str | None = None, listener=None, ctx: Ctx | None = None,
                 notes: list[str] | None = None, dataset: str | None = None) -> dict:
     """Run one investigation end to end. Returns the final state plus run metadata."""
@@ -146,6 +173,23 @@ def investigate(question: str, harness_pref: str | None = None, listener=None, c
     version = code_version()
     t.event("run_start", "System", question=question, dataset=ds_key, harness=ctx.harness.name, harness_notes=notes,
             memory=ctx.memory.status(), models=ctx.llm.available(), today=str(date.today()), code=version)
+    if not on_topic(question, ctx):
+        # nothing in the question is about orders, deliveries, stock or the places and products in this data
+        samples = "; ".join(f'"{x["question"]}"' for x in (getattr(ctx.dataset, "samples", None) or [])[:3])
+        brief = ("## Answer\nThis question doesn't mention anything WhyChain can investigate in this data: orders, "
+                 "deliveries, stock, suppliers, carriers, places, products or a period. No investigation was started "
+                 "and no model was called." + (f"\n\nTry, for example: {samples}" if samples else ""))
+        final = {"question": question, "headline": "Not a question about this data: nothing was investigated.",
+                 "brief": brief, "tasks": [], "findings": [], "evidence": {}, "verdicts": {}, "actions": [],
+                 "risks": [], "evaluations": [], "round": 0}
+        t.event("off_topic", "System", note="no supply-chain term, place, product or period in the question")
+        stats = t.llm_stats()
+        t.event("run_end", "System", status="ok", **stats)
+        result = {"run_id": t.run_id, "status": "ok", "dataset": ds_key, "harness": ctx.harness.name,
+                  "harness_notes": notes, "memory": ctx.memory.status(), "code": version, "llm": stats, **final}
+        t.save("result.json", result)
+        t.save("brief.md", f"# {final['headline']}\n\n{brief}")
+        return result
     graph = build_graph(ctx)
     try:
         final = graph.invoke({"question": question}, {"recursion_limit": 60})

@@ -114,3 +114,14 @@ def test_a_failed_reporter_says_incomplete_and_lists_what_was_confirmed(tmp_path
     assert res["status"] == "incomplete"
     assert res["headline"].startswith("Incomplete: the brief couldn't be written (the run's time limit was reached")
     assert "## Confirmed findings" in res["brief"]
+
+
+def test_an_off_topic_question_is_answered_at_once_without_a_model(tmp_path):
+    from whychain.graph import on_topic
+
+    ctx = make_ctx(tmp_path)
+    assert not on_topic("purple elephant banana tuesday?", ctx)
+    assert on_topic("What happened in Pune?", ctx) and on_topic("Why is Bahia so slow?", ctx)
+    res = investigate("purple elephant banana tuesday?", ctx=ctx)
+    assert res["headline"].startswith("Not a question about this data")
+    assert not res["llm"].get("calls")

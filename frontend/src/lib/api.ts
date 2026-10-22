@@ -187,7 +187,7 @@ export type RunResult = {
   round?: number;
   harness?: string;
   harness_notes?: string[];
-  memory?: { online: boolean; backend: string; url?: string };
+  memory?: { online: boolean; backend: string; url?: string; embedder?: string | null };
   llm?: { calls: number; by_provider: Record<string, number>; fallbacks: number; tokens: number };
   tasks?: TaskT[];
   findings?: Finding[];
