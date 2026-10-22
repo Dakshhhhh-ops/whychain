@@ -143,8 +143,9 @@ python -m whychain.api                           # http://localhost:8000
 # Frontend development with hot reload (proxies /api to :8000)
 cd frontend && npm run dev                       # http://localhost:5173
 
-python -m whychain.cli "Why have deliveries to Nashik been late since September?"
-python -m evals.run_evals                        # score all planted scenarios
+python -m whychain.cli "Why did late deliveries jump to 21% for orders placed in March 2018?"
+python -m whychain.cli --dataset kaveri "Why have deliveries to Nashik been late since September?"
+python -m evals.run_evals --dataset olist        # score the real-data cases (or --dataset kaveri, or all)
 python -m pytest -q tests                        # wiring test (no API keys needed)
 ```
 
@@ -152,11 +153,12 @@ python -m pytest -q tests                        # wiring test (no API keys need
 
 | Screen | What it shows |
 |---|---|
-| **Control tower** | Live KPIs (on-time rate, orders due, value at risk, late inbound) and a **Needs attention** list. Generic rules running SQL through the data harness find lanes whose on-time rate fell, DCs with backordered orders, categories running short, late suppliers and disrupted ports. Each item has an **Investigate why** button. Below is a supply network map (suppliers → entry ports → DCs → customer cities), coloured by live status. |
+| **Control tower** | On real data: a monthly chart of orders and late deliveries, with **verified external events** marked on it (hover one to read it, with links to its sources), KPI cards, and **incidents found in the data** by plain SQL rules (late-delivery spikes, missed seller hand-overs, review-score dips, reviews mentioning strikes, chronically late states). Each incident has an **Investigate why** button. On the simulated company: live KPIs, a **Needs attention** list (lanes whose on-time rate fell, backordered DCs, late suppliers, disrupted ports) and a supply network map coloured by live status. |
 | **Investigation (live)** | Agents stream their work as it happens (Server-Sent Events). A stage tracker runs Recall → Map data → Plan → Investigate → Challenge → Act → Report. The hypothesis board updates as findings and verdicts arrive, including the Evaluator's send-backs, and the activity feed shows every query, document read, re-verification and escalation. |
 | **Brief** | The answer, with every number citing clickable evidence; recommended actions with cost and approve/reject (decisions are written to Meterless memory); risks; lessons saved. Export to Markdown or print to PDF. |
 | **Deliverables** | After approval, the Action Executor's output appears on the action card: transfer orders, cancellation lists and draft emails, each downloadable. |
-| **Network** | The supply network with the confirmed cause's path lit up, e.g. Voltix → Chennai port → Pune DC. |
+| **Regions** (real data) | A tile map of Brazil's 27 states. It shows how much each state's late-delivery rate rose in the month the question is about, against the six months before, and outlines the states named in the confirmed causes. Hover a state for its late rate and carrier transit time. |
+| **Network** (simulated company) | The supply network with the confirmed cause's path lit up, e.g. Voltix → Chennai port → Pune DC. |
 | **Evidence** | Every SQL result (query, rows, re-verification badge) and every document quote (verified word for word). |
 | **Memory & graph** | What was recalled from earlier runs, the cause graph in the Meterless World Model, and the data map's verified joins. |
 | **Trace** | Every event, filterable by agent, downloadable as JSONL. Any finished run can be replayed. |
