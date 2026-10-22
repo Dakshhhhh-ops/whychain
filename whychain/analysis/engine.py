@@ -629,6 +629,78 @@ class Engine:
                       "median_transit_days", "focus_orders", "focus_late_pct"], rows, summary, method, "measured",
                       self.provenance())
 
+    # ------------------------------------------------------------------ sizing actions
+    def transit_fix(self, s: Scope) -> Result:
+        """Per area where transit got slower: how much slower, and how many late orders would have been on time had
+        transit been no slower than 4 in 5 normal parcels (the reference's 80th percentile, for the same area when the
+        reference has it, else for the whole reference)."""
+        dim = self.m.map_within
+        rows = []
+        for seg, g in s.focus.groupby(dim):
+            r = s.ref[s.ref[dim] == seg]
+            same = len(r) >= 20
+            r = r if same else s.ref
+            if len(g) < 20 or r.empty or g["t"].mean() <= r["t"].mean():
+                continue
+            p80 = float(np.quantile(r["t"], 0.8))
+            capped = g["handover"] + pd.to_timedelta(np.minimum(g["t"], p80), unit="D")
+            saved = int(((g["late"] == 1) & (capped <= g["promised"])).sum())
+            rows.append([str(seg), len(g), r1(g["t"].mean()), r1(r["t"].mean()), r1(p80), int(g["late"].sum()), saved,
+                         "same area" if same else s.ref_label])
+        rows.sort(key=lambda x: -x[6])
+        method = ("For each area where transit got slower: mean transit days in the focus vs its reference, and the "
+                  "late orders that would have arrived on time had each parcel's transit been at most the reference's "
+                  "80th percentile (hand-over unchanged).")
+        return Result("transit_fix", "Transit back to normal, by area",
+                      [dim, "orders", "mean_transit_days", "ref_mean_transit_days", "ref_p80_transit_days",
+                       "late_orders", "on_time_at_normal_transit", "reference"], rows[:10],
+                      {"dimension": dim, "saved": sum(x[6] for x in rows)}, method, "measured", self.provenance())
+
+    def handover_fix(self, s: Scope) -> Result:
+        """Per sender (seller or warehouse) whose hand-over got slower: how slow against its normal, and how many late
+        orders would have been on time had hand-over been no slower than 4 in 5 of its normal orders."""
+        dim = "seller_id" if "seller_id" in self.m.dims else "warehouse_id"
+        where = "seller_state" if dim == "seller_id" and "seller_state" in s.focus else None
+        all_p80 = float(np.quantile(s.ref["h"], 0.8)) if len(s.ref) else float("nan")
+        all_mean = float(s.ref["h"].mean()) if len(s.ref) else float("nan")
+        rows = []
+        for seg, g in s.focus.groupby(dim):
+            if len(g) < 10:
+                continue
+            r = s.ref[s.ref[dim] == seg]
+            own = len(r) >= 10
+            p80 = float(np.quantile(r["h"], 0.8)) if own else all_p80
+            normal = float(r["h"].mean()) if own else all_mean
+            if p80 != p80 or g["h"].mean() <= normal:
+                continue  # no normal to compare with, or not slower than normal
+            capped = g["delivered"] - pd.to_timedelta(np.maximum(g["h"] - p80, 0), unit="D")
+            saved = int(((g["late"] == 1) & (capped <= g["promised"])).sum())
+            rows.append([str(seg), str(g[where].mode().iat[0]) if where else "", len(g), r1(g["h"].mean()), r1(normal),
+                         r1(p80), int(g["late"].sum()), saved])
+        rows.sort(key=lambda x: -x[7])
+        method = ("For each sender with 10+ focus orders whose mean hand-over got slower than its normal (its own "
+                  "reference orders, or the whole reference if it had fewer than 10): the late orders that would have "
+                  "arrived on time had hand-over been at most its normal 80th percentile (transit unchanged).")
+        return Result("handover_fix", f"Hand-over back to normal, by {self.m.dims.get(dim, dim)}",
+                      [dim, "based_in", "orders", "mean_handover_days", "normal_mean_handover_days",
+                       "normal_p80_handover_days", "late_orders", "on_time_at_normal_handover"], rows[:10],
+                      {"dimension": dim, "saved": sum(x[7] for x in rows)}, method, "measured", self.provenance())
+
+    def window_buffer(self, s: Scope, days: int, start: date | None = None, end: date | None = None) -> Result:
+        """Late orders in the focus (optionally only those handed over between start and end) that a promise
+        extended by `days` would have turned into on-time deliveries."""
+        g = s.focus
+        if start is not None:
+            g = g[(g["handover"] >= pd.Timestamp(start)) & (g["handover"] <= pd.Timestamp(end or start))]
+        late = int(g["late"].sum())
+        late_after = int((g["delivered"] > g["promised"] + pd.Timedelta(days=int(days))).sum())
+        rows = [["orders", len(g)], ["late orders", late], ["promise extended by (days)", int(days)],
+                ["late with the extended promise", late_after], ["late orders avoided", late - late_after]]
+        method = ("The same orders recounted against their promised date plus the extension"
+                  + (f", for parcels handed to the carrier from {start} to {end or start}." if start else "."))
+        return Result("window_buffer", "Promise extension for a window", ["measure", "result"], rows,
+                      {"avoided": late - late_after, "days": int(days)}, method, "measured", self.provenance())
+
     def promise_buffer(self, s: Scope, dim: str | None = None, quantile: float = 0.8) -> Result:
         """Prescriptive: how many days to add to each segment's promise so that (in the focus orders) the given
         share would have arrived on time, and how many late orders that would have avoided."""

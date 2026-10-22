@@ -12,6 +12,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+BR_STATE_NAMES = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia", "CE": "Ceará",
+    "DF": "Distrito Federal", "ES": "Espírito Santo", "GO": "Goiás", "MA": "Maranhão", "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul", "MG": "Minas Gerais", "PA": "Pará", "PB": "Paraíba", "PR": "Paraná",
+    "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima", "SC": "Santa Catarina", "SP": "São Paulo",
+    "SE": "Sergipe", "TO": "Tocantins",
+}
+
 BR_REGION = {
     "AC": "North", "AM": "North", "AP": "North", "PA": "North", "RO": "North", "RR": "North", "TO": "North",
     "AL": "Northeast", "BA": "Northeast", "CE": "Northeast", "MA": "Northeast", "PB": "Northeast", "PE": "Northeast",
@@ -42,6 +51,7 @@ class FactModel:
                                                # SKU on the order's requested ship date (datasets with stock data)
     currency: str = "BRL"
     unit: str = "orders"
+    place_names: dict[str, str] = field(default_factory=dict)  # code -> name, for labels ("RJ (Rio de Janeiro)")
 
 
 OLIST = FactModel(
@@ -65,6 +75,7 @@ LEFT JOIN sellers.products p ON p.product_id = i.product_id""",
     map_within="customer_state",
     region_map=BR_REGION,
     region_source="customer_state",
+    place_names=BR_STATE_NAMES,
     reviews_sql="""SELECT order_id, review_id, review_score,
        COALESCE(review_comment_title, '') AS title, COALESCE(review_comment_message, '') AS message
 FROM feedback.reviews""",

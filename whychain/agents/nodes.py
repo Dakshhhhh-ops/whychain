@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import date, timedelta
 
@@ -811,29 +812,48 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
             evidence["A.A1"] = res.evidence("A.A1", "A", "Analysis engine")
             need = [r for r in res.rows if r[4] > 0][:5]
             if need:
-                where = ", ".join(f"{r[0]} +{r[4]} days" for r in need)
+                where = ", ".join(f"{r[0]} +{r[4]} {'day' if r[4] == 1 else 'days'}" for r in need)
                 avoided = sum(r[5] - r[6] for r in need)
                 add(f"Add delivery-promise buffers where transit outruns the promise: {where}",
-                    f"Set each area's promised window to the 80th percentile of actual delivery time. On the orders "
+                    f"Set each area's promised window so that four in five orders arrive within it. On the orders "
                     f"in question, this would have turned {avoided} late deliveries into on-time ones in these areas.",
                     [stages.get("transit", stages.get("promise"))["task_id"]], ["A.A1"], avoided,
                     ["changes what customers are promised"])
         except Exception as e:
             ctx.tracer.event("agent_error", agent, error=f"promise buffer failed: {e}"[:200])
+    n_ev = [2]   # A.A1 is the promise buffer, A.A2 the carrier options
+
+    def add_ev(res) -> str:
+        n_ev[0] += 1
+        eid = f"A.A{n_ev[0]}"
+        evidence[eid] = res.evidence(eid, "A", "Analysis engine")
+        return eid
+
     if "transit" in stages:
         f = stages["transit"]
-        seg = next((g for g in state["findings"] if tasks.get(g["task_id"], {}).get("tool") == "segments"
-                    and tasks[g["task_id"]]["params"].get("dim") in ("carrier_id", eng.m.map_within)), None)
-        detail = ""
-        if seg:
-            ev = state["evidence"].get(seg["evidence_ids"][0], {})
-            if ev.get("rows"):
-                top = ev["rows"][0]
-                detail = (f" Start with {top[0]}: {top[7]}% of the rise from {top[8]}% of the orders "
-                          f"({top[4]}% -> {top[3]}% late).")
-        add("Escalate carrier transit performance with the carrier, with weekly transit monitoring by area",
-            "Share the transit figures with the carrier, agree recovery targets, and alert when an area's weekly mean "
-            "transit moves 1 day above its normal." + detail, [f["task_id"]], f["evidence_ids"] + (seg["evidence_ids"][:1] if seg else []))
+        fair = next((sc for sc in state["analysis"].get("scopes", []) if sc.get("compare_with")), None)
+        normal = "in places at a similar distance" if fair else "normally"
+        top = []
+        try:
+            res_t = eng.transit_fix(build_scope(eng, fair or primary))
+            top = [r for r in res_t.rows if r[6] > 0 and r[2] - r[3] >= 0.25][:3]
+            eid_t = add_ev(res_t) if top else None
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"transit fix failed: {e}"[:200])
+        if top:
+            saved = sum(r[6] for r in top)
+            add(f"Get transit back to normal in {', '.join(r[0] for r in top)}: {saved:,} late orders would have "
+                "arrived on time",
+                "; ".join(f"{r[0]}: transit {r[2]} days on average against {r[3]} {normal}, over {r[1]:,} orders; "
+                          f"{r[6]} of its {r[5]} late orders would have been on time had four in five parcels arrived "
+                          f"within {r[4]:g} days" for r in top)
+                + ". Agree these recovery targets with the carriers serving the areas, and alert when an area's "
+                "weekly average transit moves a day above normal.", [f["task_id"]], [eid_t] + f["evidence_ids"][:1],
+                saved)
+        else:
+            add("Escalate carrier transit performance with the carrier, with weekly transit monitoring by area",
+                "Share the transit figures with the carrier, agree recovery targets, and alert when an area's weekly "
+                "average transit moves a day above its normal.", [f["task_id"]], f["evidence_ids"])
     if "transit" in stages and "carrier_id" in eng.m.dims and "warehouse_id" in eng.m.dims:
         # a transit problem concentrated in one carrier: compare it with the carriers serving the same warehouses
         try:
@@ -871,24 +891,85 @@ def act_battery(state: dict, ctx: Ctx) -> dict:
             [stages["handover"]["task_id"], stock["task_id"]], stock["evidence_ids"])
     elif "handover" in stages:
         f = stages["handover"]
-        add("Enforce hand-over deadlines with the slowest senders",
-            "Rank sellers (or warehouses) by late hand-overs in the period and agree corrective plans.",
-            [f["task_id"]], f["evidence_ids"])
+        top = []
+        try:
+            res_h = eng.handover_fix(build_scope(eng, primary))
+            top = [r for r in res_h.rows if r[7] > 0 and r[3] - r[4] >= 0.25][:3]
+            eid_h = add_ev(res_h) if top else None
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"hand-over fix failed: {e}"[:200])
+        if top:
+            sellers = res_h.columns[0] == "seller_id"
+            kind = "sellers" if sellers else "warehouses"
+            where = f" (based in {', '.join(dict.fromkeys(r[1] for r in top if r[1]))})" if sellers else \
+                f" ({', '.join(r[0] for r in top)})"
+            saved = sum(r[7] for r in top)
+            add(f"Fix hand-over at the {len(top)} slowest {kind}{where}: {saved:,} late orders would have arrived on "
+                "time",
+                "; ".join(f"{'seller ' + r[0] if sellers else r[0]}: hand-over {r[3]} days on average against "
+                          f"{r[4]} normally, over {r[2]:,} orders; {r[7]} of its {r[6]} late orders would have been on "
+                          f"time at its normal pace" for r in top)
+                + ". Agree a hand-over deadline with each at its normal pace, and review it weekly.",
+                [f["task_id"]], [eid_h] + f["evidence_ids"][:1], saved)
+        else:
+            add("Enforce hand-over deadlines with the slowest senders",
+                "Rank sellers (or warehouses) by late hand-overs in the period and agree corrective plans.",
+                [f["task_id"]], f["evidence_ids"])
     if "volume" in tools:
         f = tools["volume"]
-        add("Plan peak capacity before the next surge", "Pre-book carrier pick-ups and extend promises in the weeks "
-            "when orders run well above the usual daily level.", [f["task_id"]], f["evidence_ids"])
+        vs = state["evidence"].get(f["evidence_ids"][0], {}).get("summary", {})
+        dh, dt = vs.get("handover_change_days") or 0, vs.get("transit_change_days") or 0
+        days = max(1, math.ceil(max(dh, 0) + max(dt, 0)))
+        try:
+            res_w = eng.window_buffer(build_scope(eng, primary), days)
+            eid_w, avoided, late = add_ev(res_w), res_w.summary["avoided"], res_w.rows[1][1]
+            add(f"Plan for the next surge: extend promises by {days} {'day' if days == 1 else 'days'} when orders run "
+                f"{vs.get('orders_per_day_ratio')}x the usual level",
+                f"Orders ran {vs.get('focus_orders_per_day')} a day against {vs.get('ref_orders_per_day')} in the four "
+                f"weeks before; hand-over slowed by {dh} days and transit by {dt}. Pre-book carrier pick-ups for about "
+                f"{vs.get('focus_orders_per_day')} orders a day before the next peak, and extend promises by {days} "
+                f"{'day' if days == 1 else 'days'} for orders placed in it: on these orders that would have avoided "
+                f"{avoided} of {late} late deliveries.", [f["task_id"]], [eid_w] + f["evidence_ids"][:1], avoided,
+                ["changes what customers are promised"])
+        except Exception as e:
+            ctx.tracer.event("agent_error", agent, error=f"surge plan failed: {e}"[:200])
     for f in causes:
         t = tasks.get(f["task_id"], {})
         if t.get("tool") == "event":
             name = f["statement"].split(" (")[0]
-            add(f"Contingency playbook for events like: {name}",
-                "When a comparable event starts, extend promises for parcels in transit and notify affected customers.",
-                [f["task_id"]], f["evidence_ids"], approval=["changes what customers are promised"])
+            es = state["evidence"].get(f["evidence_ids"][0], {}).get("summary", {})
+            jump = es.get("transit_jump_vs_trend_days") or 0
+            days = max(1, math.ceil(jump))
+            try:
+                res_w = eng.window_buffer(build_scope(eng, primary), days, date.fromisoformat(es["start"]),
+                                          date.fromisoformat(es["end"]))
+                eid_w, avoided, late = add_ev(res_w), res_w.summary["avoided"], res_w.rows[1][1]
+                add(f"Playbook for events like {name}: extend promises by {days} {'day' if days == 1 else 'days'} "
+                    "for parcels handed over during it",
+                    f"Transit rose {jump} days against the prior trend for parcels handed over during the event. "
+                    + (f"Extending their promises by {days} {'day' if days == 1 else 'days'} would have avoided "
+                       f"{avoided} of {late} late deliveries on these orders. " if late else "")
+                    + "When a comparable event starts, extend the promise for parcels in transit and tell the "
+                    "customers.", [f["task_id"]], [eid_w] + f["evidence_ids"][:1], avoided or None,
+                    ["changes what customers are promised"])
+            except Exception as e:
+                ctx.tracer.event("agent_error", agent, error=f"event playbook failed: {e}"[:200])
         if t.get("tool") == "segments":
-            add("Address the order mix behind the gap",
-                "Serve these customers from closer stock or sellers where possible, and set promises by distance.",
-                [f["task_id"]], f["evidence_ids"])
+            ev = state["evidence"].get(f["evidence_ids"][0], {})
+            dim = t.get("params", {}).get("dim")
+            label = eng.m.dims.get(dim, dim)
+            segs = [r for r in ev.get("rows", []) if not str(r[0]).startswith("(") and (r[1] or 0) >= 30]
+            if len(segs) >= 2:
+                worst, best = max(segs, key=lambda r: r[3]), min(segs, key=lambda r: r[3])
+                add(f"Ship more of these orders from nearby: by {label}, '{worst[0]}' orders were {worst[3]}% late "
+                    f"against {best[3]}% for '{best[0]}'",
+                    f"'{worst[0]}': {worst[1]:,} orders, {worst[3]}% late; '{best[0]}': {best[1]:,} orders, "
+                    f"{best[3]}% late. Route orders to closer sellers or stock where possible, and set promises by "
+                    f"{label}.", [f["task_id"]], f["evidence_ids"])
+            else:
+                add("Address the order mix behind the gap",
+                    "Serve these customers from closer stock or sellers where possible, and set promises by distance.",
+                    [f["task_id"]], f["evidence_ids"])
     ctx.tracer.event("agent_end", agent, actions=[(a["id"], a["title"], a["needs_approval"]) for a in actions])
     for a in actions:
         if a["needs_approval"]:
@@ -1087,6 +1168,23 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
         held = (f", held up at {name}" + (f" by a {why}" if why else "")) if name else ", held up at a disrupted port"
         return _short(f["statement"]) + held + share_txt(f)
 
+    # A stage re-tested against a fairer comparison (places at a similar distance) is the same cause, checked
+    # again: shown under it, not as a second cause (its share would double-count the rise).
+    also: dict[str, list[tuple[str, dict]]] = {}
+
+    def _stage(f):
+        t = tasks.get(f["task_id"], {})
+        return t.get("params", {}).get("stage") if t.get("tool") == "stage" else None
+
+    def _fair(f):
+        return bool((tasks.get(f["task_id"], {}).get("scope") or {}).get("compare_with"))
+
+    for f in [f for f in causes if _stage(f) and _fair(f)]:
+        main = next((g for g in causes if _stage(g) == _stage(f) and not _fair(g)), None)
+        if main:
+            causes = [g for g in causes if g is not f]
+            also.setdefault(main["task_id"], []).append(("Against places at a similar distance", f))
+
     # headline, in code
     if event_f:
         e = event_f[0]
@@ -1110,6 +1208,8 @@ def report_battery(state: dict, ctx: Ctx) -> dict:
                 why = held_by[f["task_id"]]
                 label = "Why dispatch slowed" if tool_of.get(why["task_id"]) == "stock_wait" else "Why they are late"
                 lines.append(f"   - {label}: {why['claim']} {_cites(why)}")
+            for label, g in also.get(f["task_id"], []):
+                lines.append(f"   - {label}{share_txt(g)}: {g['claim']} {_cites(g)}")
     else:
         lines.append("No cause passed the tests.")
     if where:

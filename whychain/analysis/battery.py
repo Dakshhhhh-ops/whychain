@@ -124,7 +124,8 @@ def plan_battery(question: str, engine: Engine, as_of: date) -> dict:
     named = events_in_text(question, ev)
     explicit_base = baseline_from_question(question, as_of)
     scopes = []
-    place_label = ", ".join(v for vals in places.values() for v in vals)
+    names = engine.m.place_names
+    place_label = ", ".join(f"{v} ({names[v]})" if v in names else v for vals in places.values() for v in vals)
     short_named = [x for x in named if _duration(ev, x) is not None and _duration(ev, x) <= SHORT_EVENT_DAYS]
     if short_named:  # a question about a dated event: the event's own window is the scope
         period = None
@@ -178,7 +179,8 @@ def plan_battery(question: str, engine: Engine, as_of: date) -> dict:
         add("volume", "A surge in orders overloaded hand-over or transit", primary)
     else:
         second = "interstate" if "interstate" in engine.m.dims else "carrier_id"
-        add("segments", f"These orders differ in {engine.m.dims.get(second, second)} (a mix effect)", primary, dim=second)
+        add("segments", f"A different mix of orders (by {engine.m.dims.get(second, second)}) explains part of the gap",
+            primary, dim=second)
     add("data_quality", "The symptom is a data artefact (missing or impossible dates, duplicates, definition)", primary)
     if engine.m.reviews_sql:
         add("text", "Customer reviews describe the problem", primary)
@@ -279,7 +281,7 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         keys += [_ref(eid, res, fi, "late_pct"), _ref(eid, res, ri, "late_pct"), _ref(eid, res, fi, "orders"),
                  _ref(eid, res, fi, "late_orders"), _ref(eid, res, di, "late_pct"), _ref(eid, res, di, "ci_low_pct"),
                  _ref(eid, res, di, "ci_high_pct")]
-        claim = (f"{s['focus_late']:,} of {s['focus_orders']:,} delivered orders were late ({focus_rate}%), against "
+        claim = (f"{s['focus_late']:,} of {s['focus_orders']:,} delivered {spec['label']} were late ({focus_rate}%), against "
                  f"{ref_rate}% for {s['reference']}: a difference of {res.rows[di][3]} points (confidence interval "
                  f"{res.rows[di][4]} to {res.rows[di][5]}).")
         verdict, status, reason = "measured", "confirmed", "Measured directly by the analysis engine."
@@ -291,14 +293,18 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
         share = (sh / 100) if sh is not None and sh == sh else None
         keys += [_ref(eid, res, i, c) for c in ("focus_median_days", "ref_median_days", "focus_p80_days",
                                                  "ref_p80_days", "share_of_rise_pct")]
-        claim = (f"{r[1].capitalize()}: median {r[2]} days vs {r[3]} ({'baseline' if spec['mode'] == 'time' else 'reference'}),"
-                 f" 80th percentile {r[4]} vs {r[5]} days. Reverting it alone, in a counterfactual, "
-                 f"{'removes' if sh and sh > 0 else 'changes'} {sh}% of the {rise}-point rise (from {ref_rate}% to "
-                 f"{focus_rate}%).")
+        then = ("at baseline" if spec["mode"] == "time" else
+                "in places at a similar distance" if spec.get("compare_with") else "for the other orders")
+        claim = (f"{r[1].capitalize()}: typically {r[2]} days against {r[3]} {then}; four in five orders within {r[4]} days "
+                 f"against {r[5]}. " + (f"Had this stage stayed as it was {then}, {sh}% of the {rise}-point rise "
+                                       f"(from {ref_rate}% to {focus_rate}% late) would not have happened."
+                                       if sh is not None and sh > 0 else
+                                       f"This stage moved the other way (share of the {rise}-point rise, from "
+                                       f"{ref_rate}% to {focus_rate}% late: {sh}%)."))
         if rise is None or rise <= 0.5:
             verdict, kind = "inconclusive", "hypothesis"
-            claim = (f"{r[1].capitalize()}: median {r[2]} days vs {r[3]}, 80th percentile {r[4]} vs {r[5]} days. There is "
-                     f"no rise to explain in this scope ({focus_rate}% vs {ref_rate}%).")
+            claim = (f"{r[1].capitalize()}: typically {r[2]} days against {r[3]}; four in five orders within {r[4]} days against "
+                     f"{r[5]}. There is no rise to explain in this scope ({focus_rate}% vs {ref_rate}% late).")
             keys = [k for k in keys if k["column"] != "share_of_rise_pct"]
             share, reason = None, "Not applicable: the late rate did not rise in this scope."
         elif share is not None and share >= CAUSE_SHARE:
@@ -313,18 +319,25 @@ def run_task(engine: Engine, task: dict, eid_prefix: str) -> tuple[dict, dict]:
     elif tool == "segments":
         s = res.summary
         conc = s["concentrated_in"]
-        top = res.rows[:3]
-        keys += [_ref(eid, res, k, "share_of_rise_pct") for k in range(min(3, len(res.rows)))]
-        keys += [_ref(eid, res, k, c) for k in range(min(3, len(res.rows)))
-                 for c in ("share_of_focus_orders_pct", "focus_late_pct", "ref_late_pct")]
-        parts = "; ".join(f"{r[0]}: {r[7]}% of the rise from {r[8]}% of the orders ({r[4]}% -> {r[3]}% late)" for r in top)
-        claim = f"Largest contributions by {s['dimension']}: {parts}."
+        idx = [i for i, r in enumerate(res.rows) if not str(r[0]).startswith("(")][:3]   # not the summary row
+        top = [res.rows[i] for i in idx]
+        label = engine.m.dims.get(s["dimension"], s["dimension"])
+        keys += [_ref(eid, res, i, "share_of_rise_pct") for i in idx]
+        keys += [_ref(eid, res, i, c) for i in idx for c in ("share_of_focus_orders_pct", "focus_late_pct", "ref_late_pct")]
+        if len(idx) <= 1:
+            keys = keys[:2]
+            claim = (f"All of these orders share one {label}" + (f" ({top[0][0]})" if top else "")
+                     + ": there is nothing to compare within it.")
+        else:
+            parts = "; ".join(f"{r[0]}: {r[7]}% of the rise from {r[8]}% of the orders ({r[4]}% -> {r[3]}% late)"
+                              for r in top)
+            claim = f"Where the rise sits, by {label}: {parts}."
         mix = s.get("mix_share_pct")
         keys.append(_ref(eid, res, len(res.rows) - 1, "share_of_rise_pct"))
         if mix is not None and mix >= 25:
             share, is_cause, verdict, status = mix / 100, True, "supports", "confirmed"
-            reason = f"A mix shift explains {mix}% of the gap."
-            claim += f" Mix effect: {mix}% of the gap."
+            reason = f"A change in where orders came from (the mix) explains {mix}% of the gap."
+            claim += f" Change in the mix of orders by {label}: {mix}% of the gap."
         elif conc:
             verdict, status, kind = "measured", "confirmed", "measure"
             reason = f"Concentrated in {', '.join(conc)} (share of the rise at least 1.5x share of orders). This says where, not why."
