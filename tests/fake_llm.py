@@ -100,9 +100,12 @@ class FakeLLM:
             if step == 2:
                 return {"thought": "check Mumbai stock", "action": "query",
                         "sql": "SELECT i.warehouse_id, SUM(i.on_hand) AS on_hand FROM wms.inventory_snapshots i JOIN erp.skus s ON i.sku = s.sku WHERE s.supplier_id = 'S-14' AND CAST(i.snapshot_date AS DATE) = DATE'2026-10-21' GROUP BY i.warehouse_id"}
+            # cost taken from the optimizer's plan, as a real agent must (invented figures are removed)
+            truck = re.search(r"truck\(s\) INR ([\d,]+)", user)
+            cost = float(truck.group(1).replace(",", "")) if truck else 0
             return {"thought": "done", "action": "finish",
                     "actions": [{"title": "Transfer Voltix stock MUM to PUN", "steps": "2 trucks", "addresses": ["T2"],
-                                 "orders_protected": 20, "value_protected_inr": 1500000, "est_cost_inr": 28000,
+                                 "est_cost_inr": cost,
                                  "confidence": 0.85, "policy_notes": "", "evidence": ["A.P1", "A.Q1"]},
                                 {"title": "Air-freight Voltix to Mumbai", "steps": "air", "addresses": ["T2"],
                                  "est_cost_inr": 950000, "confidence": 0.7, "evidence": ["A.Q1"]}],

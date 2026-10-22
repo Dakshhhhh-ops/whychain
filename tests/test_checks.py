@@ -3,17 +3,19 @@ from evals.run_evals import matches
 from whychain.agents.nodes import ground_action_numbers, question_similarity
 from whychain.grounding import check_claim, numbers_in
 
-ROWS = [{"type": "sql", "rows": [["2018-03", 7003, 1328, 0.18963], ["2018-02", 6555, 926, 0.1413]]}]
+ROWS = [{"id": "T1.Q1", "type": "sql", "columns": ["month", "orders", "late", "late_rate"],
+         "rows": [["2018-03", 7003, 1328, 0.18963], ["2018-02", 6555, 926, 0.1413]]}]
 
 
-def test_numbers_skip_dates_ids_and_small_counts():
-    found = [raw for raw, _, _ in numbers_in("On Mar 12-13 2018 (T2.Q1, S-14) 3 DCs had 1,328 late of 7,003 (18.96%)")]
-    assert found == ["1,328", "7,003", "18.96"]
+def test_numbers_skip_dates_ids_and_years_but_not_small_counts():
+    found = [n.raw for n in numbers_in("On Mar 12-13 2018 (T2.Q1, S-14) 3 DCs had 1,328 late of 7,003 (18.96%)")]
+    assert found == ["3", "1,328", "7,003", "18.96"]
 
 
-def test_claim_numbers_found_with_rounding_percent_and_one_step_arithmetic():
-    c = check_claim("Late rate 18.96% (1,328 of 7,003) vs 14.1% in Feb, up 4.8 points", ROWS)
-    assert c == {"checked": 5, "missing": []}
+def test_claim_numbers_need_cited_cells_or_implied_arithmetic():
+    # distinctive numbers (two decimals, or 100+) can be found in the cited rows; a one-decimal rate needs a cell ref
+    c = check_claim("Late rate 18.96% (1,328 of 7,003) vs 14.1% in Feb", ROWS)
+    assert c["support"] == {"18.96": "found", "1,328": "found", "7,003": "found", "14.1": "missing"}
 
 
 def test_invented_numbers_are_reported():
