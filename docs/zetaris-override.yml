@@ -1,0 +1,23 @@
+# Lets the local Zetaris platform read WhyChain's data files in place (read-only) and reach WhyChain's Postgres.
+#
+#   1. Copy this file into the Zetaris bundle folder (next to its docker-compose.yml) as docker-compose.override.yml.
+#      Docker Compose merges it automatically; delete it to undo.
+#   2. Set WHYCHAIN_DIR to this repository's absolute path (in the bundle's .env, or your shell),
+#      e.g. WHYCHAIN_DIR=C:/Users/you/whychain
+#   3. docker compose up -d   (in the bundle folder), then from this repo: python scripts/register_zetaris.py
+#
+# Zetaris only reads local files under its file-system root (/home/zetaris/customer-data/shared), so the data goes
+# there. The driver runs the queries; the api service checks paths when tables are registered.
+services:
+  driver:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "${WHYCHAIN_DIR}/data/olist/generated:/home/zetaris/customer-data/shared/whychain/olist:ro"
+      - "${WHYCHAIN_DIR}/data/generated:/home/zetaris/customer-data/shared/whychain/kaveri:ro"
+  api:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "${WHYCHAIN_DIR}/data/olist/generated:/home/zetaris/customer-data/shared/whychain/olist:ro"
+      - "${WHYCHAIN_DIR}/data/generated:/home/zetaris/customer-data/shared/whychain/kaveri:ro"

@@ -1,7 +1,7 @@
 """Pick the data harness. Zetaris is primary. The local DuckDB harness is the offline fallback."""
 from __future__ import annotations
 
-from whychain.config import SETTINGS, is_placeholder
+from whychain.config import SETTINGS
 from whychain.harness.base import DataHarness, QueryResult, TableInfo, catalog_text  # noqa: F401
 
 
@@ -10,8 +10,12 @@ def get_harness(prefer: str | None = None, allow_fallback: bool = True,
     """Return (harness, notes). Notes explain any fallback so the UI can show it."""
     prefer = (prefer or SETTINGS.harness).lower()
     notes: list[str] = []
-    if prefer == "zetaris" and is_placeholder(SETTINGS.zetaris_api_key):
-        notes.append("Zetaris selected but ZETARIS_API_KEY is not set; using local fallback.")
+
+    from whychain.harness.zetaris import configured
+
+    if prefer == "zetaris" and not configured():
+        notes.append("Zetaris selected but neither ZETARIS_USER (local platform) nor ZETARIS_API_KEY (cloud) is set; "
+                     "using local fallback.")
     elif prefer == "zetaris":
         from whychain.harness.zetaris import ZetarisHarness
 

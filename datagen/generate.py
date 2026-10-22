@@ -599,11 +599,11 @@ def write_all(w: World, out: Path, n_dupes: int) -> dict:
                                                            "order_lines"]},
             "wms": {"system": "Warehouse management export (CSV)", "files": ["inventory_snapshots.csv",
                                                                             "reorder_policy.csv", "transfer_lanes.csv"]},
-            "carrier": {"system": "3PL carrier feed (JSON lines)", "files": ["shipments.json", "carriers.json",
+            "carrier": {"system": "3PL carrier feed (JSON)", "files": ["shipments.json", "carriers.json",
                                                                              "lanes.json"]},
             "procurement": {"system": "Procurement export (CSV)", "files": ["purchase_orders.csv", "suppliers.csv",
                                                                             "expedite_options.csv"]},
-            "external": {"system": "External signals (JSON lines)", "files": ["port_status.json",
+            "external": {"system": "External signals (JSON)", "files": ["port_status.json",
                                                                               "weather_alerts.json"]},
             "docs": {"system": "Contracts, policies and email (Markdown + documents.json index)",
                      "files": ["documents.json"]},
@@ -649,9 +649,8 @@ def build_doc_index(rendered: dict[str, str]) -> list[dict]:
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, default=str) + "\n")
+    """A JSON array with one record per line: Zetaris reads a JSON file as one document, DuckDB reads either."""
+    path.write_text("[\n" + ",\n".join(json.dumps(r, default=str) for r in rows) + "\n]\n", encoding="utf-8")
 
 
 def main() -> None:

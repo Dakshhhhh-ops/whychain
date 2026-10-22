@@ -54,10 +54,10 @@ def download(raw: Path) -> None:
 
 
 def write_jsonl(path: Path, df: pd.DataFrame) -> None:
+    """A JSON array with one record per line: Zetaris reads a JSON file as one document, DuckDB reads either."""
     df = df.astype(object).where(pd.notna(df), None)
-    with path.open("w", encoding="utf-8") as f:
-        for rec in df.to_dict(orient="records"):
-            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    recs = [json.dumps(rec, ensure_ascii=False, default=str) for rec in df.to_dict(orient="records")]
+    path.write_text("[\n" + ",\n".join(recs) + "\n]\n", encoding="utf-8")
 
 
 def build(raw: Path, out: Path) -> dict:

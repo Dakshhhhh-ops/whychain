@@ -37,7 +37,7 @@ class Settings:
     data_dir: Path = ROOT / "data" / "generated"
     runs_dir: Path = field(default_factory=lambda: Path(env("WHYCHAIN_RUNS_DIR") or ROOT / "runs"))
     harness: str = field(default_factory=lambda: env("WHYCHAIN_HARNESS", "local"))
-    zetaris_url: str = field(default_factory=lambda: env("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0"))
+    zetaris_url: str = field(default_factory=lambda: env("ZETARIS_REST_URL") or "http://localhost:8888/api/v1.0")
     zetaris_api_key: str = field(default_factory=lambda: env("ZETARIS_API_KEY"))
     zetaris_org_id: str = field(default_factory=lambda: env("ZETARIS_ORG_ID"))
     pg_dsn: str = field(default_factory=lambda: (

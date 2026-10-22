@@ -6,7 +6,7 @@ import time
 import httpx
 import psycopg
 
-from whychain.config import SETTINGS, is_placeholder
+from whychain.config import SETTINGS
 from whychain.llm import LLM
 
 
@@ -36,13 +36,19 @@ def main() -> None:
             line(True, f"  Postgres: {src}", f"{n:,} rows in {ds.pg_schema}.{tables[-1] if key == 'kaveri' else tables[0]}")
         except Exception as e:
             line(None, f"  Postgres: {src}", f"{str(e).splitlines()[0][:80]}  (CSV fallback will be used; docker compose up -d)")
-    if not is_placeholder(SETTINGS.zetaris_api_key):
-        from whychain.harness.zetaris import ZetarisHarness
+    from whychain.harness.zetaris import ZetarisHarness, configured
 
-        st = ZetarisHarness().status()
-        line(st["ok"], "Zetaris", f"{st.get('url')} {st.get('error', '')}")
+    if configured():
+        z = ZetarisHarness()
+        st = z.status()
+        detail = f"{st['mode']} · {st.get('url')} {st.get('error', '')}"
+        if st["ok"]:
+            n = len(z.catalog())
+            detail += f" · {n} tables registered for {z.dataset.key}" if n else \
+                " · no tables registered yet (python scripts/register_zetaris.py)"
+        line(st["ok"], "Zetaris", detail)
     else:
-        line(None, "Zetaris", "ZETARIS_API_KEY not set (local DuckDB harness will be used)")
+        line(None, "Zetaris", "neither ZETARIS_USER nor ZETARIS_API_KEY set (local DuckDB harness will be used)")
     # memory
     try:
         h = httpx.get(f"{SETTINGS.meterless_url}/health", timeout=3).json()
