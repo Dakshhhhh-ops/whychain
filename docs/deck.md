@@ -31,7 +31,8 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
   ruled out and why; what the written record says, quoted word for word; and actions sized from the data, with the
   risky ones held for approval.
 - Every number in the brief links to the cell and the SQL it came from, and is checked by code.
-- Screenshot: `docs/img/brief.png`.
+- Screenshots: `docs/img/brief.png`; a citation opened: `docs/img/evidence.png` (computed table, "Data via Zetaris",
+  and the federated SQL).
 
 ## 4. A real answer (Olist, real data)
 
@@ -94,18 +95,20 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 
 ## 10. Results
 
-- Real data (Olist): 6/6 questions found, three passes, 62/62 computed findings identical.
-- Simulated company (Kaveri): 5/5 planted causes found with the right action.
-- Held-out questions: 5 asked, 4 passed on their first run, 1 failed (a red herring) and led to a rule change.
-- Cost: 5 to 9 model calls per real-data question (the earlier pure-agent design used 50 to 70).
-- [Update these lines from the README's final results table before building the slide.]
+- Final pass, 22 Oct 21:35 to 22:19 IST, one commit (`bdf4e16`), every query through Zetaris: root cause found in
+  18/18 questions (8 on real Olist data, 10 on the simulated company), red herring avoided in 15/15, right action in 8/8.
+- Held-out questions (ground truth from SQL before any run): 10 asked so far, 9 passed on their first run; 1 failed
+  (KH2, a red herring) and led to a rule change. 5/5 still-held-out questions pass in the final pass.
+- Reproducible: the computed findings match the previous pass exactly (Olist 62/62, Kaveri 80/80).
+- Cost: 6 to 9 model calls and 38 s to 4 minutes per question (the earlier pure-agent design used 50 to 70 calls).
 
 ## 11. The prescriptive loop (Kaveri)
 
 - Pune orders at risk: Voltix purchase orders stuck behind the Chennai dock strike.
 - Fix: a stock transfer from Mumbai plus air freight, proven optimal, protecting 62 orders for INR 133,590.
-- A manager approves; the Action Executor prepares the transfer order, a coverage check and the supplier email.
-- Screenshot: `docs/img/kaveri-transfer.png` (the brief's actions table or the deliverables).
+- A manager approves; the Action Executor prepares the deliverables, for example a per-SKU transfer order and a
+  draft email to the supplier (it is an agent, so what it prepares varies; it takes two to three minutes).
+- Screenshots: `docs/img/kaveri-transfer.png` (the actions), `docs/img/deliverables.png` (after approval).
 
 ## 12. What's next
 

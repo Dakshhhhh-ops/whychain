@@ -37,3 +37,6 @@ frontend/dist/
 # eval outputs (curated results live in the README)
 evals/results.json
 evals/results.md
+
+# pytest --basetemp on Windows (see README)
+.pytest_tmp/

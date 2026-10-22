@@ -10,11 +10,13 @@ Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why*
 
 WhyChain is for operations and fulfilment managers who see a problem on a dashboard and need to know *why*. Ask in plain English. It investigates the order system, the seller, payment and review exports, an events feed and news briefs, all through Zetaris, and returns each cause with its share of the problem, the red herrings it ruled out, quotes from the written record, and actions sized from the data.
 
-On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The brief sets a promise buffer per state (RJ +9 days, for example).
+On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The brief sets a promise buffer per state (RJ +9 days, for example). In the final test pass, at one commit with every query through Zetaris, it found the root cause in 18 of 18 questions, five of them held out (see [Results](#results)).
 
 | Control tower | A live investigation | The brief |
 |---|---|---|
 | ![Control tower](docs/img/control-tower.png) | ![Live investigation](docs/img/investigation-live.png) | ![Brief](docs/img/brief.png) |
+| **Every number opens its evidence and SQL** | **A proven-optimal fix, sized from the data** | **Memory with provenance** |
+| ![Evidence](docs/img/evidence.png) | ![Stock transfer](docs/img/kaveri-transfer.png) | ![Memory](docs/img/memory.png) |
 
 ### See it in five minutes
 
@@ -44,7 +46,7 @@ What the agents concluded in the four saved runs of this question since the base
 
 These runs used a timestamp definition of "late" in some steps (21.4%) and calendar dates in others (19.0%). There is now one definition: calendar dates, because the promised date has no time of day. The Evaluator now judges bundled hypotheses part by part and rejects events that start after their effect. New runs and their results are in "Results"; what is still weak is in "Known limitations".
 
-**In a simulated company,** where the agents can also act on stock: a planner sees that 26 of 32 Pune orders due next week are backordered. The answer to "why?" is spread across five systems and three inboxes:
+**In a simulated company,** where the agents can also act on stock: a planner sees that 23 of the 29 open Pune orders due next week have a line on backorder. The answer to "why?" is spread across five systems and three inboxes:
 
 - the **ERP** shows the backorders;
 - the **warehouse export** shows the Pune DC running dry while Mumbai has surplus;
@@ -292,6 +294,41 @@ Olist has no warehouse stock to move, so the optimizer and stock-transfer delive
 Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `evals/results.md`. A case passes "root cause found" when the expected terms appear, as whole words, in a cause the Evaluator confirmed or in the headline. Keyword scoring is crude; read the briefs too.
 
 <!-- RESULTS -->
+### Final pass: all 18 questions at one commit, through Zetaris (22 Oct 21:35 to 22:19 IST, commit `bdf4e16`)
+
+**Results: root cause found in 18/18; red herring avoided in 15/15 cases that define one; right action in 8/8 cases that have one; held-out questions 5/5 (H1, HO1, HO2, KH1, KH4).**
+
+Every question ran once, one at a time, with every query through Zetaris (`harness: zetaris` in each run's `result.json`; no failed Zetaris call in any trace). Each dataset's questions started on an empty memory (Meterless H-MEM with Nemotron embeddings). The analysis code is the same as at the code freeze (`6cdc35e`, 20:39 IST); `bdf4e16` differs from it only in the Zetaris harness and its tests (below).
+
+| Case | Held out | Root cause found | Red herring avoided | Right action | Model calls | Time | Headline (first sentence) | Run |
+|---|---|---|---|---|---|---|---|---|
+| O1 March 2018 spike |  | ✅ 2/2 | ✅ | — | 7 | 79 s | 1,328 of 7,003 delivered orders placed March 2018 were late (19.0%), against 5.6% for a normal baseline. | `20261022-215935-c817` |
+| O2 Black Friday 2017 |  | ✅ 2/2 | ✅ | — | 7 | 145 s | Yes: Black Friday 2017 delayed deliveries. For parcels handed over during it, carrier transit rose 1.9 days and the late rate 5.1 points against the trend before it. | `20261022-220054-0a6c` |
+| O3 Truckers' strike 2018 |  | ✅ 2/2 | ✅ | — | 8 | 98 s | Yes: Truckers' strike delayed deliveries. For parcels handed over during it, carrier transit rose 2.8 days and the late rate 5.9 points against the trend before it. | `20261022-220319-bab5` |
+| H1 Carnival 2018 | yes | ✅ 1/1 | ✅ | — | 6 | 38 s | No: Carnival holiday 2018 did not cause the delays. They were already there: carrier transit was 11.1 days just before it, against a normal 8.7. | `20261022-220457-dcbc` |
+| H2 Northeast delays |  | ✅ 2/2 | ✅ | — | 7 | 182 s | 1,150 of 9,044 delivered orders to Northeast were late (12.7%), against 6.2% for all other orders in the same period. | `20261022-220535-9e0f` |
+| H3 Rio security |  | ✅ 2/2 | — | — | 7 | 240 s | The data can't test record cargo theft in Rio de Janeiro state (2017) directly. | `20261022-220836-5fd2` |
+| HO1 February 2018 | yes | ✅ 2/2 | ✅ | — | 8 | 214 s | 926 of 6,555 delivered orders placed February 2018 were late (14.1%), against 5.1% for a normal baseline. | `20261022-221236-a838` |
+| HO2 December 2017 | yes | ✅ 1/1 | ✅ | — | 7 | 188 s | 411 of 5,513 delivered orders placed December 2017 were late (7.5%), against 3.5% for a normal baseline. | `20261022-221610-770c` |
+| A Pune orders at risk |  | ✅ 2/2 | ✅ | ✅ | 7 | 198 s | 23 of the 29 open orders at the Pune DC due in the coming week have a line on backorder (79.3%). | `20261022-213507-bec5` |
+| B Nashik late |  | ✅ 2/2 | ✅ | ✅ | 7 | 192 s | 64 of 70 delivered orders to Nashik placed since September 2026 were late (91.4%), against 15.1% for a normal baseline. | `20261022-213825-b030` |
+| C Mumbai earbuds |  | ✅ 2/2 | ✅ | ✅ | 7 | 132 s | 33 of the 101 orders for earbuds placed at the Mumbai DC in mid October 2026 have a line on backorder (32.7%). | `20261022-214137-5094` |
+| D Chennai backlog |  | ✅ 1/1 | ✅ | ✅ | 7 | 145 s | 47 of the 81 open orders created at the Chennai DC this week have a line on backorder (58.0%). | `20261022-214349-1802` |
+| E On-time drop |  | ✅ 3/3 | ✅ | ✅ | 7 | 97 s | 232 of 1,206 delivered orders placed September to October 2026 were late (19.2%), against 7.7% for the period you named. | `20261022-214614-ac93` |
+| KH1 Chennai power banks | yes | ✅ 2/2 | ✅ | ✅ | 6 | 179 s | 31 of the 89 orders for power banks placed at the Chennai DC in the last 14 days have a line on backorder (34.8%). | `20261022-214751-6fe1` |
+| KH2 Hyderabad September |  | ✅ 2/2 | ✅ | ✅ | 7 | 141 s | 17 of 98 delivered orders to Hyderabad placed September 2026 were late (17.3%), against 3.3% for a normal baseline. | `20261022-215050-78e6` |
+| KH3 Pune October (false premise) |  | ✅ 1/1 | — | — | 6 | 114 s | It did not rise: 2 of 45 delivered orders to Pune placed October 2026 were late (4.4%), against 12.6% for a normal baseline. There is no rise to explain. | `20261022-215312-f738` |
+| KH4 Surat September | yes | ✅ 3/3 | ✅ | ✅ | 9 | 199 s | 19 of 87 delivered orders to Surat placed September 2026 were late (21.8%), against 6.7% for a normal baseline. | `20261022-215506-0449` |
+| KH5 Mumbai chargers (false premise) |  | ✅ 1/1 | — | — | 6 | 62 s | There is no shortage to explain: 0 of the 59 orders for chargers placed at the Mumbai DC in the last 14 days have a line on backorder (0.0%). | `20261022-215825-ee38` |
+
+- **Why `bdf4e16` and not the freeze commit.** The first final pass, at `6cdc35e` (20:39 to 21:26 IST), exposed a harness bug: the local Zetaris platform issues 15-minute login tokens, the harness kept them for 30 minutes, and the platform answers an expired token with HTTP 400 rather than 401, so nothing logged in again. From 15 minutes into each eval process every query failed: KH4, KH5, HO1 and HO2 fell back to the local DuckDB copy (they passed there), and the Document Analyst's queries failed part-way through KH3 and H3. `1750530` first put this down to load; `bdf4e16` found and fixed the cause (renew before expiry; log in again on an auth failure; tested in `tests/test_zetaris.py` and against the live platform). The whole pass was then run again. Its runs, and the first attempt's, are in `runs/`.
+- **Held-out questions.** Ground truth was computed with SQL and written into `evals/cases.yaml` before anything ran them. HO1 and HO2 (added 20:28 IST) were first run at 21:21 and 21:24 IST in the first attempt, on the DuckDB copy because of the token bug: both passed. The table shows their second run. All first runs of held-out questions so far: 10 questions, 9 passed (H1 16:01, H2 16:15, H3 16:16, KH1 19:11, KH3 19:13, KH4 19:30, KH5 19:32, HO1 21:21, HO2 21:24 IST) and 1 failed (KH2 19:12: it blamed transit that had not moved). KH2, KH3, H2, H3 and KH5 later led to code changes and are development cases now; that is why the table marks only five questions as held out.
+- **Reproducibility.** The computed findings (each check's verdict, cause share, and the numbers in its claim) are identical to earlier passes: Kaveri 80/80 against the 19:40 IST pass (`32ced57`) and against the first attempt at `6cdc35e`; Olist 62/62 against the 20:00 IST pass (`32ced57`) and against the first attempt; HO1 and HO2 21/21 against their first runs, which went to the DuckDB copy (so the two harnesses agree too). Against the four earlier Olist passes (16:10 and 16:17 local; 18:03 and 19:15 through Zetaris), all 62 verdicts, causes and shares are the same; some claims there repeat a number that the current wording drops ("2.0 against 2.0" became "the same as"). What changed by design since those passes: the event questions (O2, O3, H1) answer "Yes" or "No" with the size in the headline, H3 says the condition can't be tested directly, KH3 says "It did not rise", KH5 says there is no shortage, KH2 no longer blames transit, and shares over 100% say why. The short model-written answer and the Document Analyst's reading vary from run to run.
+- **What reading the briefs still finds (not fixed: the code was frozen).** HO2 lists Black Friday (23 to 27 November) among the causes of December's lateness, without showing that its backlog carried into December. When the late rate did not rise (O3), "Where it happened" still lists segments with zero or negative shares. The event test's "normal" transit for the truckers' strike (11.8 days) includes the February to March 2018 spike; the verdict compares with the trend just before the event, so it is unaffected. Comparison questions (H2, H3) say "of the rise" for what is a gap between two groups.
+- **Time and cost.** Olist 38 to 240 s, Kaveri 62 to 199 s per question; 6 to 9 model calls per question.
+
+Earlier passes, kept for the record (each states its time, commit or architecture, and harness):
+
 ### Real data (Olist), analysis-engine architecture: two independent passes, 22 Oct 16:10 to 16:25 IST
 
 Each pass ran all six questions on an empty memory, one after the other (`evals/run_evals.py --dataset olist`). O1 to O3 are development cases; H1 to H3 are held out (added after the last prompt change, ground truth computed with SQL before any agent ran them).
@@ -363,7 +400,7 @@ Two replacement held-out questions were added at 19:28 IST (commit `23fadb2`, gr
 | KH4 Surat deliveries late in September | ✅ pass | 3/3: dispatch slowed, orders waiting for stock, mostly Voltix (S-14) | ✅ (transit flat, promises longer: neither blamed) | ✅ | `20261022-193027-a920` |
 | KH5 "Charger shortage" at the Mumbai DC (a false premise: no charger backorders) | ✅ pass | 1/1: no cause confirmed | — (nothing was blamed) | — | `20261022-193243-c38c` |
 
-Held-out record so far: 5 questions, 4 passed on their first run (KH1, KH3, KH4, KH5), 1 failed (KH2). These are still the author's planted mechanisms in new scopes and wordings, so they test generality, not independence.
+Held-out record at that point (19:36 IST): 5 questions, 4 passed on their first run (KH1, KH3, KH4, KH5), 1 failed (KH2). (The record since, and KH5's later move to the development cases, are in the final pass above.) These are still the author's planted mechanisms in new scopes and wordings, so they test generality, not independence.
 
 ### Before the supply engine: Kaveri, one pass, 22 Oct 16:25 to 17:08 IST (local harness)
 
@@ -383,7 +420,7 @@ The agent loop, then used for stock, backlog and risk questions, was slow (11 to
 
 | Track | What WhyChain shows | Evidence | Gap |
 |---|---|---|---|
-| **2 The agent that explains why (primary)** | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, red herrings are ruled out with reasons, and every action is sized from the data. | Results above: 6/6 real-data questions in three passes (two local, one through Zetaris), 62/62 computed findings identical; the simulated company's planted causes found with the right action, plus held-out questions | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker |
+| **2 The agent that explains why (primary)** | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, red herrings are ruled out with reasons, and every action is sized from the data. | Final pass (one commit, every query through Zetaris): root cause found in 18/18 questions, red herring avoided in 15/15, right action in 8/8, held-out questions 5/5; computed findings identical to the previous passes (Olist 62/62, Kaveri 80/80) | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker |
 | 1 Fragmented intelligence (context) | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. | Join tests in every run; the engine's fact query joins the Postgres order system and the seller CSV export (five tables) in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
 | 3 Reasoning architecture (context) | Code computes and agents reason: coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
 | Best use of NVIDIA Nemotron (in-kind award) | All model work runs on Nemotron (next section). | "Models used" column in the results | Cloud NIM only; no local GPU use yet |
@@ -420,7 +457,10 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 | Citation filter | Citations to evidence that doesn't exist |
 | Join tests | Bad joins in the data map |
 | Model fallback chain | One model failing the whole run (today both models sit on the same NVIDIA endpoint, so not an NVIDIA outage) |
-| Local harness fallback | Zetaris being unreachable during a demo |
+| Local harness fallback | Zetaris being unreachable during a demo (the run says so, and the app re-checks Zetaris after a minute) |
+| Zetaris login renewal: a token is renewed two minutes before its own expiry, and an expired or invalidated token (HTTP 400 "Bad Request" from the platform) logs in again once | Queries failing from 15 minutes into a session. Found in the final pass (see Results); `tests/test_zetaris.py` |
+| Off-topic check | A question about nothing in the data starting an open-ended investigation: answered at once, with no model call |
+| Incomplete brief | A failed report step hiding what was found: the brief starts "Incomplete:" and lists the confirmed findings |
 | Bounded rounds (`WHYCHAIN_MAX_ROUNDS`) | Endless revise loops |
 | Deterministic escalation thresholds | Expensive actions going ahead without a human |
 
@@ -430,13 +470,13 @@ The design choice: Nemotron reads, plans, argues and writes; it doesn't produce 
 |---|---|
 | Much of the project was built before the build window, and the first commits import it all at once. | Disclosed in full under "Pre-existing work". The Official Rules (sections 4 and 5) make work committed before the window ineligible except clearly declared pre-existing components, and require pre-existing product code to be declared in the submission form as well. How the pre-window code counts is to be confirmed with the organizers. |
 | Nightshift and Grok have never run; Zetaris only locally. | Zetaris runs as the local Docker platform (Zetaris Cloud is untested). All model calls use cloud NVIDIA NIM, so model fallback stays on one NVIDIA endpoint until Grok or Nightshift is configured. Zetaris queries take 0.2 to 1.3 s each where DuckDB takes milliseconds; the computed answers are identical. |
-| Results vary from run to run (agent loop). | Late-delivery and supply questions: the computed findings are identical run to run (62/62 across three Olist passes, local and Zetaris). Only the Document Analyst's reading and the short model-written answer vary. Questions that fit neither engine use the agent loop, which runs language models at temperature 0.2, so its answers can vary. |
+| Results vary from run to run (agent loop). | Late-delivery and supply questions: the computed findings are identical run to run (final pass against the previous one: Olist 62/62, Kaveri 80/80; verdicts, causes and shares the same across seven Olist passes, local and Zetaris). Only the Document Analyst's reading and the short model-written answer vary. Questions that fit neither engine use the agent loop, which runs language models at temperature 0.2, so its answers can vary. |
 | Reasoning errors can still get through. | Late-delivery questions: the tests are built to avoid the common traps (normal baselines, event tests by exposure week against the prior trend, counterfactual attribution), and verdicts are coded; the same holds for the supply checks. Other questions (the agent loop): these are rules in the Evaluator's prompt, not code. In both paths the numbers check proves a number came from the data, not that the argument is right. |
 | The engine's choices are judgement calls. | The 10% cause threshold and the stage-must-move rule (a quarter day on average, or a day at the median or 80th percentile), the 1.5x "abnormal month" rule, the event thresholds (1 day or 10% of transit, 5 points of lateness) and like-with-like matching by area were chosen by the author. They are fixed and tested (`tests/test_analysis.py`), but not validated against outside data. |
 | Attribution has limits. | Stage counterfactuals swap one stage's distribution at a time within an area, and Shapley values split interactions evenly. When a segment differs from its reference in many ways at once (e.g. distance), shares can exceed 100% with an offsetting negative share; the brief reports both. |
 | No cost data on the real dataset. | Olist actions show "not computed" for cost. Only the simulated dataset has computed (proven-optimal) costs. |
-| Memory recall is a hint, not evidence. | Recall uses Nemotron embeddings (before 22 Oct 19:21 IST, H-MEM's hash mock). Findings are still reused only when they come from a similar question (word overlap ≥ 0.4), and memories are never cited as evidence. Without an NVIDIA key, or if the embedding call fails, the bridge falls back to the mock. |
-| Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. H1–H3 are held out: added after the last prompt change, with ground truth computed with SQL before any agent ran them. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
+| Memory recall is a hint, not evidence. | Recall uses Nemotron embeddings (before 22 Oct 19:21 IST, H-MEM's hash mock). Findings are still reused only when they come from a similar question (word overlap ≥ 0.4), and memories are never cited as evidence. Without an NVIDIA key, or if the embedding call fails, the bridge falls back to the mock. The Document Analyst's one-line summary of the written record is stored as a fact, and it can over-reach: in the March 2018 runs it says the Correios strike "explains the jump", which the computed event test rules out. That summary never reaches the brief (which quotes the documents word for word) or a verdict, but it shows on the Memory tab. |
+| Tuning on the test cases. | The weekly-exposure rule was written after the truckers'-strike case failed, so O1–O3 are development cases. Held-out questions get their ground truth from SQL, written into `evals/cases.yaml` before anything runs them, and become development cases as soon as their result leads to a code change: KH2 and KH3 (commit `4ae49f7`), and H2, H3 and KH5 (22 Oct 20:28 IST) have. KH1, KH4, H1, HO1 and HO2 are still held out. All ground truth was written by the author (the Kaveri causes were also planted by the author), so none of it is independent. |
 | Crude scoring. | Eval terms match at word boundaries; red herrings are judged on confirmed hypotheses and the headline. Keyword scoring still can't judge an argument; read the briefs. |
 
 ## Repository layout
