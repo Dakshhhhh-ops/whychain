@@ -138,7 +138,7 @@ export function Layout() {
                 <StatusRow ok={zetaris ? s.harness.ok : null} label={zetaris ? "Zetaris" : "Local data (fallback)"} detail={zetaris ? "federated" : s.harness.erp} />
                 <StatusRow ok={s.memory.online ? true : null} label={s.memory.online ? "Meterless memory" : "Memory (local file)"}
                   detail={s.memory.embedder?.includes("nemotron") ? "Nemotron embeddings" : undefined} below />
-                {s.memory.scout && <StatusRow ok={true} label="Meterless Scout" detail="routes questions" />}
+                {s.memory.scout && <StatusRow ok={true} label="Meterless Scout" detail="routes every question" below />}
                 {/* only the model providers this install actually uses; optional ones that aren't set are not listed */}
                 {Object.entries(s.models)
                   .filter(([, m]) => m.configured)

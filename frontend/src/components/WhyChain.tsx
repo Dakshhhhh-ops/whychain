@@ -13,14 +13,19 @@ type Chain = {
 
 /** The chain as the Meterless World Model holds it for this run (relations written by the Reporter). */
 function fromWorld(rels: Rel[]): Chain | null {
-  const causeRels = rels.filter((r) => r.type === "causes" && r.attrs?.why_chain);
+  // the World Model keeps one relation per cause and symptom, with its own attributes (confidence = the share)
+  const causeRels = rels.filter((r) => r.type === "causes");
   const ruledRels = rels.filter((r) => r.type === "ruled_out_for");
   if (!causeRels.length && !ruledRels.length) return null;
   const symptom = causeRels[0]?.to_name ?? ruledRels[0]?.to_name ?? "";
   const seen = new Set<string>();
   const causes = causeRels
     .filter((r) => r.from_name && !seen.has(r.from_name) && seen.add(r.from_name))
-    .map((r) => ({ name: r.from_name!, share: typeof r.attrs?.share_of_symptom === "number" ? (r.attrs.share_of_symptom as number) : null }));
+    .map((r) => {
+      const v = r.attrs?.share_of_symptom ?? r.attrs?.confidence;
+      return { name: r.from_name!, share: typeof v === "number" ? v : null };
+    })
+    .sort((a, b) => (b.share ?? 0) - (a.share ?? 0));
   const explains: Record<string, string[]> = {};
   for (const r of rels.filter((r) => r.type === "explains" && r.from_name && r.to_name)) {
     (explains[r.to_name!] ??= []).includes(r.from_name!) || explains[r.to_name!].push(r.from_name!);
@@ -87,8 +92,9 @@ export function WhyChain({ result }: { result: RunResult }) {
   const world = fromWorld(rels);
   const chain = world ?? fromResult(result);
   if (!chain.causes.length && !chain.ruled.length) return null;
-  // what a share is a share of, as the Reporter wrote it (a rise over time, a gap between groups, short units)
-  const of = String(rels.find((r) => r.type === "causes" && r.attrs?.share_of)?.attrs?.share_of ?? "of the problem");
+  // what a share is a share of: short units (stock questions), a gap between groups, or a rise over time
+  const a = (result as unknown as { analysis?: { kind?: string; primary?: { mode?: string } } }).analysis;
+  const of = a?.kind === "supply" ? "of the short units" : a?.primary?.mode === "segment" ? "of the gap" : "of the rise";
   return (
     <div className="mx-6 mb-5 rounded-xl border border-slate-200 bg-white px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">

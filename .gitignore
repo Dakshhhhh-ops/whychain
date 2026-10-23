@@ -40,3 +40,4 @@ evals/results.md
 
 # pytest --basetemp on Windows (see README)
 .pytest_tmp/
+meterless_bridge/data-backup-*/
