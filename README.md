@@ -32,7 +32,7 @@ On real Olist data, orders placed in March 2018 were 19.0% late against a normal
 
 ### Contents
 
-[The problem](#the-problem) · [How it works](#how-it-works) · [Optiagent](#prescriptive-layer-optiagent-declared-pre-existing-component) · [Sponsor technology](#sponsor-technology-designed-role-and-actual-status) · [How the sponsor technologies are used](#how-the-sponsor-technologies-are-used-submission-requirement) · [Setup](#setup-clean-machine) · [Usage](#usage) · [The data](#the-data) · [Results](#results) · [Hackathon track](#hackathon-track) · [Development tools](#development-tools) · [Nemotron](#how-whychain-uses-nvidia-nemotron) · [Reliability](#reliability) · [Known limitations](#known-limitations) · [Repository layout](#repository-layout) · [Third-party components](#third-party-components)
+[The problem](#the-problem) · [How it works](#how-it-works) · [Tech stack](#tech-stack) · [Prescriptive layer](#prescriptive-layer-proven-optimal-stock-transfers) · [Sponsor technology](#sponsor-technology-designed-role-and-actual-status) · [How the sponsor technologies are used](#how-the-sponsor-technologies-are-used) · [Setup](#setup-clean-machine) · [Usage](#usage) · [The data](#the-data) · [Results](#results) · [Nemotron](#how-whychain-uses-nvidia-nemotron) · [Reliability](#reliability) · [Known limitations](#known-limitations) · [Repository layout](#repository-layout) · [Third-party components](#third-party-components)
 
 ## The problem
 
@@ -42,13 +42,6 @@ What the raw data shows, checked independently with SQL (not by the agents):
 - **Transit:** carrier transit was about 13 days in February–March 2018, against about 8.5 in a normal month. Hand-over by sellers did not slow.
 - **Rio de Janeiro:** worst hit. Transit doubled (9.7 → 20.7 days) and late deliveries rose from 6% to 34%, against 16.8% in the rest of Brazil.
 - **The 12–13 March Correios strike:** lateness was already high before it.
-
-What the agents concluded in the four saved runs of this question since the baseline fix, before the latest fixes:
-- **Every run:** carrier transit is the main cause (50–85% of the jump); seller hand-over, order volume and mix, and data errors are ruled out.
-- **Inconsistent:** every run *also* confirmed "the Correios strike / Rio disruption" as a partial cause (12–40%), and one headline put the strike first. The Rio part is supported by the data; the strike part is not. The planner bundled both into one hypothesis, and the Evaluator confirmed it as a whole.
-- **The first run of all** (before the baseline fix) blamed tighter delivery promises. That was wrong: its Jan–Feb baseline was itself abnormal.
-
-These runs used a timestamp definition of "late" in some steps (21.4%) and calendar dates in others (19.0%). There is now one definition: calendar dates, because the promised date has no time of day. The Evaluator now judges bundled hypotheses part by part and rejects events that start after their effect. New runs and their results are in "Results"; what is still weak is in "Known limitations".
 
 **In a simulated company,** where the agents can also act on stock: a planner sees that 23 of the 29 open Pune orders due next week have a line on backorder. The answer to "why?" is spread across five systems and three inboxes:
 
@@ -97,14 +90,14 @@ A late-delivery investigation takes 5 to 9 model calls and gives the same number
 - **duplicate orders**: orders repeated under the same external reference, judged by the units the extra copies order (they are counted once in every other check);
 - **order volume** against the weeks before.
 
-A check is a cause when it is involved in at least 25% of the short units. The shares overlap (one SKU can be both late inbound and under a stale reorder point), and a disrupted port is reported as the reason purchase orders are late, not as a separate cause. Actions come from the same numbers: the Optiagent stock-transfer plan, which purchase orders to chase, which reorder points to raise, which duplicates to cancel.
+A check is a cause when it is involved in at least 25% of the short units. The shares overlap (one SKU can be both late inbound and under a stale reorder point), and a disrupted port is reported as the reason purchase orders are late, not as a separate cause. Actions come from the same numbers: the proven-optimal stock-transfer plan, which purchase orders to chase, which reorder points to raise, which duplicates to cancel.
 
 **Any other question** uses the **agent loop**:
 - the Data Scout maps and join-tests the sources;
 - the Planner sets competing hypotheses;
 - Data Investigators write SQL;
 - the Evaluator re-runs every cited query and challenges the reasoning, sending gaps back for another round;
-- the Risk & Action agent calls the **Optiagent optimizer** for stock transfers, with a duality certificate proving no cheaper plan exists;
+- the Risk & Action agent calls the **stock-transfer optimizer** (a linear program, see below), with a duality certificate proving no cheaper plan exists;
 - the **Action Executor** prepares transfer orders, cancellation lists and draft emails after a manager approves.
 
 The same numbers check applies to findings, actions and the brief.
@@ -125,16 +118,34 @@ flowchart LR
     D --> V
     V --> A1[Actions from templates<br/>+ promise buffers]
     P -->|anything else| L[Planner -> SQL Investigators<br/>-> Evaluator, revise loop]
-    L --> A2[Risk & Action<br/>+ Optiagent optimizer]
+    L --> A2[Risk & Action<br/>+ LP optimizer]
     V -. seconds .-> PR[Preliminary answer<br/>built by code]
     A1 & A2 --> R[Brief: summary in money,<br/>numbers checked against their cells]
     R --> W[Write memory +<br/>World Model why chain]
     AE & S & L -. Spark SQL .-> Z[(Zetaris<br/>local DuckDB as fallback)]
 ```
 
-## Prescriptive layer: Optiagent (declared pre-existing component)
+## Tech stack
 
-WhyChain doesn't estimate the fix by hand. It reuses the author's earlier project **[Optiagent](https://github.com/Dakshhhhh-ops/Optiagent)** (MIT, pinned to commit `f0b61d5`). Optiagent is a verified-optimization engine whose rule is that *the LLM never produces the numbers*. `whychain/optimize.py` was written for WhyChain (before the build window, see "Third-party components"): it turns an agent's scope into a transportation problem built entirely from the data. The optimizer applies only to the simulated dataset, which has stock, lanes and freight costs; the real Olist data has no cost data, so its actions carry the value at stake (what the orders they protect are worth, and their reviews) rather than a cost (see "Known limitations").
+| Layer | Technology |
+|---|---|
+| Agents and orchestration | Python 3.12, LangGraph (parallel fan-out per task, bounded revise loop), one OpenAI-compatible client with role-based fallback chains, retries and per-endpoint concurrency slots |
+| Models | NVIDIA NIM: Nemotron 3.5 Super (JSON mode, or reasoning on for planning and judging), Nemotron 3 Ultra (fallback), Nemotron 3 Embed (memory recall). Meterless Nightshift: Nemotron 3 Nano 4B on the local GPU (private documents) |
+| Analysis | pandas; counterfactual late rates per delivery stage, exact Shapley attribution, shift-share decomposition, event tests against the prior trend, coded verdict rules |
+| Data | Zetaris (Spark SQL over a Postgres JDBC datasource and Lightning file tables, read in place); DuckDB with sqlglot dialect translation as the fallback; Postgres in Docker |
+| Optimization | Transportation linear program; OR-Tools GLOP and HiGHS; duality certificate (below) |
+| Memory and routing | Meterless H-MEM, World Model and Scout Intent in TypeScript (Node 20, tsx) behind an HTTP bridge |
+| API | FastAPI with Server-Sent Events for live runs, served by uvicorn |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, react-markdown, react-router 7 |
+| Quality | pytest, ruff, GitHub Actions: Python tests, lint, frontend build, bridge type check, H-MEM and World Model conformance, Scout evals and routing |
+
+## Prescriptive layer: proven-optimal stock transfers
+
+For stock-outs on the simulated distributor, the only dataset with stock, lanes and freight costs, `whychain/optimize.py` builds a transportation linear program from live data, solves it and proves the plan optimal. The real Olist data has no cost data, so its actions carry the value at stake (what the orders they protect are worth, and their reviews) rather than a cost (see "Known limitations").
+
+**Model.** Variables $x_r \ge 0$: units moved on route $r$, from a source (a DC's spare stock of a SKU, or the supplier by air) to a destination (backordered units of that SKU at a DC). One extra route per SKU, "unfilled", carries what can't arrive in time.
+
+$$\min \sum_r c_r x_r \quad \text{s.t.} \quad \sum_{r \to d} x_r = \text{need}_d \;\; \forall d, \qquad \sum_{r \leftarrow s} x_r \le \text{spare}_s \;\; \forall s$$
 
 | Part of the model | Where it comes from |
 |---|---|
@@ -144,7 +155,7 @@ WhyChain doesn't estimate the fix by hand. It reuses the author's earlier projec
 | Air routes | Supplier air-freight surcharge and lead time (`procurement.expedite_options`) |
 | Can't arrive in time | A unit with no route that meets the deadline costs its list price (lost sale), so the plan reports it instead of hiding it |
 
-Optiagent builds the LP, solves it (OR-Tools GLOP), re-checks the plan against the original data and attaches a **duality certificate**. If the first solver's dual prices don't close the proof (it happens on degenerate problems), WhyChain re-runs Optiagent's own certificate with the second solver's (HiGHS) prices. If neither closes it, the plan is withheld rather than shown unproven. Lanes that would carry less than 15% of a truck are dropped and the problem is re-solved, because an LP doesn't model fixed truck costs. The Action Executor's transfer order *is* this proven plan, row for row.
+**Solve and certify.** OR-Tools GLOP solves the LP, and the plan is re-checked against the original rows. A **duality certificate** (dual feasibility, and primal and dual objectives equal) proves no cheaper plan exists. On degenerate problems GLOP's dual prices can be valid but loose; the certificate is then recomputed from HiGHS's dual prices, and if neither closes the proof, the plan is withheld rather than shown unproven. An LP has no fixed cost per truck, so lanes carrying less than 15% of a truck's capacity are dropped and the problem is re-solved. The Action Executor's transfer order *is* the certified plan, row for row.
 
 ## Sponsor technology: designed role and actual status
 
@@ -168,15 +179,13 @@ Every model call goes through one OpenAI-compatible client with role-based fallb
 
 Transient errors (5xx, rate limits, timeouts) are retried with back-off: twice when another provider follows, four times on the last one. The trace records every retry and fallback.
 
-## How the sponsor technologies are used (submission requirement)
-
-The Official Rules (section 6) ask for a clear explanation of four things. In brief:
+## How the sponsor technologies are used
 
 **How Zetaris is integrated.** Zetaris is the only path from WhyChain to company data. The local Zetaris platform (the hackathon's Docker bundle) federates six source systems per dataset: the order systems through a Postgres JDBC datasource, and the CSV and JSON exports as Lightning file tables read in place, so nothing is copied into a warehouse or a vector store. `scripts/register_zetaris.py` registers them and checks every table's row count against the source (26 tables, all matching). Everything queries through it: the analysis engine's order-level fact query, which joins the Postgres order system with the seller export (five tables) in one statement; the agents' own Spark SQL; the catalog the Data Scout maps; and the dashboard. Every run records `harness: zetaris`, and every cited result can be re-run through it.
 
 **How Meterless is integrated.** `meterless_bridge/` runs three Meterless engines behind a small HTTP service. **Scout Intent** decides which part of WhyChain answers each question, guards against prompt injection and signs an execution contract; its spec ships no code, so WhyChain implements it (`meterless_bridge/scout/scout.ts`) and checks it with the spec's own eval harness and a routing test, both in CI. **H-MEM** stores every confirmed and ruled-out finding with provenance (run, agent, query or document), and each new investigation recalls related past findings as hints, never as evidence. The **World Model** stores the cause-effect relations each run confirms (the why chain the brief draws: causes with their shares, what explains them, where the problem sits, what was ruled out), as a cause graph across runs. H-MEM's recall uses NVIDIA Nemotron embeddings in place of its reference mock embedder: exactly one vendored file changed, to add a provider hook (see "Third-party components"). Conformance passes with the provider off and on. **Nightshift** runs a local model on the laptop's GPU and reads the written record when Private documents is ticked; each call's signed receipt must say `local-only` (see "Private documents").
 
-**Development tools and the Meterless requirement.** The updated onboarding guide (Build section) makes Cursor optional: any AI coding tool may be used. WhyChain was developed in VS Code. The requirement that stands is to implement at least one Meterless engine in a working feature and demonstrate it with a passing test or a live demo. WhyChain uses three engines, each in a working feature with passing tests that run in CI on every push (`.github/workflows/tests.yml`), plus Nightshift for private documents:
+**Meterless in working features.** Three engines, each in a working feature with passing tests that run in CI on every push (`.github/workflows/tests.yml`), plus Nightshift for private documents:
 
 | Meterless engine | Working feature | Passing tests |
 |---|---|---|
@@ -209,7 +218,7 @@ Live run, 24 Oct 03:33 IST, March 2018 question, local data copy (Docker was sto
 
 ## Setup (clean machine)
 
-**Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (one dependency, `optiagent-core`, installs from GitHub, and the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
+**Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (one dependency installs from GitHub, and the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
 
 **What works without what:** without Docker, the order systems are read from CSV copies; without Zetaris, every query goes to a local DuckDB copy with the same tables (the app says so); without an NVIDIA key, late-delivery and supply investigations still compute every finding and the brief's short answer is written by code (open-ended questions need a model); without the Meterless bridge, memory falls back to a local file. `python -m whychain.doctor` says which of these is in use.
 
@@ -375,6 +384,9 @@ This pass is on the code as submitted: everything added on 23 Oct (the value at 
 
 Earlier passes, kept for the record (each states its time, commit or architecture, and harness):
 
+<details>
+<summary>Earlier test passes (how the results developed)</summary>
+
 ### Previous final pass (before the 23 Oct features): all 18 questions through Zetaris (22 Oct 21:35 to 22:19 IST, commit `bdf4e16`)
 
 **Results: root cause found in 18/18; red herring avoided in 15/15 cases that define one; right action in 8/8 cases that have one; held-out questions 5/5 (H1, HO1, HO2, KH1, KH4).**
@@ -493,20 +505,7 @@ Held-out record at that point (19:36 IST): 5 questions, 4 passed on their first 
 
 The agent loop, then used for stock, backlog and risk questions, was slow (11 to 16 minutes, mostly NVIDIA rate limits) and found the planted cause in none of its three cases. That is why those questions moved onto computed checks (the supply engine, above).
 
-## Hackathon track
-
-**Primary track: Track 2, The Agent That Can Explain Why.** The Official Rules (section 3) say every submission selects exactly one primary track, which sets the judging panel, and that cross-track relevance is welcome but not scored twice. The other tracks are listed for context only.
-
-| Track | What WhyChain shows | Evidence | Gap |
-|---|---|---|---|
-| **2 The agent that explains why (primary)** | Evidence-backed answers: every cause has a share of the problem, every number cites its cell, red herrings are ruled out with reasons, and every action is sized from the data. | Final pass (one commit, every query through Zetaris): root cause found in 18/18 questions, red herring avoided in 15/15, right action in 8/8, held-out questions 4/4; every confirmed cause and share the same as the previous final pass; preliminary answer in a median 3.5 s | Questions outside delivery and supply fall back to the agent loop, which is slower and weaker |
-| 1 Fragmented intelligence (context) | One question answered across an order system (Postgres), seller, payment and review exports, an events feed and news briefs, federated by Zetaris without copying data. | Join tests in every run; the engine's fact query joins the Postgres order system and the seller CSV export (five tables) in one Zetaris query | Zetaris runs locally (Docker bundle), not in the cloud |
-| 3 Reasoning architecture (context) | Code computes and agents reason: coded verdict rules, counterfactual attribution, a proven-optimal stock-transfer optimizer, human approval for risky actions, memory with provenance. | `whychain/analysis/`, `tests/test_analysis.py`, the optimizer and its duality certificate | Thresholds are the author's judgement calls (see Known limitations) |
-| Best use of NVIDIA Nemotron (in-kind award) | All model work runs on Nemotron (next section): in NVIDIA's cloud, and on the laptop's own GPU (Nemotron 3 Nano 4B in Meterless Nightshift) for private documents. | "Models used" column in the results; the private-documents run | The local model is slower than the cloud on a 16 GB laptop |
-
-## Development tools
-
-The updated onboarding guide (Build section) makes Cursor optional: "You can use any AI coding tool you're comfortable with." WhyChain was developed in VS Code. The Meterless engines it implements, and the tests that show them working, are listed under "How the sponsor technologies are used".
+</details>
 
 ## How WhyChain uses NVIDIA Nemotron
 
@@ -571,7 +570,7 @@ whychain/          agents, graph (LangGraph), harness (Zetaris + local), LLM cli
   agents/          prompts.py, executor.py (act-observe loop), nodes.py (each agent)
   api.py           FastAPI server: runs, live event stream (SSE), decisions, overview, memory, sources
   overview.py      control-tower KPIs, problem detection rules, supply network
-  optimize.py      prescriptive layer: data → transportation LP → Optiagent (proven-optimal plan)
+  optimize.py      prescriptive layer: data → transportation LP → solver + duality certificate
 frontend/          React + TypeScript + Tailwind web app (Vite)
 datagen/           company simulator, documents, Postgres loader
 evals/             ground-truth cases and scorer
@@ -586,7 +585,6 @@ tests/             end-to-end wiring test with a scripted model
 
 ## Third-party components
 
-- `optiagent-core` (installed from `github.com/Dakshhhhh-ops/Optiagent`, commit `f0b61d5`, MIT): the author's earlier verified-optimization engine (LP builder, solver, plan checks, duality certificate, sensitivity analysis). Built before the hackathon and used unmodified as a library.
 - `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included). **Exactly one vendored file was changed**, in the window (22 Oct), and it carries a notice saying so, as Apache-2.0 requires: `engines/hmem/reference/src/embeddings.ts` gained a provider hook (`setEmbeddingProvider`), which the file's own comment invites, so the bridge can supply NVIDIA Nemotron embeddings, and `cosine()` returns 0 for vectors of different lengths instead of failing. Without a provider the file behaves as before. H-MEM conformance passes 13/13 with the provider off and on (`meterless_bridge/conformance-results/`). Every other vendored file is unmodified. The Scout Intent specification and eval harness (`engines/scout-intent/`, same commit) were added in the window (23 Oct), unchanged; WhyChain's implementation of it (`meterless_bridge/scout/`) was written in the window.
 - Open-source libraries listed in `pyproject.toml`, `frontend/package.json` and `meterless_bridge/package.json`.
 - The Olist dataset is third-party public data (CC BY-NC-SA 4.0), downloaded by `datagen/olist.py` and not included in the repository.
