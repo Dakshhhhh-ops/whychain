@@ -53,7 +53,7 @@ an embedding provider hook); open-source libraries; and the Olist dataset (CC BY
 Written in the window: the analysis engine and supply engine, the numbers check, the connection to Zetaris, the
 Nemotron embeddings for H-MEM, the Scout Intent implementation, the value at stake, the preliminary answer, the why
 chain, the evals with held-out questions, and everything after the first commits. Full
-details: the README's "Pre-existing work" section and `git log`.
+details: `git log`.
 
 ## Links
 
