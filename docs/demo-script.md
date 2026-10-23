@@ -3,7 +3,7 @@
 Target length 3:15 (rules: 1 to 4 minutes). Screen recording at 1600×1000 or larger, browser zoom 100%, app at
 `http://localhost:8000`. **[Nemotron]** marks where NVIDIA Nemotron is doing the work on screen.
 
-A preliminary answer, computed from the data, appears within about 15 seconds of starting a run (after the warm-up);
+A preliminary answer, computed from the data, appears within seconds of starting a run (median 3.5 s in the final pass, after the warm-up);
 the full brief takes 1.5 to 4 minutes through Zetaris. Show the preliminary answer live, then cut ahead to the brief (say so
 on screen: "about two minutes later"). Never present a replay as live: a replay is labelled "Replaying" in the app.
 

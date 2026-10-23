@@ -27,7 +27,8 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 ## 3. What WhyChain does
 
 - Ask in plain English: "Why did late deliveries jump to 19% for orders placed in March 2018?"
-- In about 15 seconds, a preliminary answer computed from the data; two to three minutes later, the full brief.
+- Within seconds (median 3.5 s in the final pass), a preliminary answer computed from the data; one to two minutes
+  later, the full brief.
 - The brief opens with three lines for a manager (what happened, why, what to do, in money), then the why chain, drawn
   from the Meterless World Model: the symptom, each cause's share, where it sits, what was ruled out (crossed out).
 - Each brief ends with **Ask why next**: the place where the rise sits, or the stock-out that held up dispatch, one
@@ -109,11 +110,12 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 
 ## 10. Results
 
-- Final pass, 22 Oct 21:35 to 22:19 IST, one commit (`bdf4e16`), every query through Zetaris: root cause found in
+- Final pass, 23 Oct 23:04 to 23:27 IST, one commit (`96815d9`, the code as submitted), every query through Zetaris: root cause found in
   18/18 questions (8 on real Olist data, 10 on the simulated company), red herring avoided in 15/15, right action in 8/8.
 - Held-out questions (ground truth from SQL before any run): 10 asked so far, 9 passed on their first run; 1 failed
-  (KH2, a red herring) and led to a rule change. 5/5 still-held-out questions pass in the final pass.
-- Reproducible: the computed findings match the previous pass exactly (Olist 62/62, Kaveri 80/80).
+  (KH2, a red herring) and led to a rule change. 4/4 still-held-out questions pass in the final pass.
+- Reproducible: every confirmed cause and its share match the previous final pass; the only changed numbers are
+  deliberate fixes (listed in the README).
 - Cost: 6 to 9 model calls and 38 s to 4 minutes per question (the earlier pure-agent design used 50 to 70 calls).
 
 ## 11. The prescriptive loop (Kaveri)
