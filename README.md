@@ -316,7 +316,7 @@ Run `python -m evals.run_evals` (or `--dataset olist|kaveri`) to regenerate `eva
 
 **Results: root cause found in 18/18; red herring avoided in 15/15 cases that define one; right action in 8/8 cases that have one; held-out questions 4/4 (H1, HO1, KH1, KH4). Preliminary answer: median 3.5 s after the start (1 to 42 s). Meterless Scout routed 17 of 18 questions itself and left 1 to the word rules; its route equalled the rules' every time.**
 
-This pass is on the code as submitted: everything added on 23 Oct (the value at stake, the manager summary, the preliminary answer, the why chain, Meterless Scout Intent, Ask why next, the open audit fixes) is in `96815d9`. Every question ran once, one at a time, every query through Zetaris (no failed call in any trace, no uncommitted change in the code), each dataset on an empty memory.
+This pass is on the code as submitted: everything added on 23 Oct (the value at stake, the manager summary, the preliminary answer, the why chain, Meterless Scout Intent, Ask why next, the open audit fixes) is in `96815d9`. Two later commits change only how the app displays a result, not what is computed (`c9cf194`: the why chain reads causes as the World Model stores them; `1ef97d6`: reais grouped like the brief text). Every question ran once, one at a time, every query through Zetaris (no failed call in any trace, no uncommitted change in the code), each dataset on an empty memory.
 
 | Case | Held out | Root cause found | Red herring avoided | Right action | Routed by | Preliminary answer | Full brief | Headline (first sentence) | Run |
 |---|---|---|---|---|---|---|---|---|---|
