@@ -20,7 +20,6 @@ Checks (each explains a share of the symptom; a cause needs >= 25%):
 """
 from __future__ import annotations
 
-import math
 import re
 import threading
 from datetime import date, timedelta
@@ -274,7 +273,7 @@ class SupplyEngine:
         short = self._short(spec)
         total = float(short["backordered_qty"].sum())
         lines = self.lines()
-        a, b = pd.Timestamp(spec["start"]), pd.Timestamp(spec["end"])
+        b = pd.Timestamp(spec["end"])
         win_end = min(b, self.as_of + timedelta(days=1))
         win_start = win_end - timedelta(days=14)
         whs = spec["warehouses"] or sorted(short["warehouse_id"].unique())

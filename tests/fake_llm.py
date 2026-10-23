@@ -42,7 +42,6 @@ class FakeLLM:
         if self.tracer:
             self.tracer.event("llm_call", agent, provider="fake", model="fake", ms=1)
         step = int(m.group(1)) if (m := re.search(r"Step (\d+) of", user)) else 99
-        done = "You have used all your steps" in user
         if agent == "Data Scout":
             return {"sources": [{"source": "erp", "what_it_holds": "orders", "grain": "order"}],
                     "joins": [{"left": "erp.sales_orders.order_id", "right": "carrier.shipments.order_id",

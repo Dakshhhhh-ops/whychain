@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { AlertTriangle, Check, CheckCircle2, Clock, Copy, Download, Lightbulb, Printer, ShieldAlert, ShieldCheck, Target, XCircle } from "lucide-react";
 import { DeliverablesPanel } from "./Deliverables";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type Action, type RunResult } from "../lib/api";
@@ -209,20 +210,27 @@ function ExportBar({ result }: { result: RunResult }) {
 function splitBrief(md: string) {
   let summary = "";
   let how = "";
+  const next: { question: string; why: string }[] = [];
   const main: string[] = [];
   for (const part of ("\n" + md).split(/\n(?=## )/)) {
     const t = part.trim();
     if (!t) continue;
     if (t.startsWith("## Summary")) summary = t.replace(/^## Summary\s*/, "");
     else if (t.startsWith("## How we know")) how = t.replace(/^## How we know\s*/, "");
+    else if (t.startsWith("## Ask why next"))
+      for (const line of t.split("\n").slice(1)) {
+        const m = line.match(/^-\s*(.+?\?)\s*(?:\((.*)\))?\s*$/);
+        if (m) next.push({ question: m[1], why: m[2] ?? "" });
+      }
     else main.push(t);
   }
-  return { summary, how, main: main.join("\n\n") };
+  return { summary, how, next, main: main.join("\n\n") };
 }
 
 export function BriefView({ result, onOpen, onDecided }: { result: RunResult; onOpen: (id: string) => void; onDecided: () => void }) {
   const known = result.evidence ?? {};
   const parts = splitBrief(result.brief ?? "");
+  const navigate = useNavigate();
   const actions = result.actions ?? [];
   const currency = actions[0]?.currency ?? (result.dataset === "olist" ? "BRL" : "INR");
   return (
@@ -247,6 +255,26 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
         <WhyChain result={result} />
         <div className="border-t border-slate-100 px-6 py-5">
           <Markdown text={parts.main} onOpen={onOpen} known={known} />
+          {parts.next.length > 0 && (
+            <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3 print:hidden">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-700">Ask why next</div>
+              <div className="mt-2 flex flex-col gap-2">
+                {parts.next.map((n) => (
+                  <button
+                    key={n.question}
+                    onClick={async () => {
+                      const r = await api.start(n.question, result.dataset);
+                      navigate(`/runs/${r.run_id}`);
+                    }}
+                    className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-left ring-1 ring-brand-100 transition hover:ring-brand-300"
+                  >
+                    <span className="text-[13px] font-medium text-slate-900">{n.question}</span>
+                    {n.why && <span className="text-[12px] text-slate-500">{n.why}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {parts.how && (
             <details className="group mt-5 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 print:block">
               <summary className="cursor-pointer select-none text-[13px] font-semibold text-slate-700">

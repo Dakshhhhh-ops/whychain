@@ -206,3 +206,21 @@ def test_a_question_scouts_guard_blocks_is_refused_without_a_model(tmp_path, mon
     assert not any(e["kind"] == "llm_call" for e in ctx.tracer.events)
     ev = next(e for e in ctx.tracer.events if e["kind"] == "scout")
     assert ev["route"] == "refuse" and ev["decided_by"] == "scout"
+
+
+def test_a_brief_proposes_the_next_why_where_the_rise_sits(tmp_path):
+    """March 2018 on Olist: the rise is concentrated in some states, so the brief offers the next question, scoped to
+    the first of them, for the same period; it is a question the analysis engine answers."""
+    from whychain.analysis.battery import battery_applies
+    from whychain.datasets import get_dataset
+
+    ds = get_dataset("olist")
+    tracer = Tracer(runs_dir=tmp_path)
+    h = LocalHarness("olist")
+    ctx = Ctx(llm=FakeLLM(tracer), harness=h, tracer=tracer,
+              memory=Memory(url="http://127.0.0.1:9", local_path=tmp_path / "m.json"), settings=Settings(runs_dir=tmp_path),
+              as_of=str(ds.as_of), catalog_text=catalog_text(h.catalog()), dataset=ds)
+    res = investigate("Why did late deliveries jump to 19% for orders placed in March 2018?", ctx=ctx)
+    nxt = res["brief"].split("## Ask why next")[1].strip().splitlines()
+    assert nxt and nxt[0].startswith("- Why were deliveries to ") and "March 2018" in nxt[0]
+    assert battery_applies(nxt[0][2:].split("?")[0] + "?")

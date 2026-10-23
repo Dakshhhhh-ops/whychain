@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 READ_ONLY = re.compile(r"^\s*(with|select|show|describe|desc|explain)\b", re.I)

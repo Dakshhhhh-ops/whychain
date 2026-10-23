@@ -167,7 +167,9 @@ class LLM:
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, wait_s=wait, error="RateLimitError: 429")
                 time.sleep(wait)
             except TRANSIENT as e:
-                if attempt >= attempts:
+                # a timeout means this model's queue is backed up: with another model behind it, switch now rather
+                # than wait out a second timeout on the same queue
+                if attempt >= attempts or (isinstance(e, APITimeoutError) and attempts <= 2):
                     raise
                 self._trace("llm_retry", agent, provider=p.name, attempt=attempt, error=f"{type(e).__name__}: {str(e)[:120]}")
                 time.sleep(2.5 * attempt)

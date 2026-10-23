@@ -30,6 +30,8 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - In about 15 seconds, a preliminary answer computed from the data; two to three minutes later, the full brief.
 - The brief opens with three lines for a manager (what happened, why, what to do, in money), then the why chain, drawn
   from the Meterless World Model: the symptom, each cause's share, where it sits, what was ruled out (crossed out).
+- Each brief ends with **Ask why next**: the place where the rise sits, or the stock-out that held up dispatch, one
+  click from its own investigation (March 2018 → Rio de Janeiro: 34.5% late against a normal 16.3%).
 - Then: what the written record says, quoted word for word; actions sized from the data, each with the value at stake,
   the risky ones held for approval; and, folded, the medians, percentiles and counterfactuals behind every line.
 - Every number in the brief links to the cell and the SQL it came from, and is checked by code.

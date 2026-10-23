@@ -1235,6 +1235,49 @@ def why_chain(state: dict, ctx: Ctx, causes: list, held_by: dict, where: list, r
         ctx.tracer.event("why_chain", "Reporter", relations=rel)
 
 
+def ask_next(state: dict, ctx: Ctx, causes: list, where: list, held_by: dict) -> list[tuple[str, str]]:
+    """The next 'why', from this brief's own findings: (question, reason). Only questions WhyChain answers on its
+    computed engines: the place where the rise sits (the same period, scoped to it), and the warehouse and product whose
+    stock-outs held up dispatch."""
+    out: list[tuple[str, str]] = []
+    primary = (state.get("analysis") or {}).get("primary") or {}
+    eng = engine_for(ctx)
+    m = getattr(eng, "m", None)
+    label = str(primary.get("label") or "")
+    if m is not None and causes and primary.get("mode") == "time" and " placed " in label and " during " not in label:
+        period = label.split(" placed ", 1)[1]
+        taken = {str(x) for vals in (primary.get("filters") or {}).values() for x in vals}
+        for f in where:
+            summ = state["evidence"].get((f.get("evidence_ids") or [""])[0], {}).get("summary", {})
+            if summ.get("dimension") != m.map_within:
+                continue
+            for place in summ.get("concentrated_in") or []:
+                if place in taken:
+                    continue
+                name = (m.place_names or {}).get(place, place)
+                out.append((f"Why were deliveries to {name} late for orders placed {period}?",
+                            f"The rise is concentrated in {name}: what made it worse there?"))
+                break
+            if out:
+                break
+    for f in causes:
+        why = held_by.get(f["task_id"])
+        summ = state["evidence"].get((why or {}).get("evidence_ids", [""])[0], {}).get("summary", {}) if why else {}
+        sups, whs = summ.get("suppliers") or [], sorted((summ.get("warehouses") or {}).items(), key=lambda kv: -kv[1])
+        if sups and whs:
+            city = whs[0][0]
+            try:
+                seng = get_supply_engine(ctx.harness)
+                names = {str(r.warehouse_id): str(r.name) for r in seng.warehouses().itertuples()} if seng else {}
+                city = names.get(whs[0][0], whs[0][0]).split(" ")[0]
+            except Exception:
+                pass
+            out.append((f"Why did {city} run out of {str(sups[0][2]).lower()}?",
+                        f"Dispatch slowed because orders waited for {sups[0][1]} stock at {city}: why was it short?"))
+            break
+    return out[:2]
+
+
 def _money(cur: str, v) -> str:
     return f"R$ {v:,.0f}" if cur == "BRL" else f"{cur} {v:,.0f}"
 
@@ -1431,7 +1474,6 @@ def report_battery(state: dict, ctx: Ctx, preliminary: bool = False) -> dict:
             cost = _money(cur, a["est_cost_inr"]) if isinstance(a.get("est_cost_inr"), (int, float)) else "not computed (no cost data)"
             appr = "needs approval: " + "; ".join(a.get("approval_reasons") or []) if a.get("needs_approval") else "within limits"
             lines.append(f"| {a['id']}. {a.get('title', '')} {''.join(f'[{e}]' for e in a.get('evidence', [])[:2])} | {prot} | {val} | {cost} | {appr} |")
-    last = state["evaluations"][-1] if state.get("evaluations") else {}
     stage_causes = [f for f in causes if tasks.get(f["task_id"], {}).get("tool") == "stage"]
     stage_sh = [round(100 * v[f["task_id"]]["share_of_symptom"], 1) for f in stage_causes
                 if isinstance(v[f["task_id"]].get("share_of_symptom"), float)]
@@ -1495,6 +1537,9 @@ def report_battery(state: dict, ctx: Ctx, preliminary: bool = False) -> dict:
     summary = f"- **What happened:** {what}\n- **Why:** {why}\n- **What to do:** {todo_txt}"
     if not preliminary:
         why_chain(state, ctx, causes, held_by, where, ruled, v)
+        nxt = ask_next(state, ctx, causes, where, held_by) if not supply else []
+        if nxt:
+            body += "\n\n## Ask why next\n" + "\n".join(f"- {q} ({why})" for q, why in nxt)
     if preliminary:
         threshold = getattr(ctx.dataset, "approval_threshold", None) or ctx.settings.approval_threshold_inr
         md_p, head_p, chk = check_brief(f"## Summary\n{summary}", headline, state, acts, None,
