@@ -14,11 +14,13 @@ WhyChain is for operations and fulfilment managers who see a problem on a dashbo
 
 On real Olist data, orders placed in March 2018 were 19.0% late against a normal 5.6%. Carrier transit explains 72.7% of the rise and shorter promises 26.7%. The postal strike that month is ruled out: lateness was already high before it began. The 1,328 late orders were worth R$ 187,138, and their customers gave them 2.1 stars on average against 4.2 for the on-time ones. Each action says how much of that it protects: getting transit back to normal in SP, RJ and MG covers 593 of those orders, R$ 83,603 of them. A preliminary answer computed from the data appears within seconds (median 3.5 s in the final pass); the written record and the written answer follow. In the final test pass, at one commit with every query through Zetaris, it found the root cause in 18 of 18 questions, four of them held out (see [Results](#results)).
 
-| Control tower | A live investigation | The brief |
+| Control tower | A preliminary answer in seconds | The brief: in short, in money |
 |---|---|---|
 | ![Control tower](docs/img/control-tower.png) | ![Live investigation](docs/img/investigation-live.png) | ![Brief](docs/img/brief.png) |
 | **Every number opens its evidence and SQL** | **A proven-optimal fix, sized from the data** | **Memory with provenance** |
 | ![Evidence](docs/img/evidence.png) | ![Stock transfer](docs/img/kaveri-transfer.png) | ![Memory](docs/img/memory.png) |
+| **The why chain, from the Meterless World Model** | **Ask why next: one click deeper (Rio de Janeiro)** | **Memory with provenance** |
+| ![Why chain](docs/img/why-chain.png) | ![Rio drill-down](docs/img/rio-drilldown.png) | ![Memory page](docs/img/memory-page.png) |
 
 ### See it in five minutes
 

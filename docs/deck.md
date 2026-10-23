@@ -72,7 +72,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
   SQL. Nemotron 3.5 Super, with Nemotron 3 Ultra as the fallback.
 - Memory: Nemotron 3 Embed embeds every finding and recall query for H-MEM.
 - Risk & Action: templates sized from computed tables; the Optiagent optimizer for stock transfers.
-- Screenshot: `docs/img/investigation-live.png` (the Board streaming agents).
+- Screenshot: `docs/img/investigation-live.png` (the preliminary answer at 8 s, the agents still working).
 
 ## 7. Zetaris: one query across six systems
 
@@ -96,7 +96,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - Recall runs on NVIDIA Nemotron embeddings (one vendored file gained a provider hook; conformance 13/13 with it off
   and on). Reworded questions find the right past finding 5 times in 6, against 2 in 6 with the mock.
 - The World Model keeps each run's why chain (causes, shares, where, what explains them, what was ruled out); the
-  brief draws it. Screenshot: `docs/img/brief.png` (the chain under the summary).
+  brief draws it. Screenshot: `docs/img/why-chain.png`; one click deeper: `docs/img/rio-drilldown.png`.
 - Screenshot: `docs/img/memory.png` (the Memory page, or a run's Memory tab with the cause graph).
 
 ## 9. What's unique
@@ -116,7 +116,8 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
   (KH2, a red herring) and led to a rule change. 4/4 still-held-out questions pass in the final pass.
 - Reproducible: every confirmed cause and its share match the previous final pass; the only changed numbers are
   deliberate fixes (listed in the README).
-- Cost: 6 to 9 model calls and 38 s to 4 minutes per question (the earlier pure-agent design used 50 to 70 calls).
+- Speed and cost: a preliminary answer in a median 3.5 s; the full brief in 22 s to 2.5 minutes; 5 to 9 model calls per
+  question (the earlier pure-agent design used 50 to 70 calls).
 
 ## 11. The prescriptive loop (Kaveri)
 
@@ -124,7 +125,8 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - Fix: a stock transfer from Mumbai plus air freight, proven optimal, protecting 62 orders for INR 133,590.
 - A manager approves; the Action Executor prepares the deliverables, for example a per-SKU transfer order and a
   draft email to the supplier (it is an agent, so what it prepares varies; it takes two to three minutes).
-- Screenshots: `docs/img/kaveri-transfer.png` (the actions), `docs/img/deliverables.png` (after approval).
+- Screenshots: `docs/img/kaveri-preliminary.png` (the transfer in the preliminary answer), `docs/img/kaveri-transfer.png`
+  (the actions), `docs/img/deliverables.png` (after approval).
 
 ## 12. What's next
 
