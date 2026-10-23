@@ -51,18 +51,22 @@ WHERE o.order_status = 'delivered'
 GROUP BY s.seller_state ORDER BY orders DESC LIMIT 5
 ```
 
-## Rehearsal notes (22 Oct, 22:20 to 22:45 IST, app on Zetaris)
+## Rehearsal notes (23 Oct, 23:30 to 23:40 IST, the code as submitted, app warmed, fresh memory, through Zetaris)
 
+- Before recording: run `start.cmd` and wait for "Warm-up done" (it loads the analysis tables into the app: about
+  30 s for Olist, 10 s for Kaveri once Zetaris is up). Without it, the first question waits a minute for its tables.
 - Shot 2: the first "Investigate why" card on the Olist control tower is "Late deliveries spiked in March 2018"; it
   starts the run at once with the demo question.
-- Shot 3: the board fills with the 13 computed tests within about 5 s; the run took 2 to 3.5 minutes through Zetaris.
-- Shot 4: citation chips open a drawer with the computed table, "Data via Zetaris" and, under "The federated query
-  these numbers come from", the SQL (click to unfold it).
-- Shot 6: Pune run took about 3.5 minutes; after **Approve**, the Action Executor took about 2.5 minutes.
-- Shot 7: the second March 2018 run showed "Recalled 8 memories, plus a cached data map" and the cause graph.
-  The Memory tab also shows the Document Analyst's one-line summary, which over-reaches on the strike (see the
-  README's Known limitations); don't linger on it.
-- The left panel shortens "Nemotron embeddings" to "Nemotr..." at this width; the run header shows it in full.
+- Shot 3: the activity shows "Meterless Scout: delivery.explain → the analysis engine · signed contract" at 4 s; the
+  **Preliminary answer** card appeared at 8 s; the full brief was ready at 38 s (NVIDIA was fast; on a slow evening
+  it took up to 3 minutes, so keep the cut).
+- Shot 4: **In short**, then the **why chain** (two causes with their shares, RJ, six ruled-out tests struck
+  through); citation chips open the computed table, "Data via Zetaris" and the SQL (unfold it).
+- Shot 4b: "Ask why next" → the Rio de Janeiro run: its brief was ready at 29 s (34.5% against 16.3%).
+- Shot 6: Pune's preliminary answer came at 24 s (it includes the proven-optimal transfer); after **Approve** the
+  Action Executor's deliverables were ready within seconds this time (it took 2.5 minutes on 22 Oct).
+- Shot 7: the second March 2018 run showed "Recalled 2 memories" and the cause graph on its Memory tab.
+- The Memory page now shows the written record as verified quotes only, with a link to the run it came from.
 
 ## Where Nemotron appears
 
