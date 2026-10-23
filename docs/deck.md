@@ -99,7 +99,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
   brief draws it. Screenshot: `docs/img/why-chain.png`; one click deeper: `docs/img/rio-drilldown.png`.
 - Screenshot: `docs/img/memory.png` (the Memory page, or a run's Memory tab with the cause graph).
 - **Nightshift: private documents.** Tick "Private documents" and contracts, email and news are read on the
-  laptop's own GPU (Llama 3.2 3B via Nightshift's `meterless/local`). Every call returns a signed receipt; WhyChain
+  laptop's own GPU (NVIDIA Nemotron 3 Nano 4B via Nightshift's `meterless/local`). Every call returns a signed receipt; WhyChain
   keeps a reply only if it says local-only (egress: none). Same answer as the cloud run; quotes exact by construction.
 
 ## 9. What's unique

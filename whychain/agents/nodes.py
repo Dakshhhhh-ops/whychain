@@ -523,7 +523,7 @@ def investigate_docs_private(t: dict, payload: dict, ctx: Ctx) -> dict:
         numbered = "\n".join(f"{i}. {x}" for i, x in enumerate(sents, 1))
         user = f"{focus}\n\nDOCUMENT: {d.get('title')} ({d.get('sent_at') or 'undated'})\n{numbered}"
         try:
-            out = ctx.llm.json("local", PRIVATE_DOC_PROMPT, user, agent=agent, max_tokens=150, retries=1)
+            out = ctx.llm.json("local", PRIVATE_DOC_PROMPT, user, agent=agent, max_tokens=800, retries=1)  # room for a reasoning model's thinking
         except LLMError as e:
             failed += 1
             ctx.tracer.event("agent_error", agent, task_id=t["id"], error=f"{d['doc_id']}: {e}"[:200])
