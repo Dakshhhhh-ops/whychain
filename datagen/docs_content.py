@@ -21,7 +21,7 @@ def render_all(ctx: dict) -> dict[str, str]:
     docs: dict[str, str] = {}
 
     # ------------------------------------------------------------ contracts
-    docs["contracts/supplier_S-14_voltix_supply_agreement.md"] = f"""# Supply Agreement: Voltix Power Components (Supplier S-14)
+    docs["contracts/supplier_S-14_voltix_supply_agreement.md"] = """# Supply Agreement: Voltix Power Components (Supplier S-14)
 
 **Parties:** Kaveri Consumer Electronics Distribution Pvt Ltd ("Buyer") and Voltix Power Components Co. Ltd, Shenzhen ("Supplier")
 **Effective:** 1 January 2026 · **Term:** 24 months · **Products:** chargers and power banks (SKU families CHG, PWB)
