@@ -59,6 +59,7 @@ export type LiveState = {
   harness?: string;
   memoryBackend?: string;
   memoryEmbedder?: string;
+  privateDocs?: boolean;
   dataset?: string;
   error?: string;
   // the answer built by code from the computed tests, published before the written record and the written answer
@@ -103,6 +104,7 @@ export function applyEvent(s: LiveState, e: TraceEvent): LiveState {
       n.dataset = e.dataset;
       n.memoryBackend = e.memory?.backend;
       n.memoryEmbedder = e.memory?.embedder ?? undefined;
+      n.privateDocs = !!e.private_docs;
       break;
     case "agent_start": {
       const st = stageOf(e.agent);

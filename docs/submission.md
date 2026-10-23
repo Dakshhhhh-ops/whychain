@@ -31,7 +31,9 @@ were worth R$ 187,138 and were rated 2.1 stars against 4.2 for on-time ones.
 - Zetaris: the only path to company data; Postgres and file exports federated in one SQL endpoint (local platform).
 - Meterless: three engines. Scout Intent routes every question, guards against prompt injection and signs an execution
   contract (WhyChain's implementation of the spec, passing the spec's own eval harness); H-MEM memory with provenance
-  (on Nemotron embeddings); the World Model holds each run's why chain, which the brief draws.
+  (on Nemotron embeddings); the World Model holds each run's why chain, which the brief draws. Plus Nightshift:
+  tick "Private documents" and the written record is read on the laptop's own GPU (Llama 3.2 3B via `meterless/local`),
+  with Nightshift's signed receipt checked on every call (local-only, egress none).
 - NVIDIA: Nemotron 3.5 Super and Nemotron 3 Ultra for the agents; Nemotron 3 Embed for memory.
 - Development tools: VS Code (Cursor is optional under the updated onboarding guide).
 

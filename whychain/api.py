@@ -143,6 +143,7 @@ def status(dataset: str | None = None) -> dict:
          "models": {k: {"configured": p.configured, "model": p.model} for k, p in llm.providers.items()},
          # Ollama alone doesn't count: on small machines it often can't load a model
          "models_ready": any(p.configured for k, p in llm.providers.items() if k != "ollama"),
+         "private_docs_default": SETTINGS.private_docs,
          "preview": os.environ.get("WHYCHAIN_PREVIEW") == "1",
          "as_of": ds.as_of, "company": manifest.get("company"), "row_counts": manifest.get("row_counts", {}),
          "dataset": ds.public()}
@@ -158,6 +159,7 @@ def samples(dataset: str | None = None) -> list[dict]:
 class NewRun(BaseModel):
     question: str = Field(min_length=8, max_length=500)
     dataset: str | None = None
+    private_docs: bool | None = None   # read documents only on this machine (Meterless Nightshift)
 
 
 @app.post("/api/runs")
@@ -170,7 +172,8 @@ def start_run(body: NewRun) -> dict:
 
     def work():
         try:
-            ctx, notes = CTX_FACTORY(tracer=tracer, dataset=ds.key)
+            extra = {} if body.private_docs is None else {"private_docs": body.private_docs}
+            ctx, notes = CTX_FACTORY(tracer=tracer, dataset=ds.key, **extra)
             live.result = graph.investigate(live.question, ctx=ctx, notes=notes)
         except Exception as e:  # make the failure visible to the UI
             tracer.event("run_error", "System", error=f"{type(e).__name__}: {e}")

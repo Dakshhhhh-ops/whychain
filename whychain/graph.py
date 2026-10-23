@@ -67,7 +67,9 @@ def build_graph(ctx: Ctx):
     g.add_node("remember", lambda s: nodes.remember(s, ctx))
 
     def dispatch(s: State):
-        shared = {"question": s["question"], "data_map": s.get("data_map", {}), "memories": s.get("memories", [])}
+        shared = {"question": s["question"], "data_map": s.get("data_map", {}), "memories": s.get("memories", []),
+                  # the period and symptom in question, for the private document reader
+                  "symptom": s.get("symptom"), "analysis": s.get("analysis") or {}}
         tasks = s.get("open_tasks", [])
         if not tasks:
             return "evaluate"
@@ -90,7 +92,7 @@ def build_graph(ctx: Ctx):
 
 
 def make_ctx(harness_pref: str | None = None, listener=None, tracer: Tracer | None = None,
-             dataset: str | None = None) -> tuple[Ctx, list[str]]:
+             dataset: str | None = None, private_docs: bool | None = None) -> tuple[Ctx, list[str]]:
     from whychain.datasets import get_dataset
 
     ds = get_dataset(dataset)
@@ -102,6 +104,7 @@ def make_ctx(harness_pref: str | None = None, listener=None, tracer: Tracer | No
         tracer.listeners.append(listener)
     harness, notes = get_harness(harness_pref, dataset=ds.key)
     llm = LLM(tracer=tracer)
+    llm.private_docs = SETTINGS.private_docs if private_docs is None else private_docs
     # a run never hangs: after this many seconds it stops calling models and finishes with what it has
     llm.deadline = time.monotonic() + float(os.environ.get("WHYCHAIN_RUN_TIMEOUT_S", "1500"))
     ctx = Ctx(llm=llm, harness=harness, tracer=tracer, memory=memory, settings=SETTINGS, as_of=ds.as_of,
@@ -172,7 +175,8 @@ def investigate(question: str, harness_pref: str | None = None, listener=None, c
     ds_key = getattr(ctx.dataset, "key", None)
     version = code_version()
     t.event("run_start", "System", question=question, dataset=ds_key, harness=ctx.harness.name, harness_notes=notes,
-            memory=ctx.memory.status(), models=ctx.llm.available(), today=str(date.today()), code=version)
+            memory=ctx.memory.status(), models=ctx.llm.available(), today=str(date.today()), code=version,
+            private_docs=bool(getattr(ctx.llm, "private_docs", False)))
     # which part of WhyChain answers: Meterless Scout Intent when it is confident, the word rules otherwise
     from whychain import scout
 

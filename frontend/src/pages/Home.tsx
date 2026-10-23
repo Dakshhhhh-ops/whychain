@@ -7,6 +7,7 @@ import {
   Factory,
   Info,
   KeyRound,
+  Lock,
   Network as NetworkIcon,
   PackageX,
   Search,
@@ -70,6 +71,10 @@ export function Home() {
   const [hover, setHover] = useState<Problem | null>(null);
   const [ev, setEv] = useState<ExternalEvent | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // private documents: the written record is read only on this machine, by Meterless Nightshift
+  const nightshift = !!status?.models?.nightshift?.configured;
+  const [priv, setPriv] = useState<boolean | null>(null);
+  const privateDocs = nightshift ? (priv ?? !!status?.private_docs_default) : undefined;
   useEffect(() => {
     if (!key) return;
     setOv(null);
@@ -84,7 +89,7 @@ export function Home() {
     setBusy(id);
     setErr("");
     try {
-      const { run_id } = await api.start(question.trim(), key);
+      const { run_id } = await api.start(question.trim(), key, privateDocs);
       nav(`/runs/${run_id}`);
     } catch (e) {
       setErr(String(e));
@@ -161,6 +166,21 @@ export function Home() {
             Investigate
           </Button>
         </div>
+        {nightshift && (
+          <label
+            className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-[12px] text-slate-600"
+            title="The Document Analyst reads contracts, emails and news on this machine (Meterless Nightshift) instead of NVIDIA's cloud. The numbers are computed the same way either way."
+          >
+            <input
+              type="checkbox"
+              checked={!!privateDocs}
+              onChange={(e) => setPriv(e.target.checked)}
+              className="h-3.5 w-3.5 accent-brand-600"
+            />
+            <Lock className="h-3.5 w-3.5 text-slate-400" />
+            Private documents: read the written record on this machine (Meterless Nightshift)
+          </label>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="text-[11.5px] text-slate-400">Try:</span>
           {samples.map((s) => (

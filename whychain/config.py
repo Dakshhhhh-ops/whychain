@@ -56,6 +56,8 @@ class Settings:
         f"dbname={env('POSTGRES_DB', 'erp')} user={env('POSTGRES_USER', 'whychain')} "
         f"password={env('POSTGRES_PASSWORD', 'whychain-local')}"))
     meterless_url: str = field(default_factory=lambda: env("METERLESS_BRIDGE_URL", "http://localhost:8787"))
+    # read documents only on this machine (Meterless Nightshift), for runs that don't say otherwise
+    private_docs: bool = field(default_factory=lambda: env("WHYCHAIN_PRIVATE_DOCS", "false").lower() == "true")
     max_rounds: int = field(default_factory=lambda: int(env("WHYCHAIN_MAX_ROUNDS", "2")))
     approval_threshold_inr: float = field(
         default_factory=lambda: float(env("WHYCHAIN_APPROVAL_THRESHOLD_INR", "300000")))

@@ -479,6 +479,92 @@ def investigate_tool(t: dict, ctx: Ctx) -> dict:
     return {"findings": [finding], "evidence": evidence}
 
 
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
+PRIVATE_DOC_PROMPT = (
+    "You read ONE company document and decide whether it is relevant to a question about a business problem. "
+    "Its sentences are numbered. Reply with one JSON object only, no other text: "
+    '{"relevant": true or false, "sentences": [the numbers of at most 2 sentences that describe what happened, '
+    "when or where]}. A document about a different period or a different topic is not relevant.")
+
+
+def investigate_docs_private(t: dict, payload: dict, ctx: Ctx) -> dict:
+    """The written record, read only on this machine (Meterless Nightshift): code fetches every document and numbers
+    its sentences; the local model only says whether a document is relevant and which sentences matter; code copies
+    those sentences word for word. Small local models can do that reliably, and the quotes are exact by construction."""
+    agent = f"Doc Analyst {t['id']}"
+    ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"], private=True)
+    r = ctx.harness.query("SELECT doc_id, doc_type, title, sent_at, sender, recipients, body FROM docs.documents "
+                          "ORDER BY sent_at", limit=60)
+    docs = [dict(zip(r.columns, row)) for row in r.rows] if r.ok else []
+    focus = f"QUESTION: {payload.get('question', '')}\nFOCUS: {payload.get('symptom') or ''}"
+    # the period in question, from the analysis plan: dated documents far from it are not read at all, documents
+    # dated inside it are in scope by definition, and quotes nearest the period come first
+    an = payload.get("analysis") or {}
+    span = an.get("primary") or an.get("spec") or {}
+    try:
+        p0, p1 = date.fromisoformat(str(span["start"])[:10]), date.fromisoformat(str(span["end"])[:10])
+    except (KeyError, TypeError, ValueError):
+        p0 = p1 = None
+
+    def gap_days(d: dict) -> int | None:
+        try:
+            when = date.fromisoformat(str(d.get("sent_at"))[:10])
+        except (TypeError, ValueError):
+            return None   # undated: contracts and policies apply throughout
+        return 0 if p0 is None or p0 <= when <= p1 else (p0 - when).days if when < p0 else (when - p1).days
+
+    docs = [d for d in docs if p0 is None or gap_days(d) is None or gap_days(d) <= 75]
+    picked, relevant, failed = [], [], 0
+    for d in docs:
+        sents = [x.strip() for x in SENTENCE_END.split(str(d.get("body") or "")) if len(x.strip()) >= 12]
+        if not sents:
+            continue
+        in_period = p0 is not None and gap_days(d) == 0
+        numbered = "\n".join(f"{i}. {x}" for i, x in enumerate(sents, 1))
+        user = f"{focus}\n\nDOCUMENT: {d.get('title')} ({d.get('sent_at') or 'undated'})\n{numbered}"
+        try:
+            out = ctx.llm.json("local", PRIVATE_DOC_PROMPT, user, agent=agent, max_tokens=150, retries=1)
+        except LLMError as e:
+            failed += 1
+            ctx.tracer.event("agent_error", agent, task_id=t["id"], error=f"{d['doc_id']}: {e}"[:200])
+            continue
+        nums = []
+        for n in out.get("sentences") or []:
+            try:
+                n = int(n)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= n <= len(sents) and n not in nums:
+                nums.append(n)
+        keep = (out.get("relevant") is True and nums) or in_period
+        if in_period and not nums:
+            nums = [1]   # dated inside the period: in scope even if the model passed it over; quote its lead
+        ctx.tracer.event("read_doc", agent, task_id=t["id"], doc_id=d["doc_id"], found=True,
+                         thought="read on this machine: " + ("in the period" if in_period else
+                                                             "relevant" if keep else "not relevant"))
+        if keep:
+            relevant.append(d)
+            picked += [{"doc_id": d["doc_id"], "quote": sents[n - 1]} for n in nums[:2]]
+    # nearest the period first (undated contracts and policies after the dated record)
+    rank = {d["doc_id"]: (gap_days(d) is None, gap_days(d) or 0) for d in docs}
+    picked.sort(key=lambda q: rank[q["doc_id"]])
+    relevant.sort(key=lambda d: rank[d["doc_id"]])
+    qev, rejected = verify_quotes(ctx, t["id"], agent, picked[:8], {d["doc_id"]: d for d in docs})
+    shown = [d for d in relevant if any(e["doc_id"] == d["doc_id"] for e in qev.values())]
+    claim = ("The written record (read on this machine by Meterless Nightshift) reports: "
+             + "; ".join(f"{d.get('title')} ({str(d.get('sent_at') or 'undated')[:10]})" for d in shown[:5]) + "."
+             if shown else f"No document in the written record ({len(docs)} read on this machine) bears on the question."
+             + (f" {failed} could not be read by the local model." if failed else ""))
+    finding = {"task_id": t["id"], "statement": t["statement"], "type": t["type"], "agent_kind": "docs",
+               "agent": agent, "verdict": "supports" if qev else "inconclusive", "claim": claim, "key_numbers": {},
+               "who_knew": None, "confidence": 0.6 if qev else 0.0, "evidence_ids": list(qev), "steps": len(docs),
+               "sql_errors_recovered": 0, "quotes_rejected": rejected, "round": t["round"],
+               "context_only": bool(t.get("context_only")), "private": True}
+    ctx.tracer.event("finding", agent, task_id=t["id"], verdict=finding["verdict"], claim=claim,
+                     evidence=finding["evidence_ids"], confidence=finding["confidence"], recovered=0)
+    return {"findings": [finding], "evidence": qev}
+
+
 def investigate(payload: dict, ctx: Ctx) -> dict:
     """Runs one task. Fanned out in parallel, one call per task."""
     t = payload["task"]
@@ -487,6 +573,8 @@ def investigate(payload: dict, ctx: Ctx) -> dict:
             return ctx.precomputed.pop(t["id"])
         return investigate_tool(t, ctx)
     docs = t["agent"] == "docs"
+    if docs and getattr(ctx.llm, "private_docs", False):
+        return investigate_docs_private(t, payload, ctx)
     agent = f"{'Doc Analyst' if docs else 'Investigator'} {t['id']}"
     ctx.tracer.event("agent_start", agent, task_id=t["id"], statement=t["statement"])
     brief = (base_context(payload, ctx) + f"\n\nYOUR TASK [{t['id']}] ({t['type']}): {t['statement']}\n"
@@ -1658,6 +1746,9 @@ def remember(state: dict, ctx: Ctx) -> dict:
                 "evidence_ids": f["evidence_ids"], "question": state["question"]}
         is_cause = v.get(f["task_id"], {}).get("is_cause", True)
         if f.get("context_only"):
+            # private documents: memory recall embeds text on NVIDIA's cloud, so the record's quotes stay out of it
+            if getattr(ctx.llm, "private_docs", False):
+                continue
             # the written record, as context: keep only what was verified (the quotes), not the model's summary
             quotes = [e for e in ev if e.get("type") == "doc" and e.get("quote")]
             if not quotes:

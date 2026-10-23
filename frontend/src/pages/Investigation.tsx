@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ArrowLeft, Brain, Calculator, Database, Download, FileText, GitBranch, Play, Radio } from "lucide-react";
+import { ArrowLeft, Brain, Calculator, Database, Download, FileText, GitBranch, Lock, Play, Radio } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActivityFeed, describe, Stepper } from "../components/Activity";
@@ -158,6 +158,14 @@ export function Investigation() {
               {(result?.memory?.backend ?? state.memoryBackend) === "meterless" ? "Meterless memory" : "Local memory"}
               {(result?.memory?.embedder ?? state.memoryEmbedder)?.includes("nemotron") ? " · Nemotron embeddings" : ""}
             </Badge>
+            {state.privateDocs && (
+              <span title="The written record was read on this machine by Meterless Nightshift; no document text was sent to the cloud">
+                <Badge tone="green">
+                  <Lock className="h-3 w-3" />
+                  Private documents · Nightshift
+                </Badge>
+              </span>
+            )}
           </div>
         </div>
         <div className="flex gap-2 print:hidden">

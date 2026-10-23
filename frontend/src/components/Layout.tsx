@@ -100,7 +100,7 @@ function DatasetSwitch() {
   );
 }
 
-const MODEL_LABEL: Record<string, string> = { xai: "Grok", nim: "Nemotron (fast)", "nim-reason": "Nemotron (reasoning)", "nim-backup": "Nemotron Ultra (backup)", nightshift: "Nightshift", ollama: "Ollama" };
+const MODEL_LABEL: Record<string, string> = { xai: "Grok", nim: "Nemotron (fast)", "nim-reason": "Nemotron (reasoning)", "nim-backup": "Nemotron Ultra (backup)", nightshift: "Meterless Nightshift (this PC)", ollama: "Ollama" };
 
 export function Layout() {
   const s = useStatus();

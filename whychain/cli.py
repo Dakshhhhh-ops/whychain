@@ -57,8 +57,14 @@ def main(argv=None) -> int:
     ap.add_argument("question")
     ap.add_argument("--harness", choices=["zetaris", "local"], default=None)
     ap.add_argument("--dataset", choices=["olist", "kaveri"], default=None, help="default: olist")
+    ap.add_argument("--private-docs", action="store_true", default=None,
+                    help="read the written record only on this machine (Meterless Nightshift)")
     args = ap.parse_args(argv)
-    res = investigate(args.question, args.harness, listener=show, dataset=args.dataset)
+    ctx = notes = None
+    if args.private_docs:
+        from whychain.graph import make_ctx
+        ctx, notes = make_ctx(args.harness, show, dataset=args.dataset, private_docs=True)
+    res = investigate(args.question, args.harness, listener=show, dataset=args.dataset, ctx=ctx, notes=notes)
     console.rule(res.get("headline") or "Result")
     console.print(Markdown(res.get("brief", "")))
     console.print(f"\n[dim]run {res['run_id']} · trace: runs/{res['run_id']}/trace.jsonl[/dim]")

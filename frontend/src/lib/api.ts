@@ -232,6 +232,7 @@ export type Status = {
   company?: string;
   row_counts: Record<string, number>;
   models_ready?: boolean;
+  private_docs_default?: boolean;
   preview?: boolean;
   dataset?: { key: string; name: string; real: boolean; currency: string };
 };
@@ -272,11 +273,11 @@ export const api = {
   memory: (ds?: string) =>
     request<{ status: Status["memory"]; count: number; items: MemoryItem[]; tiers: Record<string, number> }>(`/api/memory?limit=200${dsq(ds, false)}`),
   sources: (ds?: string) => request<SourcesResponse>(`/api/sources${dsq(ds)}`),
-  start: (question: string, dataset?: string) =>
+  start: (question: string, dataset?: string, privateDocs?: boolean) =>
     request<{ run_id: string }>("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, dataset }),
+      body: JSON.stringify({ question, dataset, ...(privateDocs === undefined ? {} : { private_docs: privateDocs }) }),
     }),
   decide: (runId: string, actionId: string, decision: "approved" | "rejected", note?: string) =>
     request<{ ok: boolean }>(`/api/runs/${runId}/actions/${actionId}`, {

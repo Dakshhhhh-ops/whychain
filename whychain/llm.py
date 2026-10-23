@@ -3,7 +3,8 @@
 Each agent asks for a *role*, not a model:
   reason  -> planner, evaluator, risk, reporter   (xAI Grok, then NVIDIA NIM, then local)
   work    -> data investigators, scout           (NVIDIA NIM, then Grok, then local)
-  local   -> document analyst                    (Meterless Nightshift on the local NVIDIA GPU, then Ollama, then NIM)
+  local   -> document analyst                    (NVIDIA NIM, then Meterless Nightshift on this machine, then Ollama)
+  private -> document analyst in private mode    (Meterless Nightshift only: documents never leave the machine)
 
 If a provider fails, the call falls through to the next one, and the trace records it.
 """
@@ -24,7 +25,9 @@ from whychain.slots import slot
 ROLE_CHAINS = {
     "reason": ["xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
     "work": ["nim", "nim-backup", "xai", "nim-reason", "nightshift", "ollama"],
-    "local": ["nightshift", "nim", "nim-backup", "ollama", "xai"],
+    "local": ["nim", "nim-backup", "nightshift", "ollama", "xai"],
+    # private documents: read only on this machine. No cloud fallback; if Nightshift fails, the record goes unread.
+    "private": ["nightshift"],
 }
 JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup"}
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
@@ -32,7 +35,7 @@ ATTEMPTS = 4  # per provider, for transient errors, before falling back to the n
 RATE_LIMIT_ATTEMPTS = 5  # 429s: the backup model shares the same key and quota, so wait instead of switching
 # at most this many calls in flight per endpoint ON THIS MACHINE, across every WhyChain process (see slots.py)
 MAX_PARALLEL = int(os.environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
-PROVIDER_DEADLINE_S = {"work": 180.0, "reason": 420.0, "local": 240.0}   # all attempts on one provider, waits included
+PROVIDER_DEADLINE_S = {"work": 180.0, "reason": 420.0, "local": 240.0, "private": 300.0}   # all attempts on one provider, waits included
 COOLDOWN_S = 90.0      # a provider that failed 3 times in a row is skipped for this long, then tried again
 
 
@@ -58,6 +61,21 @@ class LLMError(RuntimeError):
     pass
 
 
+class PrivacyError(RuntimeError):
+    """A private-documents call whose receipt does not prove it stayed on this machine."""
+
+
+def meterless_receipt(resp) -> dict:
+    """The parts of Nightshift's compute receipt that say where a request went."""
+    m = (getattr(resp, "model_extra", None) or {}).get("meterless") or {}
+    return {k: v for k, v in {
+        "privacy": (m.get("privacy") or {}).get("path"),
+        "egress": (m.get("egress") or {}).get("destination"),
+        "receipt_id": m.get("receipt_id"),
+        "route": (m.get("winning_route") or {}).get("label"),
+    }.items() if v is not None}
+
+
 class LLM:
     def __init__(self, tracer=None, providers: dict[str, Provider] | None = None,
                  chains: dict[str, list[str]] | None = None):
@@ -69,6 +87,7 @@ class LLM:
         self._down_until: dict[str, float] = {}
         self._lock = threading.Lock()
         self.deadline: float | None = None   # monotonic time after which this run makes no more model calls
+        self.private_docs = False   # documents are read only by Meterless Nightshift on this machine
 
     # ------------------------------------------------------------------ plumbing
     def available(self) -> dict[str, bool]:
@@ -94,12 +113,17 @@ class LLM:
     # ------------------------------------------------------------------ calls
     def chat(self, role: str, system: str, user: str, *, agent: str, json_mode: bool = False,
              temperature: float = 0.2, max_tokens: int = 2500) -> LLMResult:
+        if role == "local" and self.private_docs:
+            role = "private"
         if self.deadline is not None and time.monotonic() > self.deadline:
             raise LLMError("the run's time limit was reached; no more model calls")
         chain = self._chain(role)
         if not chain:  # every provider is cooling down: wait for the first one rather than fail
             soonest = min((self._down_until.get(n, 0.0) for n in self.chains.get(role, [])
                            if self.providers.get(n) and self.providers[n].configured), default=None)
+            if soonest is None and role == "private":
+                raise LLMError("Private documents is on, but Meterless Nightshift is not configured "
+                               "(NIGHTSHIFT_BASE_URL); the written record was not read")
             if soonest is None:
                 raise LLMError("No model provider is configured. Set XAI_API_KEY / NVIDIA_API_KEY or run Ollama.")
             time.sleep(max(0.0, min(soonest - time.monotonic(), 60.0)))
@@ -115,6 +139,9 @@ class LLM:
             kwargs = dict(model=p.model, messages=msgs, temperature=temperature, max_tokens=max_tokens)
             if json_mode and p.name in JSON_MODE_OK:
                 kwargs["response_format"] = {"type": "json_object"}
+            if p.name == "nightshift":
+                # Nightshift binds "whychain-private" to on-device lanes (app policy mode "local")
+                kwargs["extra_headers"] = {"meterless-app": "whychain-private" if role == "private" else "whychain"}
             if p.thinking is not None:
                 kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": p.thinking}}
                 if p.thinking:  # leave room for the reasoning before the answer
@@ -122,6 +149,10 @@ class LLM:
             t0 = time.perf_counter()
             try:
                 resp = self._create(p, kwargs, agent, attempts, PROVIDER_DEADLINE_S.get(role, 240.0))
+                receipt = meterless_receipt(resp) if p.name == "nightshift" else None
+                if role == "private" and (receipt or {}).get("privacy") != "local-only":
+                    # Nightshift's signed receipt must say the request stayed on this machine; otherwise discard it
+                    raise PrivacyError(f"Nightshift receipt does not say local-only: {receipt}")
                 text = strip_thinking(resp.choices[0].message.content or "")
                 usage = resp.usage
                 res = LLMResult(text, p.name, p.model, int((time.perf_counter() - t0) * 1000),
@@ -131,7 +162,8 @@ class LLM:
                     self._down_until.pop(p.name, None)
                 self._trace("llm_call", agent, provider=p.name, model=p.model, ms=res.ms,
                             prompt_tokens=res.prompt_tokens, completion_tokens=res.completion_tokens,
-                            fallback_from=[e["provider"] for e in errors] or None)
+                            fallback_from=[e["provider"] for e in errors] or None,
+                            private=True if role == "private" else None, **(receipt or {}))
                 return res
             except Exception as e:  # network, auth, rate limit, bad model name: fall through
                 with self._lock:
