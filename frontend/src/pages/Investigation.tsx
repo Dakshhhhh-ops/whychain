@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActivityFeed, describe, Stepper } from "../components/Activity";
 import { Board } from "../components/Board";
-import { BriefView, Markdown } from "../components/Brief";
+import { BriefView, Markdown, plainActions } from "../components/Brief";
 import { EvidenceBody, EvidenceDrawer } from "../components/Evidence";
 import { AgentAvatar, Badge, Bar, Button, Card, CardHeader, EmptyState, LiveDot, Spinner, Stat, Tabs } from "../components/ui";
 import { highlightFromText, MapLegend, NetworkMap } from "../components/NetworkMap";
@@ -222,7 +222,7 @@ export function Investigation() {
             </div>
             <div className="mt-1.5 text-[16px] font-semibold leading-snug text-slate-900">{state.preliminary.headline}</div>
             <div className="mt-2">
-              <Markdown text={state.preliminary.summary} onOpen={setOpenEv} known={{}} />
+              <Markdown text={plainActions(state.preliminary.summary)} onOpen={setOpenEv} known={{}} />
             </div>
           </div>
         </Card>

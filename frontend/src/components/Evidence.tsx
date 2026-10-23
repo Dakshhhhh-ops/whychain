@@ -280,7 +280,8 @@ export function EvidenceChip({ id, onOpen, missing, label, hint }: { id: string;
       onClick={() => onOpen(id)}
       disabled={missing}
       className={clsx(
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 align-baseline font-mono text-[11px] font-medium ring-1 ring-inset transition",
+        "inline-flex items-center gap-1 rounded-md py-0.5 align-baseline text-[11px] font-medium ring-1 ring-inset transition",
+        label ? "min-w-[1.4rem] justify-center px-1.5 tabular-nums" : "px-1.5 font-mono",
         isOpt
           ? "bg-violet-50 text-violet-700 ring-violet-200 hover:bg-violet-100"
           : isAna
@@ -290,9 +291,10 @@ export function EvidenceChip({ id, onOpen, missing, label, hint }: { id: string;
             : "bg-brand-50 text-brand-700 ring-brand-200 hover:bg-brand-100",
         missing && "cursor-default opacity-50",
       )}
-      title={missing ? "Evidence not available yet" : `${hint ? hint + " · " : ""}${id} · click to see the data and its query`}
+      title={missing ? "Evidence not available yet" : `${label ? `Source ${label}: ` : ""}${hint || (isDoc ? "a document" : isOpt ? "an optimisation" : isAna ? "a computed result" : "a query result")} · click to see the data and how it was computed`}
     >
-      {isOpt ? <Calculator className="h-3 w-3" /> : isAna ? <Sigma className="h-3 w-3" /> : isDoc ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />}
+      {/* a numbered source is just its number; the type icon stays on raw ids (evidence page, trace) */}
+      {!label && (isOpt ? <Calculator className="h-3 w-3" /> : isAna ? <Sigma className="h-3 w-3" /> : isDoc ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />)}
       {label ?? id}
     </button>
   );

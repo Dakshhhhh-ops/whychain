@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { Check } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { TraceEvent } from "../lib/api";
 import { plural } from "../lib/format";
 import { STAGES, type LiveState } from "../lib/runState";
@@ -8,8 +8,52 @@ import { AgentAvatar, Spinner } from "./ui";
 
 const code = (s: ReactNode) => <span className="rounded bg-slate-100 px-1 font-mono text-[11px] text-slate-700">{s}</span>;
 
-/** One readable line per meaningful event. Returns null for events we don't show. */
-export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNode | null {
+/** One readable line per meaningful event. Returns null for events we don't show.
+ *  `plain` leaves out what only an engineer needs (evidence ids, intent codes, timings, join tests). */
+export function describe(e: TraceEvent, onOpen?: (id: string) => void, plain = false): ReactNode | null {
+  // in plain mode a link reads as words, not as an evidence id
+  const link = (id: string | undefined, text: ReactNode) =>
+    id ? (
+      <button onClick={() => onOpen?.(id)} className="text-left text-brand-700 hover:underline">
+        {text}
+      </button>
+    ) : (
+      text
+    );
+  if (plain)
+    switch (e.kind) {
+      case "join_test":
+        return null;
+      case "query":
+        return e.ok ? <>Ran {link(e.evidence_id, "a query")} · {plural(e.rows as number, "row", "rows")}</> : <span className="text-amber-700">A query failed; rewriting it</span>;
+      case "read_doc":
+        return <>Read a document from the written record</>;
+      case "analysis":
+        return (
+          <>
+            Computed {link(e.evidence_id as string, String(e.title ?? "a result"))}
+            {e.verdict && e.verdict !== "measured" ? <span className="font-medium text-slate-800"> · {String(e.verdict).replace(/_/g, " ")}</span> : null}
+          </>
+        );
+      case "optimize":
+        if (!e.ok) break;
+        return (
+          <>
+            Found the {link(e.evidence_id, "best stock transfer")} (proven optimal) · {e.truck_units ?? 0} units by truck, {e.air_units ?? 0} by air
+            {e.unfilled_units ? `, ${e.unfilled_units} can't arrive in time` : ""}
+          </>
+        );
+      case "reverify":
+        return <>Re-checked {link(e.evidence_id, "a result")}: <span className={e.reproduced ? "text-emerald-700" : "text-rose-600"}>{e.reproduced ? "same answer" : "did not reproduce"}</span></>;
+      case "scout":
+        if (e.route === "refuse") return <span className="text-amber-700">Refused: the question contained instructions aimed at the agents</span>;
+        if (e.route === "off_topic") return <>This question isn't about this company's data</>;
+        return <>Read the question and sent it to {e.route_label}</>;
+      case "llm_fallback":
+        return <span className="text-amber-700">A model was busy; switched to the backup</span>;
+      case "run_end":
+        return <>Finished</>;
+    }
   const ev = (id?: string) =>
     id ? (
       <button onClick={() => onOpen?.(id)} className="font-mono text-[11px] font-medium text-brand-700 hover:underline">
@@ -120,14 +164,35 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void): ReactNod
   }
 }
 
+const TECH_KEY = "whychain.activity.technical";
+
 export function ActivityFeed({ events, live, onOpen }: { events: TraceEvent[]; live: boolean; onOpen: (id: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const items = events.map((e) => ({ e, node: describe(e, onOpen) })).filter((x) => x.node !== null);
+  const [technical, setTechnical] = useState(() => {
+    try {
+      return localStorage.getItem(TECH_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setTechnical(!technical);
+    try {
+      localStorage.setItem(TECH_KEY, technical ? "0" : "1");
+    } catch {
+      /* not stored; fine */
+    }
+  };
+  const items = events.map((e) => ({ e, node: describe(e, onOpen, !technical) })).filter((x) => x.node !== null);
   useEffect(() => {
     if (live && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
   }, [items.length, live]);
   return (
     <div ref={ref} className="max-h-[calc(100vh-260px)] min-h-64 overflow-y-auto px-4 py-3">
+      <label className="mb-2 flex cursor-pointer items-center justify-end gap-1.5 text-[11px] text-slate-500">
+        <input type="checkbox" checked={technical} onChange={toggle} className="h-3 w-3 accent-brand-600" />
+        Technical detail
+      </label>
       {items.length === 0 && <div className="py-8 text-center text-xs text-slate-400">Waiting for agents…</div>}
       <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[13px] before:top-2 before:w-px before:bg-slate-200">
         {items.map(({ e, node }) => (
@@ -135,7 +200,7 @@ export function ActivityFeed({ events, live, onOpen }: { events: TraceEvent[]; l
             <AgentAvatar agent={e.agent} />
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-[12px] font-semibold text-slate-800">{e.agent}</span>
+                <span className="truncate text-[12px] font-semibold text-slate-800">{technical ? e.agent : String(e.agent ?? "").replace(/ T\d+$/, "").replace(/^Scout$/, "Meterless Scout")}</span>
                 <span className="shrink-0 font-mono text-[10px] tabular-nums text-slate-400">{Number(e.t).toFixed(1)}s</span>
               </div>
               <div className="mt-0.5 break-words text-[12px] leading-snug text-slate-600">{node}</div>

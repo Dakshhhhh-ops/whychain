@@ -223,6 +223,9 @@ function ExportBar({ result }: { result: RunResult }) {
   );
 }
 
+/** "What to do: A2. Get transit back… A1. Add…" reads as plain sentences without the action ids (the cards keep them). */
+export const plainActions = (s: string) => s.replace(/(\*\*What to do:\*\*\s*|\.\s)A\d+\.\s/g, "$1");
+
 /** The brief's sections: the manager summary, the body, and "How we know" (the detail behind each line). */
 function splitBrief(md: string) {
   let summary = "";
@@ -233,7 +236,7 @@ function splitBrief(md: string) {
   for (const part of ("\n" + md).split(/\n(?=## )/)) {
     const t = part.trim();
     if (!t) continue;
-    if (t.startsWith("## Summary")) summary = t.replace(/^## Summary\s*/, "");
+    if (t.startsWith("## Summary")) summary = plainActions(t.replace(/^## Summary\s*/, ""));
     else if (t.startsWith("## How we know")) how = t.replace(/^## How we know\s*/, "");
     else if (t.startsWith("## Recommended actions")) continue; // shown as the action cards below
     else if (/^## (Where it happened|Ruled out|What customers and the written record say)/.test(t)) {
