@@ -54,6 +54,7 @@ export const useDataset = () => useContext(DatasetContext);
 
 export function money(v: number | null | undefined, currency = "INR") {
   if (v === undefined || v === null || Number.isNaN(v)) return "—";
-  const locale = currency === "BRL" ? "pt-BR" : "en-IN";
+  // reais with the same grouping as the brief text (R$ 37,740), rupees in the Indian style (₹1,33,590)
+  const locale = currency === "BRL" ? "en-US" : "en-IN";
   return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
 }
