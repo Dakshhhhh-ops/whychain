@@ -271,7 +271,7 @@ export function EvidenceBody({ ev }: { ev: Evidence }) {
   );
 }
 
-export function EvidenceChip({ id, onOpen, missing }: { id: string; onOpen: (id: string) => void; missing?: boolean }) {
+export function EvidenceChip({ id, onOpen, missing, label, hint }: { id: string; onOpen: (id: string) => void; missing?: boolean; label?: string; hint?: string }) {
   const isDoc = /\.D\d+$/.test(id);
   const isOpt = /\.P\d+$/.test(id);
   const isAna = /\.A\d+$/.test(id);
@@ -290,10 +290,10 @@ export function EvidenceChip({ id, onOpen, missing }: { id: string; onOpen: (id:
             : "bg-brand-50 text-brand-700 ring-brand-200 hover:bg-brand-100",
         missing && "cursor-default opacity-50",
       )}
-      title={missing ? "Evidence not available yet" : "Open evidence"}
+      title={missing ? "Evidence not available yet" : `${hint ? hint + " · " : ""}${id} · click to see the data and its query`}
     >
       {isOpt ? <Calculator className="h-3 w-3" /> : isAna ? <Sigma className="h-3 w-3" /> : isDoc ? <FileText className="h-3 w-3" /> : <Database className="h-3 w-3" />}
-      {id}
+      {label ?? id}
     </button>
   );
 }

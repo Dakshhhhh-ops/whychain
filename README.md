@@ -26,7 +26,7 @@ On real Olist data, orders placed in March 2018 were 19.0% late against a normal
 
 1. Start it: on Windows run `start.cmd` (Docker, Zetaris, Postgres, the Meterless bridge, the app, then a warm-up), or follow [Setup](#setup-clean-machine). Open http://localhost:8000.
 2. Olist (real data): click **March 2018 delay spike** under the search box. A **preliminary answer**, computed from the data, appears within seconds (after the warm-up); the full brief, with the written record and the short written answer, follows in two to three minutes.
-3. The brief opens with **In short** (what happened, why, what to do, in money) and the **why chain** drawn from the Meterless World Model. Click any citation chip to see the computed table and its SQL ("Data via Zetaris"); scroll to **Ruled out** for the strike.
+3. The brief opens with **In short** (what happened, why, what to do, in money) and the **why chain** drawn from the Meterless World Model; the detail (where it happened, what was ruled out, what customers wrote) is folded underneath. Sources are numbered 1, 2, 3 in reading order: hover one to see what it is, click it for the computed table and its SQL ("Data via Zetaris"). Open **Ruled out** for the strike.
 4. Switch to **Kaveri** and run **Pune orders at risk**: the proven-optimal stock transfer, then **Approve** it to get the transfer order and supplier email.
 5. Open **Memory** (findings with provenance, recall on Nemotron embeddings) and **Data sources** (federated by Zetaris).
 
@@ -157,7 +157,7 @@ This table separates what the code is built to do from what has actually run. Ru
 | **NVIDIA** | NIM serves **Nemotron 3.5 Super** (`nvidia/nemotron-3.5-super-vl-120b-a12b`). Reasoning ("thinking") is on for the Planner and Evaluator, and off, in JSON mode, for the other agents. **Nemotron 3 Ultra** (`nvidia/nemotron-3-ultra-550b-a55b`) is the backup model. **Nemotron 3 Embed** (`nvidia/nemotron-3-embed-1b`) embeds every memory and recall query for Meterless H-MEM. | **Used in every run** (cloud NIM). Local GPU use via Nightshift is not set up. |
 | **xAI Grok** | Optional first choice for the reasoning roles. | **Not configured;** no run has used it. |
 
-Every model call goes through one OpenAI-compatible client with role-based fallback. Providers that aren't configured are skipped, so **with today's configuration every chain runs entirely on NVIDIA's NIM endpoint**: Nemotron 3.5 Super, then a different model, Nemotron 3 Ultra. That covers one model being overloaded, which is the usual NIM failure, but not an outage of the NIM endpoint itself. Grok or Nightshift would make the chain independent.
+Every model call goes through one OpenAI-compatible client with role-based fallback. Providers that aren't configured are skipped, so **with today's configuration every chain runs entirely on NVIDIA's NIM endpoint**: Nemotron 3.5 Super, then a different model, Nemotron 3 Ultra. That covers one model being overloaded, which is the usual NIM failure, but not an outage of the NIM endpoint itself. Grok, Nightshift or a local Ollama model would make the chain independent: setting `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env` (see `.env.example`) adds a model on your own machine at the end of every chain. It was tried with `qwen3:8b` (the client turns its thinking off): about 30 s per answer, and it needs about 6 GB of free memory, which the development laptop did not have alongside Docker and Zetaris, so it is off in every result reported here.
 
 | Role | Used by | Order (configured today in bold) |
 |---|---|---|
@@ -196,6 +196,19 @@ The Official Rules (section 6) ask for a clear explanation of four things. In br
 **Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (one dependency, `optiagent-core`, installs from GitHub, and the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
 
 **What works without what:** without Docker, the order systems are read from CSV copies; without Zetaris, every query goes to a local DuckDB copy with the same tables (the app says so); without an NVIDIA key, late-delivery and supply investigations still compute every finding and the brief's short answer is written by code (open-ended questions need a model); without the Meterless bridge, memory falls back to a local file. `python -m whychain.doctor` says which of these is in use.
+
+**Quickest path (no Docker, no Zetaris, about 10 minutes):** the same analysis on the local DuckDB copy of the same tables; the app shows "Local data (fallback)" instead of Zetaris.
+
+```bash
+py -3.12 -m venv .venv && .venv/Scripts/python -m pip install -e ".[dev]"   # macOS/Linux: python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cp .env.example .env                 # set NVIDIA_API_KEY, and WHYCHAIN_HARNESS=local
+.venv/Scripts/python -m datagen.olist --no-postgres     # real Olist data from CSV, about 6 minutes
+.venv/Scripts/python -m datagen.generate                # the simulated company (seconds)
+cd frontend && npm install && npm run build && cd ..
+.venv/Scripts/python -m whychain.api                    # http://localhost:8000
+```
+
+Without the Meterless bridge, memory falls back to a local file; start it (step 4 below) for Meterless memory, the World Model why chain and Scout routing.
 
 **On Windows**, once steps 1 to 5 have been done once, `start.cmd` starts everything (Docker, Zetaris, Postgres, the bridge, the app) and warms it up.
 

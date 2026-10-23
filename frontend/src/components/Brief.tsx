@@ -12,7 +12,23 @@ import { EvidenceChip } from "./Evidence";
 import { WhyChain } from "./WhyChain";
 import { Badge, Button, Card, CardHeader } from "./ui";
 
-export function Markdown({ text, onOpen, known }: { text: string; onOpen: (id: string) => void; known: Record<string, unknown> }) {
+/** Sources numbered in the order a reader meets them (1, 2, 3...), with what each one is, for chips a manager can read. */
+export type Sources = Record<string, { n: number; title: string }>;
+
+export function numberSources(texts: string[], evidence: Record<string, unknown>): Sources {
+  const out: Sources = {};
+  for (const t of texts)
+    for (const m of t.matchAll(CITATION)) {
+      const id = m[1];
+      if (!out[id]) {
+        const ev = evidence[id] as { title?: string; purpose?: string } | undefined;
+        out[id] = { n: Object.keys(out).length + 1, title: ev?.title || ev?.purpose || "" };
+      }
+    }
+  return out;
+}
+
+export function Markdown({ text, onOpen, known, sources }: { text: string; onOpen: (id: string) => void; known: Record<string, unknown>; sources?: Sources }) {
   const linked = text.replace(CITATION, (_m, id: string) => `[${id}](#ev-${id})`);
   return (
     <div className="prose prose-slate prose-sm max-w-none prose-headings:font-semibold prose-headings:text-slate-900 prose-p:leading-relaxed prose-li:my-0.5 prose-table:my-3 prose-td:py-1.5 prose-th:py-1.5">
@@ -22,7 +38,8 @@ export function Markdown({ text, onOpen, known }: { text: string; onOpen: (id: s
           a: ({ href, children }) => {
             if (href?.startsWith("#ev-")) {
               const id = href.slice(4);
-              return <EvidenceChip id={id} onOpen={onOpen} missing={!known[id]} />;
+              const src = sources?.[id];
+              return <EvidenceChip id={id} onOpen={onOpen} missing={!known[id]} label={src ? String(src.n) : undefined} hint={src?.title} />;
             }
             return (
               <a href={href} target="_blank" rel="noreferrer">
@@ -38,7 +55,7 @@ export function Markdown({ text, onOpen, known }: { text: string; onOpen: (id: s
   );
 }
 
-export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: string; onOpen: (id: string) => void; onDecided: () => void }) {
+export function ActionCard({ a, runId, onOpen, onDecided, sources }: { a: Action; runId: string; onOpen: (id: string) => void; onDecided: () => void; sources?: Sources }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const decide = async (d: "approved" | "rejected") => {
@@ -97,7 +114,7 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
         <div>
           <div className="text-slate-500">Protects</div>
           <div className="font-medium tabular-nums text-slate-800">
-            {a.orders_protected ? `${a.orders_protected.toLocaleString("en-IN")} orders` : "—"}
+            {a.orders_protected ? `${a.orders_protected.toLocaleString(a.currency === "BRL" ? "en-US" : "en-IN")} orders` : "—"}
           </div>
         </div>
         <div>
@@ -107,7 +124,7 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
           <div className="font-medium tabular-nums text-slate-800">
             {a.value_protected_inr ? money(Number(a.value_protected_inr), a.currency) : "—"}
           </div>
-          {!!a.low_reviews && <div className="text-[11px] text-slate-500">{a.low_reviews.toLocaleString("en-IN")} left a 1–2★ review</div>}
+          {!!a.low_reviews && <div className="text-[11px] text-slate-500">{a.low_reviews.toLocaleString(a.currency === "BRL" ? "en-US" : "en-IN")} left a 1–2★ review</div>}
         </div>
         <div>
           <div className="text-slate-500">Takes effect</div>
@@ -119,7 +136,7 @@ export function ActionCard({ a, runId, onOpen, onDecided }: { a: Action; runId: 
         <div>
           <div className="text-slate-500">Evidence</div>
           <div className="mt-0.5 flex flex-wrap gap-1">
-            {a.evidence.length ? a.evidence.map((id) => <EvidenceChip key={id} id={id} onOpen={onOpen} />) : <span className="text-slate-400">—</span>}
+            {a.evidence.length ? a.evidence.map((id) => <EvidenceChip key={id} id={id} onOpen={onOpen} label={sources?.[id] ? String(sources[id].n) : undefined} hint={sources?.[id]?.title} />) : <span className="text-slate-400">—</span>}
           </div>
         </div>
       </div>
@@ -212,11 +229,17 @@ function splitBrief(md: string) {
   let how = "";
   const next: { question: string; why: string }[] = [];
   const main: string[] = [];
+  const details: { title: string; body: string }[] = [];
   for (const part of ("\n" + md).split(/\n(?=## )/)) {
     const t = part.trim();
     if (!t) continue;
     if (t.startsWith("## Summary")) summary = t.replace(/^## Summary\s*/, "");
     else if (t.startsWith("## How we know")) how = t.replace(/^## How we know\s*/, "");
+    else if (t.startsWith("## Recommended actions")) continue; // shown as the action cards below
+    else if (/^## (Where it happened|Ruled out|What customers and the written record say)/.test(t)) {
+      const [head, ...rest] = t.split("\n");
+      details.push({ title: head.replace(/^##\s*/, ""), body: rest.join("\n").trim() });
+    }
     else if (t.startsWith("## Ask why next"))
       for (const line of t.split("\n").slice(1)) {
         const m = line.match(/^-\s*(.+?\?)\s*(?:\((.*)\))?\s*$/);
@@ -224,12 +247,15 @@ function splitBrief(md: string) {
       }
     else main.push(t);
   }
-  return { summary, how, next, main: main.join("\n\n") };
+  return { summary, how, next, details, main: main.join("\n\n") };
 }
 
 export function BriefView({ result, onOpen, onDecided }: { result: RunResult; onOpen: (id: string) => void; onDecided: () => void }) {
   const known = result.evidence ?? {};
   const parts = splitBrief(result.brief ?? "");
+  const cited = (ids: string[] | undefined) => (ids ?? []).map((id) => `[${id}]`).join(" ");
+  const sources = numberSources([parts.summary, parts.main, ...parts.details.map((d) => d.body), parts.how,
+    ...(result.actions ?? []).map((a) => cited(a.evidence)), ...(result.risks ?? []).map((r) => cited(r.evidence))], known);
   const navigate = useNavigate();
   const actions = result.actions ?? [];
   const currency = actions[0]?.currency ?? (result.dataset === "olist" ? "BRL" : "INR");
@@ -249,12 +275,20 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
         {parts.summary && (
           <div className="mx-6 mb-5 rounded-xl bg-brand-50/60 px-5 py-3.5 ring-1 ring-brand-100">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-brand-700">In short</div>
-            <Markdown text={parts.summary} onOpen={onOpen} known={known} />
+            <Markdown text={parts.summary} onOpen={onOpen} known={known} sources={sources} />
           </div>
         )}
         <WhyChain result={result} />
         <div className="border-t border-slate-100 px-6 py-5">
-          <Markdown text={parts.main} onOpen={onOpen} known={known} />
+          <Markdown text={parts.main} onOpen={onOpen} known={known} sources={sources} />
+          {parts.details.map((d) => (
+            <details key={d.title} className="mt-3 rounded-xl border border-slate-200 px-4 py-2.5 print:block">
+              <summary className="cursor-pointer select-none text-[14px] font-semibold text-slate-800">{d.title}</summary>
+              <div className="mt-2">
+                <Markdown text={d.body} onOpen={onOpen} known={known} sources={sources} />
+              </div>
+            </details>
+          ))}
           {parts.next.length > 0 && (
             <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3 print:hidden">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-700">Ask why next</div>
@@ -281,7 +315,10 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
                 How we know <span className="font-normal text-slate-500">· the medians, percentiles and counterfactuals behind each line</span>
               </summary>
               <div className="mt-3">
-                <Markdown text={parts.how} onOpen={onOpen} known={known} />
+                <Markdown text={parts.how} onOpen={onOpen} known={known} sources={sources} />
+                <p className="mt-2 text-[12px] text-slate-500">
+                  Sources are numbered in reading order; hover one to see what it is, click it for the data and its query.
+                </p>
               </div>
             </details>
           )}
@@ -312,7 +349,7 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
           />
           <div className="space-y-3 p-4">
             {actions.map((a) => (
-              <ActionCard key={a.id} a={a} runId={result.run_id} onOpen={onOpen} onDecided={onDecided} />
+              <ActionCard key={a.id} a={a} runId={result.run_id} onOpen={onOpen} onDecided={onDecided} sources={sources} />
             ))}
           </div>
         </Card>
@@ -334,7 +371,7 @@ export function BriefView({ result, onOpen, onDecided }: { result: RunResult; on
                   {(r.evidence ?? []).length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {(r.evidence ?? []).map((id) => (
-                        <EvidenceChip key={id} id={id} onOpen={onOpen} missing={!known[id]} />
+                        <EvidenceChip key={id} id={id} onOpen={onOpen} missing={!known[id]} label={sources[id] ? String(sources[id].n) : undefined} hint={sources[id]?.title} />
                       ))}
                     </div>
                   )}
