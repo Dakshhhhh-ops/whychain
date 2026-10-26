@@ -116,7 +116,7 @@ function OptimizationBody({ ev }: { ev: OptimizationEvidence }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge tone="violet">
             <Calculator className="h-3 w-3" />
-            Optimal plan · Optiagent
+            Optimal plan · linear program
           </Badge>
           <Badge tone="green">
             <ShieldCheck className="h-3 w-3" />

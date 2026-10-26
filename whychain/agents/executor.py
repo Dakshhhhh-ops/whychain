@@ -185,7 +185,7 @@ def run_loop(ctx: Ctx, *, agent: str, role: str, system: str, brief: str, task_i
 
 
 def _optimize_step(ctx: Ctx, msg: dict, eid: str, task_id: str, agent: str, thought: str, res: LoopResult) -> str:
-    """Run the Optiagent-backed optimizer. The agent supplies only the scope; the data comes from the harness."""
+    """Run the stock-transfer optimizer (whychain/optimize.py). The agent supplies only the scope; the data comes from the harness."""
     from whychain.optimize import OptimizeError, describe, optimize_rebalance
 
     args = {"scope": msg.get("scope"), "to_warehouses": msg.get("to_warehouses"),

@@ -66,7 +66,7 @@ def test_action_executor(tmp_path):
     out = deliver(ctx, res, action, note="go ahead")
     kinds = [d["kind"] for d in out["deliverables"]]
     assert kinds == ["table", "table", "email"]
-    plan = out["deliverables"][0]  # the transfer order is the Optiagent plan, verified optimal
+    plan = out["deliverables"][0]  # the transfer order is the LP plan, verified optimal
     assert plan["source"] == "X.P1" and plan["rows"] and "units" in plan["columns"]
     assert plan["optimization"]["certified_with"]
     check = out["deliverables"][1]

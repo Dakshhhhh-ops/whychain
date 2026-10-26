@@ -1,11 +1,7 @@
-"""Optimal stock rebalancing, solved and proven optimal by the Optiagent engine.
+"""Optimal stock rebalancing: a transportation linear program built from the data, solved and proven optimal.
 
-Optiagent (github.com/Dakshhhhh-ops/Optiagent, MIT) is a declared pre-existing component: its
-`optiagent_core` builds the linear program, solves it, re-checks the plan against the original data
-and attaches a duality certificate that proves the plan optimal.
-
-Following Optiagent's rule, the agent only chooses the SCOPE (which SKUs, which DCs, how soon).
-Every number in the model comes from the company's data through the data harness:
+The agent only chooses the SCOPE (which SKUs, which DCs, how soon). Every number in the model comes from the
+company's data through the data harness:
 
   need    units on backordered lines due within the deadline, per DC and SKU          (ERP)
   spare   on hand - already allocated - policy cover (days x baseline demand)         (WMS)
@@ -15,7 +11,8 @@ Every number in the model comes from the company's data through the data harness
 
 The model is a transportation problem: sources are (DC, SKU) spare stock, air freight and
 "unfilled"; destinations are (DC, SKU) needs; only same-SKU routes that arrive before the deadline
-exist. Minimising cost gives the cheapest way to release the backorders.
+exist. Minimising cost gives the cheapest way to release the backorders. `whychain/lp.py` solves it, checks the
+plan against the data and proves it optimal with a duality certificate.
 """
 from __future__ import annotations
 
@@ -140,27 +137,6 @@ def orders_covered(h: DataHarness, scope: dict, to_warehouses, deadline_days: in
 MIN_TRUCK_FILL = 0.15  # a lane carrying less than this share of a truck isn't worth a truck: drop it and re-solve
 
 
-def _certify(problem, rep):
-    """Optiagent's verdict, plus one fallback: if ONLY the optimality certificate failed (the first solver's
-    dual prices were valid but loose, as happens on degenerate problems), re-run Optiagent's own certificate
-    with the second solver's (HiGHS) dual prices. Weak duality means the proof doesn't trust either solver."""
-    from optiagent_core.pipeline import interpret
-    from optiagent_core.plancheck import check_optimality
-
-    checks = list(rep.verification.checks)
-    if rep.verified:
-        return True, rep.solution, checks, "OR-Tools GLOP dual prices"
-    failed = [c.name for c in checks if not c.passed]
-    sens = rep.sensitivity
-    if failed == ["plan_optimality_certificate"] and rep.result.has_solution and sens is not None and sens.available:
-        prices = {c.name: c.shadow_price for c in sens.constraints}
-        alt = check_optimality(problem, rep.result.values, prices)
-        if alt.passed:
-            checks = [c for c in checks if c.name != "plan_optimality_certificate"] + [alt]
-            return True, interpret(problem, rep.result.values), checks, "HiGHS dual prices (second solver)"
-    return False, None, checks, None
-
-
 def optimize_rebalance(h: DataHarness, scope: dict, to_warehouses=None, deadline_days: int = 7,
                        cover_days: int = 14) -> dict:
     inp = build_inputs(h, scope, to_warehouses, deadline_days, cover_days)
@@ -179,24 +155,8 @@ def optimize_rebalance(h: DataHarness, scope: dict, to_warehouses=None, deadline
     return res
 
 
-def _solve_with_analysis(problem, solve_problem):
-    """Solve with sensitivity analysis (HiGHS runs in a worker process). If that worker breaks, reset it and
-    retry once; if it still fails, solve without the analysis (the plan is still verified by the first solver)."""
-    from concurrent.futures.process import BrokenProcessPool
-
-    import optiagent_core.analysis as analysis
-
-    for _ in range(2):
-        try:
-            return solve_problem(problem, analyze=True)
-        except (BrokenProcessPool, OSError, RuntimeError):
-            analysis._pool = None  # Optiagent creates a fresh worker pool on the next call
-    return solve_problem(problem, analyze=False)
-
-
 def _solve(inp: dict, excluded: set[tuple[str, str]]) -> dict:
-    from optiagent_core.pipeline import solve_problem
-    from optiagent_core.schema import Destination, Route, Source, TransportationProblem
+    from whychain.lp import Transport
 
     scope = inp["scope"]
     d = inp["data"]
@@ -217,21 +177,21 @@ def _solve(inp: dict, excluded: set[tuple[str, str]]) -> dict:
     info = {r["sku"]: r for r in d["skus"]}
     deadline = inp["deadline_days"]
 
-    sources, destinations, routes, meta = [], [], [], {}
+    sources, destinations, routes, meta = {}, {}, [], {}
     need_by_sku = defaultdict(float)
     for (dc, sku), units in need.items():
-        destinations.append(Destination(id=f"{dc}:{sku}", demand=units))
+        destinations[f"{dc}:{sku}"] = units
         need_by_sku[sku] += units
     for (dc, sku), units in spare.items():
         if sku in need_by_sku:
-            sources.append(Source(id=f"{dc}:{sku}", supply=units))
+            sources[f"{dc}:{sku}"] = units
     for sku, total in need_by_sku.items():
         if sku in air:
-            sources.append(Source(id=f"AIR:{sku}", supply=total))
-        sources.append(Source(id=f"UNFILLED:{sku}", supply=total))
+            sources[f"AIR:{sku}"] = total
+        sources[f"UNFILLED:{sku}"] = total
 
     def add(src: str, dst: str, cost: float, mode: str, days: int | None, via: str):
-        routes.append(Route(source=src, destination=dst, cost=round(cost, 4)))
+        routes.append((src, dst, round(cost, 4)))
         meta[(src, dst)] = {"mode": mode, "days": days, "via": via}
 
     for (to_dc, sku) in need:
@@ -252,14 +212,12 @@ def _solve(inp: dict, excluded: set[tuple[str, str]]) -> dict:
                 add(f"AIR:{sku}", dst, cost, "air", days, f"air→{hub}" + ("" if hub == to_dc else f"→{to_dc}"))
         add(f"UNFILLED:{sku}", dst, float(info.get(sku, {}).get("list_price") or 1000), "unfilled", None, "not covered in time")
 
-    problem = TransportationProblem(name="Stock rebalancing", sources=sources, destinations=destinations,
-                                    routes=routes, demand_constraint="equal")
-    rep = _solve_with_analysis(problem, solve_problem)
-    verified, solution, check_objs, cert_source = _certify(problem, rep)
+    rep = Transport(sources, destinations, routes).solve()
+    verified, cert_source = rep.verified, rep.certified_with
 
     rows, lane_units, air_units, air_cost, unfilled = [], defaultdict(float), 0.0, 0.0, defaultdict(float)
-    if solution is not None:
-        for s in solution.shipments:
+    if verified:
+        for s in rep.shipments:
             m = meta[(s.source, s.destination)]
             to_dc, sku = s.destination.split(":", 1)
             from_dc = s.source.split(":", 1)[0]
@@ -281,10 +239,10 @@ def _solve(inp: dict, excluded: set[tuple[str, str]]) -> dict:
                        "capacity": float(lane["units_per_truck"]),
                        "cost_inr": n * float(lane["cost_per_truck_inr"]), "transit_days": int(lane["transit_days"])})
     total_need = sum(need.values())
-    checks = [{"name": c.name, "passed": c.passed, "detail": c.detail} for c in check_objs]
+    checks = [{"name": c.name, "passed": c.passed, "detail": c.detail} for c in rep.checks]
     if not verified:
         return {"outcome": "not_verified", "verified": False, "certificate": False, "checks": checks,
-                "stats": rep.stats.model_dump(), "summary": {"need_units": round(total_need), "skus": len(need_by_sku),
+                "stats": rep.stats, "summary": {"need_units": round(total_need), "skus": len(need_by_sku),
                                                               "trucks": []},
                 "columns": [], "rows": [], "insights": [], "queries": inp["queries"], "deadline_days": deadline,
                 "cover_days": inp["cover_days"], "scope": scope, "to_warehouses": inp["to_warehouses"],
@@ -299,12 +257,12 @@ def _solve(inp: dict, excluded: set[tuple[str, str]]) -> dict:
         "covered_share": round(1 - sum(unfilled.values()) / total_need, 3) if total_need else 1.0,
     }
     return {
-        "outcome": "verified_optimal", "verified": True, "objective_inr": round(rep.result.objective or 0),
+        "outcome": "verified_optimal", "verified": True, "objective_inr": round(rep.objective or 0),
         "certificate": next((c["passed"] for c in checks if c["name"] == "plan_optimality_certificate"), False),
         "certified_with": cert_source,
-        "checks": checks, "stats": rep.stats.model_dump(), "summary": summary,
+        "checks": checks, "stats": rep.stats, "summary": summary,
         "columns": ["sku", "name", "mode", "route", "to_dc", "units", "unit_cost_inr", "cost_inr", "arrives_in_days"],
-        "rows": rows, "insights": [i.text for i in rep.insights[:6]],
+        "rows": rows, "insights": rep.insights[:6],
         "queries": inp["queries"], "deadline_days": deadline, "cover_days": inp["cover_days"],
         "scope": scope, "to_warehouses": inp["to_warehouses"],
         "needs": [[dc, sku, round(u)] for (dc, sku), u in sorted(need.items())],

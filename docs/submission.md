@@ -43,14 +43,16 @@ Built before the build window (21 Oct 23:04 to 22 Oct about 03:05 IST) and impor
 22 Oct 13:44 IST: the simulated distributor and its documents, the Olist data loader and the 16 researched events,
 the Zetaris REST client (rewritten in the window for the local platform) and the local DuckDB harness, the first
 agent graph (memory, data scout, planner, investigators, document analyst, evaluator, risk and action, reporter,
-action executor), the NVIDIA NIM client, the Optiagent integration, the Meterless bridge service, the FastAPI server
+action executor), the NVIDIA NIM client, the first stock-transfer optimizer (its data layer and `optimize`
+action; the solver it called has since been replaced by `whychain/lp.py`, written in the window), the Meterless
+bridge service, the FastAPI server
 and the React app, and the first evals and tests.
 
-Third-party and earlier components: `optiagent-core` (the author's earlier MIT project, used unmodified as a
-library); the Meterless H-MEM and World Model reference engines (Apache-2.0; one file changed in the window, to add
+Third-party components: the Meterless H-MEM and World Model reference engines (Apache-2.0; one file changed in the window, to add
 an embedding provider hook); open-source libraries; and the Olist dataset (CC BY-NC-SA 4.0).
 
-Written in the window: the analysis engine and supply engine, the numbers check, the connection to Zetaris, the
+Written in the window: the analysis engine and supply engine, the stock-transfer LP solver and its duality
+certificate (`whychain/lp.py`), the numbers check, the connection to Zetaris, the
 Nemotron embeddings for H-MEM, the Scout Intent implementation, the value at stake, the preliminary answer, the why
 chain, the evals with held-out questions, and everything after the first commits. Full
 details: `git log`.

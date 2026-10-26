@@ -45,7 +45,7 @@ def deliver(ctx: Ctx, result: dict, action: dict, note: str | None = None) -> di
                 continue
             if ev["type"] == "optimization":  # the verified optimal plan is the table
                 out.append({"kind": "table", "title": title, "note": d.get("note"), "source": ref,
-                            "sql": "Optimal plan from Optiagent (verified, optimality certificate). Inputs: "
+                            "sql": "Optimal plan from the stock-transfer LP (verified, optimality certificate). Inputs: "
                                    + "; ".join(ev["queries"].values()),
                             "columns": ev["columns"], "rows": ev["rows"], "row_count": len(ev["rows"]),
                             "harness": ev["harness"],

@@ -3,7 +3,7 @@
   olist   REAL: the Olist Brazilian e-commerce marketplace (about 100k orders, 2016-2018) with real customer reviews,
           plus verified external events. The main demo.
   kaveri  SIMULATED: a distributor with warehouses, stock, purchase orders, contracts and email. It exercises the full
-          prescriptive loop (stock transfers proven optimal by the Optiagent optimizer), which real public data
+          prescriptive loop (stock transfers proven optimal by a linear program), which real public data
           can't, because no public dataset includes a company's inventory, POs and contracts together.
 
 Agents don't know which dataset they're in: they read the catalog and its notes and write their own SQL.

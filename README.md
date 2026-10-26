@@ -218,7 +218,7 @@ Live run, 24 Oct 03:33 IST, March 2018 question, local data copy (Docker was sto
 
 ## Setup (clean machine)
 
-**Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (one dependency installs from GitHub, and the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
+**Needs:** Python 3.12 or 3.13 (not 3.14), Node 20+, git, and internet access (the Olist data downloads from a public mirror). Docker for Postgres and Zetaris. An `NVIDIA_API_KEY` from build.nvidia.com for the models.
 
 **What works without what:** without Docker, the order systems are read from CSV copies; without Zetaris, every query goes to a local DuckDB copy with the same tables (the app says so); without an NVIDIA key, late-delivery and supply investigations still compute every finding and the brief's short answer is written by code (open-ended questions need a model); without the Meterless bridge, memory falls back to a local file. `python -m whychain.doctor` says which of these is in use.
 

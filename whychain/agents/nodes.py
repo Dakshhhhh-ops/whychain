@@ -106,7 +106,7 @@ def evidence_text(ev: dict, max_rows: int = 8) -> str:
         s = ev.get("summary", {})
         trucks = "; ".join(f"{t['lane']} {t['units']} units, {t['trucks']} truck(s), INR {t['cost_inr']:,.0f}"
                            for t in s.get("trucks", []))
-        return (f"[{ev['id']}] OPTIMAL PLAN (Optiagent, verified, optimality proven with {ev.get('certified_with')}): "
+        return (f"[{ev['id']}] OPTIMAL PLAN (linear program, verified, optimality proven with {ev.get('certified_with')}): "
                 f"need {s.get('need_units')} units over {s.get('skus')} SKUs; trucks: {trucks or 'none'}; "
                 f"air {s.get('air_units')} units INR {s.get('air_cost_inr')}; can't arrive in time: "
                 f"{s.get('unfilled_units')} {s.get('unfilled_by_dc') or ''}; total INR {ev.get('objective_inr')}")
@@ -838,7 +838,7 @@ def ground_action_numbers(a: dict, evidence: list[dict]) -> tuple[dict, list[str
 
 
 def act_supply(state: dict, ctx: Ctx) -> dict:
-    """Actions for a supply question, sized in code: a proven-optimal stock transfer (Optiagent) when supply is late,
+    """Actions for a supply question, sized in code: a proven-optimal stock transfer (the LP optimizer) when supply is late,
     computed reorder points when demand outran the policy, and a cancellation list for duplicates."""
     from whychain.optimize import optimize_rebalance
 
@@ -896,7 +896,7 @@ def act_supply(state: dict, ctx: Ctx) -> dict:
                         else f"{sup}'s SKUs"
                     add(f"Transfer stock to cover the {sup} shortage: {lanes or 'air freight only'}"
                         + (f", plus {sm['air_units']:,} units by air" if sm.get("air_units") else ""),
-                        f"Proven-optimal plan (Optiagent, duality certificate): {sm.get('truck_units', 0):,} units by truck"
+                        f"Proven-optimal plan (linear program, duality certificate): {sm.get('truck_units', 0):,} units by truck"
                         f" and {sm.get('air_units', 0):,} by air, covering {round(100 * (sm.get('covered_share') or 0))}% "
                         f"of the {sm.get('need_units', 0):,} units of {what} backordered at "
                         f"{', '.join(spec['warehouses']) or 'the DCs'} with a promised date on or before {by}. That "

@@ -39,7 +39,7 @@ function Item({ d, href }: { d: Deliverable; href: string }) {
           <Database className="h-3.5 w-3.5 text-brand-600" />
           <span className="text-[12.5px] font-semibold text-slate-800">{d.title}</span>
           <Badge>{d.row_count} rows</Badge>
-          {/\.P\d+$/.test(d.source) && <Badge tone="violet">Proven-optimal plan (Optiagent)</Badge>}
+          {/\.P\d+$/.test(d.source) && <Badge tone="violet">Proven-optimal plan</Badge>}
           <button onClick={() => setShowSql(!showSql)} className="text-[11px] font-medium text-brand-700 hover:underline">
             computed by {d.source}
           </button>

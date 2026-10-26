@@ -109,7 +109,7 @@ export function describe(e: TraceEvent, onOpen?: (id: string) => void, plain = f
     case "optimize":
       return e.ok ? (
         <>
-          Solved {ev(e.evidence_id)} with Optiagent: <span className="font-medium text-slate-800">proven optimal</span> ·{" "}
+          Solved {ev(e.evidence_id)} as a linear program: <span className="font-medium text-slate-800">proven optimal</span> ·{" "}
           {e.truck_units ?? 0} units by truck, {e.air_units ?? 0} by air
           {e.unfilled_units ? `, ${e.unfilled_units} can't arrive in time` : ""}
         </>

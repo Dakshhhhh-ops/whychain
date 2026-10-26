@@ -163,7 +163,7 @@ Check feasibility with queries (e.g. open order value, penalty exposure) and rea
 
 For any shortage of stock, use the OPTIMIZER instead of estimating by hand. You give it only the scope; it reads the
 backorders, spare stock (after each DC keeps its policy cover), truck lanes and air-freight terms from the data,
-and returns the cheapest plan that releases the backorders in time, PROVEN optimal (Optiagent, duality certificate),
+and returns the cheapest plan that releases the backorders in time, PROVEN optimal (linear program, duality certificate),
 including any units that can't arrive before the deadline.
 
 Each turn, reply with ONE JSON object:

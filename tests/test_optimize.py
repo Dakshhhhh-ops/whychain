@@ -1,4 +1,4 @@
-"""The Optiagent-backed optimizer on the generated data (no LLM involved)."""
+"""The stock-transfer optimizer on the generated data (no LLM involved)."""
 from __future__ import annotations
 
 import pytest
@@ -41,3 +41,29 @@ def test_scope_is_validated(harness):
         optimize_rebalance(harness, {"supplier_id": "S-14'; DROP TABLE x; --"}, None)
     with pytest.raises(OptimizeError):
         optimize_rebalance(harness, {}, None)
+
+
+def test_both_solvers_prove_the_same_plan_optimal():
+    """The certificate is checked from the data and the dual prices alone, with either solver's prices."""
+    from whychain.lp import Transport
+
+    # a degenerate little problem: two warehouses can each cover one store exactly, at equal cost
+    t = Transport({"A": 5, "B": 5, "UNFILLED": 10}, {"X": 5, "Y": 5},
+                  [("A", "X", 1.0), ("A", "Y", 1.0), ("B", "X", 1.0), ("B", "Y", 1.0),
+                   ("UNFILLED", "X", 100.0), ("UNFILLED", "Y", 100.0)])
+    ok, x, obj, y, u = t.solve_glop()
+    assert ok and obj == 10.0 and t.certificate(x, y, u).passed
+    ok2, x2, obj2, y2, u2 = t.solve_highs()
+    assert ok2 and abs(obj2 - 10.0) < 1e-9
+    assert t.certificate(x, y2, u2).passed          # GLOP's plan, proven with HiGHS's prices
+    res = t.solve()
+    assert res.verified and sum(s.quantity for s in res.shipments) == 10
+
+
+def test_a_wrong_plan_fails_the_certificate():
+    from whychain.lp import Transport
+
+    t = Transport({"A": 5, "UNFILLED": 5}, {"X": 5}, [("A", "X", 1.0), ("UNFILLED", "X", 100.0)])
+    ok, x, obj, y, u = t.solve_glop()
+    assert t.certificate(x, y, u).passed
+    assert not t.certificate([0.0, 5.0], y, u).passed  # sending everything to "unfilled" is not optimal

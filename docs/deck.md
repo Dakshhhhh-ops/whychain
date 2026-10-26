@@ -60,7 +60,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
   - stock-outs, backlogs, orders at risk → the supply engine (inbound orders and ports, demand, reorder policy,
     duplicates, volume);
   - anything else → an agent loop (Planner, SQL Investigators, Evaluator).
-- Coded verdicts → a preliminary answer in seconds → actions sized by code (and the Optiagent optimizer) → a brief
+- Coded verdicts → a preliminary answer in seconds → actions sized by code (and a proven-optimal LP for stock transfers) → a brief
   whose every number is checked → memory and the why chain written back to Meterless.
 - Line at the bottom: "Code computes; agents read, plan, quote and write."
 
@@ -71,7 +71,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - Agent loop (other questions): Planner and Evaluator with reasoning on; Data Scout and Investigators writing Spark
   SQL. Nemotron 3.5 Super, with Nemotron 3 Ultra as the fallback.
 - Memory: Nemotron 3 Embed embeds every finding and recall query for H-MEM.
-- Risk & Action: templates sized from computed tables; the Optiagent optimizer for stock transfers.
+- Risk & Action: templates sized from computed tables; a linear program with a duality certificate for stock transfers.
 - Screenshot: `docs/img/investigation-live.png` (the preliminary answer at 8 s, the agents still working).
 
 ## 7. Zetaris: one query across six systems
@@ -107,7 +107,7 @@ technologies, product visuals and future enhancements. 12 slides. Screenshots ar
 - Numbers never come from a model. The analysis engine computes; coded rules decide what counts as a cause; a numbers
   check marks anything unsupported (on a probe of 1,000 invented numbers, 3% got through).
 - Red herrings are tested, not argued: dated events against the prior trend, a stage must move to count as a cause.
-- Actions are sized from data and proven where possible: the stock transfer is Optiagent's proven-optimal plan, with
+- Actions are sized from data and proven where possible: the stock transfer is a proven-optimal LP plan, with
   a duality certificate.
 - Honest evaluation: held-out questions scored on their first run, including a failure (KH2), and the fix disclosed.
 
