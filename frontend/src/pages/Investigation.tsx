@@ -565,7 +565,16 @@ function TraceTab({ events, onOpen }: { events: TraceEvent[]; onOpen: (id: strin
                 <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[11px] text-slate-500">{e.kind}</td>
                 <td className="px-2 py-1.5 text-slate-600">
                   {describe(e, onOpen) ??
-                    (e.kind === "llm_call" ? `${e.provider} · ${e.model} · ${e.ms} ms` : <span className="text-slate-400">{JSON.stringify(e).slice(0, 120)}</span>)}
+                    (e.kind === "llm_call" ? (
+                      <>
+                        {`${e.provider} · ${e.route ?? e.model} · ${e.ms} ms`}
+                        {e.privacy && (
+                          <span className="ml-1.5 text-emerald-700">
+                            · receipt: {e.privacy}, egress {e.egress ?? "?"}
+                          </span>
+                        )}
+                      </>
+                    ) : <span className="text-slate-400">{JSON.stringify(e).slice(0, 120)}</span>)}
                 </td>
               </tr>
             ))}

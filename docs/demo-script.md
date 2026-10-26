@@ -1,6 +1,6 @@
 # WhyChain demo video: script and shot list
 
-Target length 3:15 (rules: 1 to 4 minutes). Screen recording at 1600×1000 or larger, browser zoom 100%, app at
+Target length 3:40 (rules: 1 to 4 minutes; skip 4b if the take runs long). Screen recording at 1600×1000 or larger, browser zoom 100%, app at
 `http://localhost:8000`. **[Nemotron]** marks where NVIDIA Nemotron is doing the work on screen.
 
 A preliminary answer, computed from the data, appears within seconds of starting a run (median 3.5 s in the final pass, after the warm-up);
@@ -9,6 +9,8 @@ on screen: "about two minutes later"). Never present a replay as live: a replay 
 
 ## Before recording (by hand)
 
+0. Close Chrome and other heavy apps and pause OneDrive sync: Nightshift needs about 1.3 GB of free RAM to load
+   Nemotron 3 Nano for shot 7b. Check that Nightshift is running (its lane "reader" serves the model).
 1. Docker Desktop running; `ZETARIS_DIR` set in `.env` (the Zetaris bundle folder); run `start.cmd`. It starts
    Docker if needed, Zetaris, Postgres, the Meterless bridge and the web app, then runs `scripts/warmup.py`, which
    waits for Zetaris and runs the slow first queries. Wait for "Warm-up done."
@@ -33,9 +35,10 @@ on screen: "about two minutes later"). Never present a replay as live: a replay 
 | 4 | 1:00–1:35 | **Brief** tab | Read **In short**; point at the **why chain** under it (from the Meterless World Model; the strike crossed out); hover a numbered source to show what it is, click it to open the evidence (table + SQL + "Zetaris"); unfold **How we know** for one line | "19% late against a normal 5.6%. Carrier transit explains 72.7% of the rise, shorter promises 26.7%. The strike? Ruled out: lateness was already high before it began. Every number is checked against the cell it came from, and the medians and counterfactuals behind each line are one click away. **[Nemotron]** writes only the short answer, from those checked facts." |
 | 4b | (optional, +20 s) | Brief, **Ask why next** | Click "Why were deliveries to Rio de Janeiro late for orders placed March 2018?"; the preliminary answer appears in seconds | "The rise sits in Rio, so the next why is one click: 34.5% late there against a normal 16.3%, worth 35,000 reais, rated 1.6 stars. Each answer opens the next why." |
 | 5 | 1:35–1:55 | Brief, **Recommended actions** | Point at **Value at stake** on the transit action; open the promise-buffer action, click **Approve** | "Each action is sized from the data and says what's at stake: getting transit back to normal in three states covers 593 of these orders, 83,600 reais of them; promise buffers per state, RJ plus 9 days, cover 255. Changing customer promises needs approval, so it waits for me." |
-| 6 | 1:55–2:35 | Switch dataset to **Kaveri**; run **Pune orders at risk** live | The preliminary answer appears in seconds with the transfer; then the brief: Voltix purchase orders held at the Chennai port strike; the transfer action with **Protects**, **Value at stake** and cost; **Approve**; cut ahead about two to three minutes; show the deliverables (a per-SKU transfer order and the supplier email draft; the Action Executor is an agent, so check them in the rehearsal run) | "A simulated distributor. Pune orders at risk: Voltix purchase orders are stuck behind a dock strike at Chennai. The fix is a stock transfer from Mumbai, proven optimal by Optiagent with a duality certificate: 133,590 rupees of transport to protect 62 orders worth 2.28 crore. Approve it, and the Action Executor prepares the transfer order and the supplier email." |
+| 6 | 1:55–2:35 | Switch dataset to **Kaveri**; run **Pune orders at risk** live | The preliminary answer appears in seconds with the transfer; then the brief: Voltix purchase orders held at the Chennai port strike; the transfer action with **Protects**, **Value at stake** and cost; **Approve**; cut ahead about two to three minutes; show the deliverables (a per-SKU transfer order and the supplier email draft; the Action Executor is an agent, so check them in the rehearsal run) | "A simulated distributor. Pune orders at risk: Voltix purchase orders are stuck behind a dock strike at Chennai. The fix is a stock transfer from Mumbai, solved as a linear program and proven optimal with a duality certificate: 133,590 rupees of transport to protect 62 orders worth 2.28 crore. Approve it, and the Action Executor prepares the transfer order and the supplier email." |
 | 7 | 2:35–3:00 | Olist again: run the March 2018 question a second time (or a reworded one); open its **Memory** tab | Show "Recalled N memories" in the activity, the recalled findings with provenance, then the **Cause graph** card | "**Meterless** gives it memory. H-MEM recalled what the earlier investigation found, with provenance: which run, which query. **[Nemotron]** embeddings match a reworded question to the right past finding. The World Model keeps the cause graph across runs." |
-| 8 | 3:00–3:15 | **Data sources** page ("Federated by Zetaris"), then the Zetaris tab's SQL editor with a query over `oms.orders` joined to `sellers.order_items` | Show the registered sources, run the query | "Six systems, one federated query layer in Zetaris; agents write Spark SQL against it. WhyChain: an agent that explains why, with the evidence to prove it." |
+| 7b | 3:00–3:25 | Olist, search box: tick **Private documents** (under the search; shown only when Nightshift is running), ask the March 2018 question again | The green **Private documents · Nightshift** badge in the run header; cut ahead about a minute (the local model reads one document at a time); open the **Trace** tab and show a Doc Analyst model call: provider `nightshift`, route Nemotron 3 Nano 4B, privacy `local-only`, egress `none`; back on the Brief, the same answer and the strike quoted | "Contracts and supplier email can be sensitive. Tick **Private documents** and the written record is read only on this laptop's GPU, by **[Nemotron]** 3 Nano running in **Meterless Nightshift**. Every call comes back with a signed receipt, and WhyChain keeps a reply only if the receipt says it stayed local. Same answer, nothing sent out." |
+| 8 | 3:25–3:40 | **Data sources** page ("Federated by Zetaris"), then the Zetaris tab's SQL editor with a query over `oms.orders` joined to `sellers.order_items` | Show the registered sources, run the query | "Six systems, one federated query layer in Zetaris; agents write Spark SQL against it. WhyChain: an agent that explains why, with the evidence to prove it." |
 
 ## Query for shot 8 (Zetaris SQL editor)
 
@@ -73,6 +76,7 @@ GROUP BY s.seller_state ORDER BY orders DESC LIMIT 5
 - Document Analyst (shots 3–4): Nemotron 3.5 Super finds and quotes the news briefs; quotes are verified word for word.
 - Brief answer (shot 4): Nemotron 3.5 Super phrases the short answer from computed, checked facts.
 - Memory (shot 7): Nemotron 3 Embed (`nvidia/nemotron-3-embed-1b`) embeds memories and recall queries.
+- Private documents (shot 7b): Nemotron 3 Nano 4B on the laptop's GPU, in Meterless Nightshift.
 - Fallback (not on screen): Nemotron 3 Ultra takes over when 3.5 Super is overloaded.
 
 ## Rules check (Official Rules, section 6)
@@ -80,4 +84,4 @@ GROUP BY s.seller_state ORDER BY orders DESC LIMIT 5
 - Main workflow and how the agent solves the challenge: shots 2–6.
 - Key features: computed causes, ruled-out red herrings, numbers check, clickable evidence, sized actions, approval,
   proven-optimal transfer, deliverables.
-- Zetaris integration: shots 3, 4 (evidence shows the harness) and 8. Meterless integration: shot 7.
+- Zetaris integration: shots 3, 4 (evidence shows the harness) and 8. Meterless integration: shots 3 (Scout), 7 (H-MEM, World Model) and 7b (Nightshift).
