@@ -4,7 +4,7 @@
 
 **WhyChain is an agent that explains *why* a supply chain problem happened: each cause with its share of the problem, the red herrings it ruled out, and what to do, in money. Every number traces back to the query behind it.**
 
-Open Agent Hackathon 2026 · Track 2: *The Agent That Can Explain Why* · **Demo video: [VIDEO LINK]**
+Open Agent Hackathon 2026 · Team **Peak** · **Demo video: [VIDEO LINK]**
 
 ![The brief: in short, in money, with the why chain](docs/img/brief.png)
 
@@ -53,7 +53,7 @@ Then open http://localhost:8000 and click **March 2018 delay spike**. The full s
 
 ### Contents
 
-[The problem](#the-problem) · [How it works](#how-it-works) · [Tech stack](#tech-stack) · [Prescriptive layer](#prescriptive-layer-proven-optimal-stock-transfers) · [Sponsor technology](#sponsor-technology-designed-role-and-actual-status) · [How the sponsor technologies are used](#how-the-sponsor-technologies-are-used) · [Setup](#setup-clean-machine) · [Usage](#usage) · [The data](#the-data) · [Results](#results) · [Nemotron](#how-whychain-uses-nvidia-nemotron) · [Reliability](#reliability) · [Known limitations](#known-limitations) · [Repository layout](#repository-layout) · [Third-party components](#third-party-components)
+[The problem](#the-problem) · [How it works](#how-it-works) · [Tech stack](#tech-stack) · [Prescriptive layer](#prescriptive-layer-proven-optimal-stock-transfers) · [Sponsor technology](#sponsor-technology-designed-role-and-actual-status) · [How the sponsor technologies are used](#how-the-sponsor-technologies-are-used) · [Setup](#setup-clean-machine) · [Usage](#usage) · [The data](#the-data) · [Results](#results) · [Nemotron](#how-whychain-uses-nvidia-nemotron) · [Reliability](#reliability) · [Known limitations](#known-limitations) · [Repository layout](#repository-layout) · [Third-party components](#third-party-components) · [Pre-existing work](#pre-existing-work-built-before-the-build-window) · [Development tools](#development-tools)
 
 ## The problem
 
@@ -456,3 +456,23 @@ tests/             end-to-end wiring test with a scripted model
 - `meterless_bridge/engines/`: Meterless H-MEM and World Model reference engines, copied from `Meterless/Meterless` @ `1742dec` (Apache-2.0, LICENSE files included). **Exactly one vendored file was changed**, in the window (22 Oct), and it carries a notice saying so, as Apache-2.0 requires: `engines/hmem/reference/src/embeddings.ts` gained a provider hook (`setEmbeddingProvider`), which the file's own comment invites, so the bridge can supply NVIDIA Nemotron embeddings, and `cosine()` returns 0 for vectors of different lengths instead of failing. Without a provider the file behaves as before. H-MEM conformance passes 13/13 with the provider off and on (`meterless_bridge/conformance-results/`). Every other vendored file is unmodified. The Scout Intent specification and eval harness (`engines/scout-intent/`, same commit) were added in the window (23 Oct), unchanged; WhyChain's implementation of it (`meterless_bridge/scout/`) was written in the window.
 - Open-source libraries listed in `pyproject.toml`, `frontend/package.json` and `meterless_bridge/package.json`.
 - The Olist dataset is third-party public data (CC BY-NC-SA 4.0), downloaded by `datagen/olist.py` and not included in the repository.
+
+## Pre-existing work (built before the build window)
+
+Declared as the Official Rules require (sections 4 and 5); the same declaration is in the submission form.
+
+The build window opened on **22 Oct 2026 at 00:00 UTC (05:30 IST)**. A first version of WhyChain was written before that, between **21 Oct 23:04 IST and 22 Oct about 03:05 IST**. The repository was created at 13:37 IST on 22 Oct, so the first commits (`9b47209` to `1845287`, all at 13:44 IST) import that code together with the first in-window changes. Every later commit is in-window work.
+
+**Written before the window:**
+- the Kaveri simulator, its documents and Postgres loader; the Olist loader; the 16 researched external events and 13 news briefs;
+- a first Zetaris REST client (never run against a live instance; rewritten in the window) and the local DuckDB harness;
+- the first agent graph (memory, data scout, planner, investigators, document analyst, evaluator, risk and action, reporter, action executor) and the NVIDIA NIM client;
+- an integration with the author's earlier MIT project [Optiagent](https://github.com/Dakshhhhh-ops/Optiagent) for stock transfers (replaced on 27 Oct by WhyChain's own LP solver, so Optiagent is no longer a dependency);
+- the Meterless bridge service, the FastAPI server and the first React app;
+- the first eval cases, wiring tests, `doctor`, the CLI and `start.cmd`.
+
+**Written in the window (from 22 Oct 13:25 IST), among others:** the analysis engine and supply engine, the numbers check, the connection to the local Zetaris platform, Meterless Scout Intent, the Nemotron embeddings for H-MEM, Private documents on Meterless Nightshift, the brief in money with the why chain, the held-out evals and the stock-transfer LP solver. See `git log`.
+
+## Development tools
+
+Built with Claude Code in VS Code. Cursor became optional under the organizers' updated onboarding guide (Build section).
