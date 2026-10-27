@@ -120,3 +120,20 @@ def test_the_private_reader_keeps_to_the_period():
                        "analysis": {"primary": {"start": "2018-03-01", "end": "2018-03-31"}}}, ctx)
     assert seen == ["Storm, February 2018", "Strike, March 2018"]     # the 2017 brief is too far off to read
     assert [e["doc_id"] for e in out["evidence"].values()] == ["in", "near"]   # in the period first, kept regardless
+
+
+def test_nightshift_gateway_goes_first_only_when_switched_on(monkeypatch):
+    from whychain.config import SETTINGS
+
+    monkeypatch.setenv("NIGHTSHIFT_BASE_URL", "http://127.0.0.1:8088/v1")
+    monkeypatch.setenv("NIGHTSHIFT_API_KEY", "token")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setenv("NIGHTSHIFT_PRIMARY", "false")
+    off = LLM(providers=SETTINGS.providers())
+    assert [p.name for p in off._chain("work")][0] == "nim"
+    monkeypatch.setenv("NIGHTSHIFT_PRIMARY", "true")
+    on = LLM(providers=SETTINGS.providers())
+    assert [p.name for p in on._chain("work")][:2] == ["ns-work", "nim"]       # direct NVIDIA stays the fallback
+    assert [p.name for p in on._chain("reason")][0] == "ns-reason"
+    on.private_docs = True
+    assert [p.name for p in on._chain("private")] == ["nightshift"]            # private documents stay on the machine

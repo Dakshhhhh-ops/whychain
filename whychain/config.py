@@ -82,9 +82,21 @@ class Settings:
                                    thinking=False),
             "nightshift": Provider("nightshift", env("NIGHTSHIFT_BASE_URL"), env("NIGHTSHIFT_API_KEY"),
                                    env("NIGHTSHIFT_MODEL", "meterless/local")),
+            # Meterless Nightshift as the gateway: the same Nemotron models, reached through Nightshift (a signed
+            # receipt per call). Configured only with NIGHTSHIFT_PRIMARY=true; direct NIM stays the fallback.
+            "ns-work": Provider("ns-work", env("NIGHTSHIFT_BASE_URL") if _ns_primary() else "",
+                                env("NIGHTSHIFT_API_KEY"),
+                                env("NIGHTSHIFT_GATEWAY_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")),
+            "ns-reason": Provider("ns-reason", env("NIGHTSHIFT_BASE_URL") if _ns_primary() else "",
+                                  env("NIGHTSHIFT_API_KEY"),
+                                  env("NIGHTSHIFT_GATEWAY_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")),
             "ollama": Provider("ollama", env("OLLAMA_BASE_URL", "http://localhost:11434/v1"), "ollama",
                                env("OLLAMA_MODEL", "qwen3:8b")),
         }
+
+
+def _ns_primary() -> bool:
+    return env("NIGHTSHIFT_PRIMARY", "false").lower() == "true"
 
 
 def data_as_of() -> str:

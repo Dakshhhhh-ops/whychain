@@ -23,19 +23,21 @@ from whychain.config import SETTINGS, Provider
 from whychain.slots import slot
 
 ROLE_CHAINS = {
-    "reason": ["xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
-    "work": ["nim", "nim-backup", "xai", "nim-reason", "nightshift", "ollama"],
-    "local": ["nim", "nim-backup", "nightshift", "ollama", "xai"],
+    # ns-* (Nightshift as the gateway to the same Nemotron models) exist only with NIGHTSHIFT_PRIMARY=true
+    "reason": ["ns-reason", "xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
+    "work": ["ns-work", "nim", "nim-backup", "xai", "nim-reason", "nightshift", "ollama"],
+    "local": ["ns-work", "nim", "nim-backup", "nightshift", "ollama", "xai"],
     # private documents: read only on this machine. No cloud fallback; if Nightshift fails, the record goes unread.
     "private": ["nightshift"],
 }
-JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup"}
+JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup", "ns-work", "ns-reason"}
+NIGHTSHIFT = {"nightshift", "ns-work", "ns-reason"}  # calls that go through Meterless Nightshift
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
 ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
 RATE_LIMIT_ATTEMPTS = 5  # 429s: the backup model shares the same key and quota, so wait instead of switching
 # at most this many calls in flight per endpoint ON THIS MACHINE, across every WhyChain process (see slots.py)
 MAX_PARALLEL = int(os.environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
-PROVIDER_DEADLINE_S = {"work": 180.0, "reason": 420.0, "local": 240.0, "private": 300.0}   # all attempts on one provider, waits included
+PROVIDER_DEADLINE_S = {"work": 240.0, "reason": 420.0, "local": 240.0, "private": 300.0}   # all attempts on one provider, waits included
 COOLDOWN_S = 90.0      # a provider that failed 3 times in a row is skipped for this long, then tried again
 
 
@@ -96,8 +98,9 @@ class LLM:
     def _client(self, p: Provider) -> OpenAI:
         if p.name not in self._clients:
             # JSON replies are short, so a slow call is almost always stuck in a queue: give up early and retry
-            timeout = 240.0 if p.name in ("ollama", "nightshift", "nim-reason") else 60.0
-            headers = {"meterless-app": "whychain", "meterless-scope": "user"} if p.name == "nightshift" else None
+            slow = ("ollama", "nightshift", "nim-reason", "ns-work", "ns-reason")
+            timeout = 240.0 if p.name in slow else 60.0
+            headers = {"meterless-app": "whychain", "meterless-scope": "user"} if p.name in NIGHTSHIFT else None
             self._clients[p.name] = OpenAI(base_url=p.base_url, api_key=p.api_key or "none", timeout=timeout,
                                            max_retries=0, default_headers=headers)
         return self._clients[p.name]
@@ -142,6 +145,11 @@ class LLM:
             if p.name == "nightshift":
                 # Nightshift binds "whychain-private" to on-device lanes (app policy mode "local")
                 kwargs["extra_headers"] = {"meterless-app": "whychain-private" if role == "private" else "whychain"}
+            elif p.name in ("ns-work", "ns-reason"):
+                # Nightshift's app policy pins "whychain-gateway" to its cloud Nemotron lane. Through Nightshift the
+                # model always reasons first, so leave room for that before the answer.
+                kwargs["extra_headers"] = {"meterless-app": "whychain-gateway"}
+                kwargs["max_tokens"] = max(max_tokens, 6000)
             if p.thinking is not None:
                 kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": p.thinking}}
                 if p.thinking:  # leave room for the reasoning before the answer
@@ -149,7 +157,7 @@ class LLM:
             t0 = time.perf_counter()
             try:
                 resp = self._create(p, kwargs, agent, attempts, PROVIDER_DEADLINE_S.get(role, 240.0))
-                receipt = meterless_receipt(resp) if p.name == "nightshift" else None
+                receipt = meterless_receipt(resp) if p.name in NIGHTSHIFT else None
                 if role == "private" and (receipt or {}).get("privacy") != "local-only":
                     # Nightshift's signed receipt must say the request stayed on this machine; otherwise discard it
                     raise PrivacyError(f"Nightshift receipt does not say local-only: {receipt}")
