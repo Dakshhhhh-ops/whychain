@@ -450,6 +450,23 @@ def get_regions(dataset: str | None = None, month: str | None = None) -> dict:
     return _regions_cache[key]
 
 
+class AskSql(BaseModel):
+    question: str = Field(min_length=5, max_length=400)
+    dataset: str | None = None
+
+
+@app.post("/api/ask")
+def ask_zetaris(body: AskSql) -> dict:
+    """Ask Zetaris: a coding model (SpaceXAI's Grok when configured) writes one read-only Spark SQL query for the
+    question, Zetaris runs it, and failed SQL goes back to the model with Zetaris's error."""
+    from whychain.ask import ask
+    from whychain.harness.base import catalog_text
+
+    ds = get_dataset(body.dataset)
+    harness, _ = shared_harness(ds.key)
+    return ask(body.question, harness, LLM(), catalog_text(harness.catalog(), ds.source_notes), ds.as_of, ds.key)
+
+
 @app.get("/api/sources")
 def sources(dataset: str | None = None) -> dict:
     from types import SimpleNamespace

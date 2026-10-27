@@ -27,17 +27,19 @@ ROLE_CHAINS = {
     "reason": ["ns-reason", "xai", "nim-reason", "nim-backup", "nim", "nightshift", "ollama"],
     "work": ["ns-work", "nim", "nim-backup", "xai", "nim-reason", "nightshift", "ollama"],
     "local": ["ns-work", "nim", "nim-backup", "nightshift", "ollama", "xai"],
+    # Ask Zetaris: SpaceXAI's coding model writes the SQL; Nemotron if no SpaceXAI key is set
+    "code": ["xai-code", "nim", "nim-backup"],
     # private documents: read only on this machine. No cloud fallback; if Nightshift fails, the record goes unread.
     "private": ["nightshift"],
 }
-JSON_MODE_OK = {"xai", "ollama", "nightshift", "nim", "nim-reason", "nim-backup", "ns-work", "ns-reason"}
+JSON_MODE_OK = {"xai", "xai-code", "ollama", "nightshift", "nim", "nim-reason", "nim-backup", "ns-work", "ns-reason"}
 NIGHTSHIFT = {"nightshift", "ns-work", "ns-reason"}  # calls that go through Meterless Nightshift
 TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
 ATTEMPTS = 4  # per provider, for transient errors, before falling back to the next provider
 RATE_LIMIT_ATTEMPTS = 5  # 429s: the backup model shares the same key and quota, so wait instead of switching
 # at most this many calls in flight per endpoint ON THIS MACHINE, across every WhyChain process (see slots.py)
 MAX_PARALLEL = int(os.environ.get("WHYCHAIN_MAX_PARALLEL_CALLS", "3"))
-PROVIDER_DEADLINE_S = {"work": 240.0, "reason": 420.0, "local": 240.0, "private": 300.0}   # all attempts on one provider, waits included
+PROVIDER_DEADLINE_S = {"code": 120.0, "work": 240.0, "reason": 420.0, "local": 240.0, "private": 300.0}   # all attempts on one provider, waits included
 COOLDOWN_S = 90.0      # a provider that failed 3 times in a row is skipped for this long, then tried again
 
 

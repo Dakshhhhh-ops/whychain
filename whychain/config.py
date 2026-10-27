@@ -66,6 +66,9 @@ class Settings:
         return {
             "xai": Provider("xai", env("XAI_BASE_URL", "https://api.x.ai/v1"), env("XAI_API_KEY"),
                             env("XAI_MODEL", "grok-4-fast")),
+            # SpaceXAI's coding model, for "Ask Zetaris" (plain English -> Spark SQL run on Zetaris)
+            "xai-code": Provider("xai-code", env("XAI_BASE_URL", "https://api.x.ai/v1"), env("XAI_API_KEY"),
+                                 env("XAI_CODE_MODEL", "grok-build-0.1")),
             # NIM for fast agent work (thinking off) ...
             "nim": Provider("nim", env("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
                             env("NVIDIA_API_KEY"), env("NIM_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b"),

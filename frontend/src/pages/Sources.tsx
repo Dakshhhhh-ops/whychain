@@ -4,6 +4,7 @@ import { Badge, Bar, Card, CardHeader, Spinner } from "../components/ui";
 import { api, type SourcesResponse } from "../lib/api";
 import { useDataset } from "../lib/dataset";
 import { num, pct } from "../lib/format";
+import { AskZetaris } from "../components/AskZetaris";
 import { PageHeader } from "./History";
 
 const META: Record<string, { name: string; system: string; icon: ReactNode }> = {
@@ -57,6 +58,7 @@ export function Sources() {
           {d.notes.join(" ")}
         </div>
       )}
+      {key && <AskZetaris dataset={key} />}
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {Object.entries(bySource).map(([src, tables]) => {
           const m = META[src] ?? { name: src, system: "", icon: <Database className="h-4 w-4" /> };

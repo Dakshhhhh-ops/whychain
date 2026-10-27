@@ -223,6 +223,12 @@ export type RunSummary = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TraceEvent = { seq: number; t: number; ts: string; run_id: string; kind: string; agent: string; [k: string]: any };
 
+export type AskAttempt = { n: number; provider?: string; model?: string; sql?: string; explanation?: string;
+  harness?: string; error?: string | null };
+export type AskResult = { ok: boolean; question: string; sql?: string; explanation?: string; columns?: string[];
+  rows?: unknown[][]; harness?: string; provider?: string; model?: string; attempts: AskAttempt[]; seconds: number;
+  error?: string };
+
 export type Status = {
   harness: { name: string; ok: boolean; notes: string[]; erp?: string; url?: string; error?: string };
   memory: { online: boolean; backend: string; url: string; engines?: Record<string, boolean>; embedder?: string | null;
@@ -272,6 +278,12 @@ export const api = {
   world: (id: string) => request<WorldState>(`/api/runs/${id}/world`),
   memory: (ds?: string) =>
     request<{ status: Status["memory"]; count: number; items: MemoryItem[]; tiers: Record<string, number> }>(`/api/memory?limit=200${dsq(ds, false)}`),
+  ask: (question: string, dataset?: string) =>
+    request<AskResult>("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, dataset }),
+    }),
   sources: (ds?: string) => request<SourcesResponse>(`/api/sources${dsq(ds)}`),
   start: (question: string, dataset?: string, privateDocs?: boolean) =>
     request<{ run_id: string }>("/api/runs", {
