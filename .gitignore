@@ -16,8 +16,11 @@ data/generated/
 data/olist/raw/
 data/olist/generated/
 preview_runs/
-runs/
+runs/*
 !runs/.gitkeep
+# two finished sample runs, so the app can replay them without keys
+!runs/20261028-004653-0e90/
+!runs/20261027-022755-6d02/
 *.duckdb
 *.duckdb.wal
 
@@ -41,3 +44,7 @@ evals/results.md
 # pytest --basetemp on Windows (see README)
 .pytest_tmp/
 meterless_bridge/data-backup-*/
+
+# start.sh logs
+whychain_api.log
+meterless_bridge.log

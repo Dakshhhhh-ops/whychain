@@ -1,0 +1,6554 @@
+{
+  "run_id": "20261028-004653-0e90",
+  "status": "ok",
+  "dataset": "olist",
+  "harness": "zetaris",
+  "harness_notes": [],
+  "memory": {
+    "online": true,
+    "url": "http://localhost:8787",
+    "engines": {
+      "hmem": true,
+      "world": true
+    },
+    "embedder": "nvidia/nemotron-3-embed-1b",
+    "scout": {
+      "intents": [
+        "GENERAL",
+        "delivery.explain",
+        "supply.explain",
+        "open.investigate"
+      ],
+      "registry_version": 1,
+      "policy_pack": "default+adversarial-tight@1",
+      "semantic": true,
+      "decisions": 3
+    },
+    "backend": "meterless"
+  },
+  "code": {
+    "commit": "3888d47",
+    "dirty": false
+  },
+  "llm": {
+    "calls": 8,
+    "by_provider": {
+      "nim": 8
+    },
+    "fallbacks": 0,
+    "tokens": 36845
+  },
+  "question": "Why did late deliveries jump to 19% for orders placed in March 2018?",
+  "round": 1,
+  "data_map": {
+    "sources": [
+      {
+        "source": "oms",
+        "what_it_holds": "Order management system: customers and orders with status, purchase/approval timestamps, carrier handoff, customer delivery, and promised delivery dates",
+        "grain": "oms.customers: one row per customer; oms.orders: one row per order",
+        "key_columns": [
+          "oms.customers.customer_id",
+          "oms.orders.order_id",
+          "oms.orders.customer_id"
+        ]
+      },
+      {
+        "source": "sellers",
+        "what_it_holds": "Seller platform: order items (one row per item with seller, product, shipping deadline, price, freight), seller master data, and product catalog with Portuguese/English categories and dimensions",
+        "grain": "sellers.order_items: one row per order item; sellers.sellers: one row per seller; sellers.products: one row per product",
+        "key_columns": [
+          "sellers.order_items.order_id",
+          "sellers.order_items.order_item_id",
+          "sellers.order_items.product_id",
+          "sellers.order_items.seller_id",
+          "sellers.sellers.seller_id",
+          "sellers.products.product_id"
+        ]
+      },
+      {
+        "source": "payments",
+        "what_it_holds": "Payment gateway: order payments with type, installments, sequential number, and value",
+        "grain": "payments.order_payments: one row per payment installment (an order can have multiple rows)",
+        "key_columns": [
+          "payments.order_payments.order_id",
+          "payments.order_payments.payment_sequential"
+        ]
+      },
+      {
+        "source": "feedback",
+        "what_it_holds": "Review platform: customer reviews with score 1-5, comment text in Portuguese, and creation/answer timestamps",
+        "grain": "feedback.reviews: one row per review (one per order)",
+        "key_columns": [
+          "feedback.reviews.order_id",
+          "feedback.reviews.review_id"
+        ]
+      },
+      {
+        "source": "signals",
+        "what_it_holds": "External events: verified strikes, peak seasons, and disruptions with start/end dates, region, confidence, and sources",
+        "grain": "signals.events: one row per event",
+        "key_columns": [
+          "signals.events.event_id"
+        ]
+      },
+      {
+        "source": "docs",
+        "what_it_holds": "Documents: news briefs on external events with body, sender, recipients, and sent date",
+        "grain": "docs.documents: one row per document",
+        "key_columns": [
+          "docs.documents.doc_id"
+        ]
+      }
+    ],
+    "joins": [
+      {
+        "left": "oms.orders.customer_id",
+        "right": "oms.customers.customer_id",
+        "meaning": "link an order to the customer who placed it",
+        "match_rate": 1.0
+      },
+      {
+        "left": "oms.orders.order_id",
+        "right": "sellers.order_items.order_id",
+        "meaning": "items belonging to an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "sellers.order_items.seller_id",
+        "right": "sellers.sellers.seller_id",
+        "meaning": "seller who fulfilled an order item",
+        "match_rate": 1.0
+      },
+      {
+        "left": "sellers.order_items.product_id",
+        "right": "sellers.products.product_id",
+        "meaning": "product details for an order item",
+        "match_rate": 1.0
+      },
+      {
+        "left": "oms.orders.order_id",
+        "right": "payments.order_payments.order_id",
+        "meaning": "payments made for an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "oms.orders.order_id",
+        "right": "feedback.reviews.order_id",
+        "meaning": "review left for an order",
+        "match_rate": 1.0
+      }
+    ],
+    "date_columns": [
+      {
+        "column": "oms.orders.order_purchase_timestamp",
+        "meaning": "when the customer placed the order"
+      },
+      {
+        "column": "oms.orders.order_approved_at",
+        "meaning": "when the order was approved"
+      },
+      {
+        "column": "oms.orders.order_delivered_carrier_date",
+        "meaning": "when the order was handed to the carrier"
+      },
+      {
+        "column": "oms.orders.order_delivered_customer_date",
+        "meaning": "when the customer received the order"
+      },
+      {
+        "column": "oms.orders.order_estimated_delivery_date",
+        "meaning": "delivery date promised to the customer (date only, no time)"
+      },
+      {
+        "column": "sellers.order_items.shipping_limit_date",
+        "meaning": "deadline for the seller to hand the item to the carrier"
+      },
+      {
+        "column": "feedback.reviews.review_creation_date",
+        "meaning": "when the review was created (stored as string)"
+      },
+      {
+        "column": "feedback.reviews.review_answer_timestamp",
+        "meaning": "when the review was answered (stored as string)"
+      },
+      {
+        "column": "signals.events.start_date",
+        "meaning": "start date of the external event (stored as string)"
+      },
+      {
+        "column": "signals.events.end_date",
+        "meaning": "end date of the external event (stored as string)"
+      },
+      {
+        "column": "docs.documents.sent_at",
+        "meaning": "when the news brief was sent (stored as string)"
+      }
+    ],
+    "status_values": [
+      {
+        "column": "oms.orders.order_status",
+        "values": [
+          "delivered",
+          "shipped",
+          "canceled",
+          "unavailable",
+          "invoiced",
+          "processing",
+          "created",
+          "approved"
+        ],
+        "meaning": "lifecycle status of an order"
+      },
+      {
+        "column": "payments.order_payments.payment_type",
+        "values": [
+          "credit_card",
+          "boleto",
+          "voucher",
+          "debit_card",
+          "not_defined"
+        ],
+        "meaning": "payment method used"
+      },
+      {
+        "column": "signals.events.region",
+        "values": [
+          "Brazil",
+          "RJ"
+        ],
+        "meaning": "geographic scope of the external event"
+      }
+    ],
+    "caveats": [
+      "LATE definition: delivered on a later calendar date than promised \u2014 CAST(order_delivered_customer_date AS DATE) > CAST(order_estimated_delivery_date AS DATE); do not compare raw timestamps because promised date has no time of day and same-day deliveries would be wrongly flagged",
+      "oms.orders.order_estimated_delivery_date is a timestamp with midnight time; cast to DATE before comparing",
+      "feedback.reviews.review_creation_date and review_answer_timestamp are stored as strings and need casting to timestamp/date",
+      "signals.events.start_date and end_date are stored as strings and need casting to date",
+      "docs.documents.sent_at is stored as a string and needs casting to timestamp",
+      "payments.order_payments is at payment-installment grain \u2014 one order can have multiple rows (payment_sequential), so joining without aggregation can duplicate order-level measures",
+      "sellers.order_items is at order-item grain \u2014 one order can have multiple items, so joining to orders without aggregation multiplies order rows",
+      "oms.orders contains non-delivered statuses (canceled, unavailable, processing, etc.) where delivery/promised dates may be NULL \u2014 filter to delivered orders before computing lateness",
+      "customer_city and customer_state are lowercase strings; normalize before comparing with external region values"
+    ],
+    "fingerprint": "484e2ce49e09"
+  },
+  "memories": [
+    {
+      "id": "mem-327",
+      "content": "MEASURED (2018-09-01): Measure the symptom: late deliveries for orders placed March 2018, against a normal baseline -> 1,328 of 7,003 delivered orders placed March 2018 were late (19.0%), against 5.6% for a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02): a difference of 13.4 points (confidence interval 12.4 to 14.4).",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.511,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "confirmed",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "measured",
+        "measure",
+        "march"
+      ],
+      "related_to": [
+        "mem-21",
+        "mem-292",
+        "mem-293",
+        "mem-302",
+        "mem-315"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:44.996Z",
+      "last_accessed": "2026-10-27T19:16:54.789Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-331",
+      "content": "CONFIRMED CAUSE (2018-09-01): Promised delivery windows got shorter -> Promised delivery window: typically 22.0 days against 25.0 at baseline; four in five orders within 28.0 days against 31.0 at baseline. Had this stage stayed as it was at baseline, 26.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened.",
+      "kind": "finding",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "finding by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3849,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "confirmed",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "confirmed",
+        "cause",
+        "promised",
+        "had"
+      ],
+      "related_to": [
+        "mem-295",
+        "mem-296",
+        "mem-318",
+        "mem-319",
+        "mem-320"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.176Z",
+      "last_accessed": "2026-10-27T19:16:54.792Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-329",
+      "content": "RULED OUT (2018-09-01): Sellers handed orders to the carrier later than normal -> Hand-over to the carrier (seller or warehouse): typically 2.0 days, the same as at baseline; four in five orders within 5.0 days, the same as at baseline. This stage moved the other way (share of the 13.4-point rise, from 5.6% to 19.0% late: -1.6%).",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3767,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "rejected",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "ruled",
+        "out",
+        "sellers",
+        "hand"
+      ],
+      "related_to": [
+        "mem-294",
+        "mem-296",
+        "mem-297",
+        "mem-298",
+        "mem-300"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.155Z",
+      "last_accessed": "2026-10-27T19:16:54.793Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-330",
+      "content": "CONFIRMED CAUSE (2018-09-01): Carrier transit got slower -> Carrier transit: typically 10.0 days against 8.0 at baseline; four in five orders within 21.0 days against 15.0 at baseline. Had this stage stayed as it was at baseline, 72.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened.",
+      "kind": "finding",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "finding by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3702,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "confirmed",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "confirmed",
+        "cause",
+        "carrier",
+        "had"
+      ],
+      "related_to": [
+        "mem-295",
+        "mem-296",
+        "mem-318",
+        "mem-319",
+        "mem-320"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.165Z",
+      "last_accessed": "2026-10-27T19:16:54.793Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-337",
+      "content": "RULED OUT (2018-09-01): Carnival holiday 2018 (2018-02-12 to 2018-02-14, Brazil) delayed deliveries -> Carnival holiday 2018 (2018-02-12 to 2018-02-14): carrier transit was 11.1 days just before it, against a normal 8.7; with the event, transit moved 0.6 days and the late rate 0.3 points against the prior trend.",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3644,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "rejected",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "ruled",
+        "out",
+        "carnival",
+        "brazil"
+      ],
+      "related_to": [
+        "mem-294",
+        "mem-296",
+        "mem-297",
+        "mem-298",
+        "mem-300"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.255Z",
+      "last_accessed": "2026-10-27T19:16:54.794Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-339",
+      "content": "RULED OUT (2018-09-01): Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13, Brazil) delayed deliveries -> Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13): carrier transit was 14.1 days just before it, against a normal 8.7; with the event, transit moved -0.5 days and the late rate 0.0 points against the prior trend.",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3611,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "rejected",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "ruled",
+        "out",
+        "correios",
+        "mar",
+        "brazil"
+      ],
+      "related_to": [
+        "mem-294",
+        "mem-296",
+        "mem-297",
+        "mem-298",
+        "mem-300"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.283Z",
+      "last_accessed": "2026-10-27T19:16:54.794Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-328",
+      "content": "MEASURED (2018-09-01): What the late orders are worth, and how their customers rated them -> The 1,328 late orders were worth R$ 187,138 (order value), with R$ 35,034 of freight paid on them. Their customers gave them 2.1 stars on average, against 4.2 for the orders that arrived on time; 68.3% of their reviews were 1 or 2 stars, against 10.7%.",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3589,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "confirmed",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "measured",
+        "what",
+        "their"
+      ],
+      "related_to": [
+        "mem-21",
+        "mem-292",
+        "mem-293",
+        "mem-302",
+        "mem-315"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.072Z",
+      "last_accessed": "2026-10-27T19:16:54.795Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    },
+    {
+      "id": "mem-335",
+      "content": "RULED OUT (2018-09-01): The symptom is a data artefact (missing or impossible dates, duplicates, definition) -> 0 delivered orders have a missing date and 0 an impossible date order, out of 7,211 in scope; 208 not-delivered orders are left out. Late is 19.0% comparing calendar dates and 21.4% comparing raw timestamps (WhyChain uses calendar dates: the promise has no time of day).",
+      "kind": "fact",
+      "provenance": {
+        "source": "local-duckdb",
+        "query": null,
+        "doc": null,
+        "origin": "model_response",
+        "label": "fact by Memory in run 20261028-000424-a8ce via local-duckdb"
+      },
+      "confidence": 1,
+      "tier": "long_term",
+      "score": 0.3538,
+      "run_id": "20261028-000424-a8ce",
+      "agent": "Memory",
+      "tags": [
+        "investigation",
+        "rejected",
+        "olist"
+      ],
+      "domain": "general",
+      "entities": [
+        "ruled",
+        "out",
+        "late",
+        "whychain"
+      ],
+      "related_to": [
+        "mem-294",
+        "mem-296",
+        "mem-297",
+        "mem-298",
+        "mem-300"
+      ],
+      "supersedes": null,
+      "superseded_by": null,
+      "derived_from": [],
+      "access_count": 1,
+      "created_at": "2026-10-27T18:38:45.225Z",
+      "last_accessed": "2026-10-27T19:16:54.795Z",
+      "source_question": "Why did late deliveries jump to 19% for orders placed in March 2018?"
+    }
+  ],
+  "symptom": "Late deliveries: orders placed March 2018",
+  "tasks": [
+    {
+      "id": "T1",
+      "round": 1,
+      "type": "measure",
+      "statement": "Measure the symptom: late deliveries for orders placed March 2018, against a normal baseline",
+      "agent": "tool",
+      "tool": "measure",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: measure"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "What the late orders are worth, and how their customers rated them",
+      "agent": "tool",
+      "tool": "value_at_stake",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: value_at_stake"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Sellers handed orders to the carrier later than normal",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "handover"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Carrier transit got slower",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "transit"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Promised delivery windows got shorter",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "promise"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The rise is concentrated in some places (by customer state)",
+      "agent": "tool",
+      "tool": "segments",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "dim": "customer_state"
+      },
+      "checks": [
+        "analysis engine: segments"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The rise is concentrated in some segments (by seller state)",
+      "agent": "tool",
+      "tool": "segments",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "dim": "seller_state"
+      },
+      "checks": [
+        "analysis engine: segments"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "A surge in orders overloaded hand-over or transit",
+      "agent": "tool",
+      "tool": "volume",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: volume"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The symptom is a data artefact (missing or impossible dates, duplicates, definition)",
+      "agent": "tool",
+      "tool": "data_quality",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: data_quality"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T10",
+      "round": 1,
+      "type": "measure",
+      "statement": "Customer reviews describe the problem",
+      "agent": "tool",
+      "tool": "text",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: text"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T11",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Carnival holiday 2018 (2018-02-12 to 2018-02-14, Brazil) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "carnival_2018"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T12",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Severe storm in Rio de Janeiro city (2018-02-15 to 2018-02-15, RJ) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "rj_storm_2018_02_15"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T13",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13, Brazil) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "correios_strike_2018_03"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T14",
+      "round": 1,
+      "type": "hypothesis",
+      "agent": "docs",
+      "context_only": true,
+      "statement": "What the written record (news briefs, contracts, email) says about the period, places and events in question",
+      "checks": [
+        "search docs.documents and signals.events for the period and places in question"
+      ],
+      "priority": 2,
+      "addresses_gap": null
+    }
+  ],
+  "open_tasks": [
+    {
+      "id": "T1",
+      "round": 1,
+      "type": "measure",
+      "statement": "Measure the symptom: late deliveries for orders placed March 2018, against a normal baseline",
+      "agent": "tool",
+      "tool": "measure",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: measure"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "What the late orders are worth, and how their customers rated them",
+      "agent": "tool",
+      "tool": "value_at_stake",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: value_at_stake"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Sellers handed orders to the carrier later than normal",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "handover"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Carrier transit got slower",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "transit"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Promised delivery windows got shorter",
+      "agent": "tool",
+      "tool": "stage",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "stage": "promise"
+      },
+      "checks": [
+        "analysis engine: stage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The rise is concentrated in some places (by customer state)",
+      "agent": "tool",
+      "tool": "segments",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "dim": "customer_state"
+      },
+      "checks": [
+        "analysis engine: segments"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The rise is concentrated in some segments (by seller state)",
+      "agent": "tool",
+      "tool": "segments",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "dim": "seller_state"
+      },
+      "checks": [
+        "analysis engine: segments"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "A surge in orders overloaded hand-over or transit",
+      "agent": "tool",
+      "tool": "volume",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: volume"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "The symptom is a data artefact (missing or impossible dates, duplicates, definition)",
+      "agent": "tool",
+      "tool": "data_quality",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: data_quality"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T10",
+      "round": 1,
+      "type": "measure",
+      "statement": "Customer reviews describe the problem",
+      "agent": "tool",
+      "tool": "text",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: text"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T11",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Carnival holiday 2018 (2018-02-12 to 2018-02-14, Brazil) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "carnival_2018"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T12",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Severe storm in Rio de Janeiro city (2018-02-15 to 2018-02-15, RJ) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "rj_storm_2018_02_15"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T13",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13, Brazil) delayed deliveries",
+      "agent": "tool",
+      "tool": "event",
+      "scope": {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      },
+      "params": {
+        "event_id": "correios_strike_2018_03"
+      },
+      "checks": [
+        "analysis engine: event"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T14",
+      "round": 1,
+      "type": "hypothesis",
+      "agent": "docs",
+      "context_only": true,
+      "statement": "What the written record (news briefs, contracts, email) says about the period, places and events in question",
+      "checks": [
+        "search docs.documents and signals.events for the period and places in question"
+      ],
+      "priority": 2,
+      "addresses_gap": null
+    }
+  ],
+  "findings": [
+    {
+      "task_id": "T1",
+      "statement": "Measure the symptom: late deliveries for orders placed March 2018, against a normal baseline",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T1",
+      "verdict": "measured",
+      "claim": "1,328 of 7,003 delivered orders placed March 2018 were late (19.0%), against 5.6% for a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02): a difference of 13.4 points (confidence interval 12.4 to 14.4).",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T1.A1",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T1.A1",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 7003,
+          "evidence": "T1.A1",
+          "column": "orders",
+          "row": 0
+        },
+        {
+          "value": 1328,
+          "evidence": "T1.A1",
+          "column": "late_orders",
+          "row": 0
+        },
+        {
+          "value": 13.4,
+          "evidence": "T1.A1",
+          "column": "late_pct",
+          "row": 2
+        },
+        {
+          "value": 12.4,
+          "evidence": "T1.A1",
+          "column": "ci_low_pct",
+          "row": 2
+        },
+        {
+          "value": 14.4,
+          "evidence": "T1.A1",
+          "column": "ci_high_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T1.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Measured directly by the analysis engine."
+      }
+    },
+    {
+      "task_id": "T2",
+      "statement": "What the late orders are worth, and how their customers rated them",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T2",
+      "verdict": "measured",
+      "claim": "The 1,328 late orders were worth R$ 187,138 (order value), with R$ 35,034 of freight paid on them. Their customers gave them 2.1 stars on average, against 4.2 for the orders that arrived on time; 68.3% of their reviews were 1 or 2 stars, against 10.7%.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T2.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T2.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 1328,
+          "evidence": "T2.A1",
+          "column": "late",
+          "row": 0
+        },
+        {
+          "value": 187138,
+          "evidence": "T2.A1",
+          "column": "late",
+          "row": 1
+        },
+        {
+          "value": 35034,
+          "evidence": "T2.A1",
+          "column": "late",
+          "row": 2
+        },
+        {
+          "value": 2.1,
+          "evidence": "T2.A1",
+          "column": "late",
+          "row": 4
+        },
+        {
+          "value": 4.2,
+          "evidence": "T2.A1",
+          "column": "on_time",
+          "row": 4
+        },
+        {
+          "value": 68.3,
+          "evidence": "T2.A1",
+          "column": "late",
+          "row": 6
+        },
+        {
+          "value": 10.7,
+          "evidence": "T2.A1",
+          "column": "on_time",
+          "row": 6
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T2.A1",
+        "T2.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Measured directly by the analysis engine: the value at stake, not what a fix would cost."
+      }
+    },
+    {
+      "task_id": "T3",
+      "statement": "Sellers handed orders to the carrier later than normal",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T3",
+      "verdict": "refutes",
+      "claim": "Hand-over to the carrier (seller or warehouse): typically 2.0 days, the same as at baseline; four in five orders within 5.0 days, the same as at baseline. This stage moved the other way (share of the 13.4-point rise, from 5.6% to 19.0% late: -1.6%).",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T3.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T3.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 2.0,
+          "evidence": "T3.A1",
+          "column": "focus_median_days",
+          "row": 0
+        },
+        {
+          "value": 2.0,
+          "evidence": "T3.A1",
+          "column": "ref_median_days",
+          "row": 0
+        },
+        {
+          "value": 5.0,
+          "evidence": "T3.A1",
+          "column": "focus_p80_days",
+          "row": 0
+        },
+        {
+          "value": 5.0,
+          "evidence": "T3.A1",
+          "column": "ref_p80_days",
+          "row": 0
+        },
+        {
+          "value": -1.6,
+          "evidence": "T3.A1",
+          "column": "share_of_rise_pct",
+          "row": 0
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T3.A1",
+        "T3.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": -0.016,
+        "reason": "Went the other way (share of the rise: -1.6%)."
+      }
+    },
+    {
+      "task_id": "T4",
+      "statement": "Carrier transit got slower",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T4",
+      "verdict": "supports",
+      "claim": "Carrier transit: typically 10.0 days against 8.0 at baseline; four in five orders within 21.0 days against 15.0 at baseline. Had this stage stayed as it was at baseline, 72.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T4.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T4.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 10.0,
+          "evidence": "T4.A1",
+          "column": "focus_median_days",
+          "row": 1
+        },
+        {
+          "value": 8.0,
+          "evidence": "T4.A1",
+          "column": "ref_median_days",
+          "row": 1
+        },
+        {
+          "value": 21.0,
+          "evidence": "T4.A1",
+          "column": "focus_p80_days",
+          "row": 1
+        },
+        {
+          "value": 15.0,
+          "evidence": "T4.A1",
+          "column": "ref_p80_days",
+          "row": 1
+        },
+        {
+          "value": 72.7,
+          "evidence": "T4.A1",
+          "column": "share_of_rise_pct",
+          "row": 1
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T4.A1",
+        "T4.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.727,
+        "reason": "Explains 72.7% of the rise (cause threshold: 10%)."
+      }
+    },
+    {
+      "task_id": "T5",
+      "statement": "Promised delivery windows got shorter",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T5",
+      "verdict": "supports",
+      "claim": "Promised delivery window: typically 22.0 days against 25.0 at baseline; four in five orders within 28.0 days against 31.0 at baseline. Had this stage stayed as it was at baseline, 26.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T5.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T5.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 22.0,
+          "evidence": "T5.A1",
+          "column": "focus_median_days",
+          "row": 2
+        },
+        {
+          "value": 25.0,
+          "evidence": "T5.A1",
+          "column": "ref_median_days",
+          "row": 2
+        },
+        {
+          "value": 28.0,
+          "evidence": "T5.A1",
+          "column": "focus_p80_days",
+          "row": 2
+        },
+        {
+          "value": 31.0,
+          "evidence": "T5.A1",
+          "column": "ref_p80_days",
+          "row": 2
+        },
+        {
+          "value": 26.7,
+          "evidence": "T5.A1",
+          "column": "share_of_rise_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T5.A1",
+        "T5.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.267,
+        "reason": "Explains 26.7% of the rise (cause threshold: 10%)."
+      }
+    },
+    {
+      "task_id": "T6",
+      "statement": "The rise is concentrated in some places (by customer state)",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T6",
+      "verdict": "measured",
+      "claim": "Where the rise sits, by customer state: SP: 20.1% of the rise from 42.4% of the orders (3.2% -> 9.4% late); RJ: 18.9% of the rise from 12.3% of the orders (12.8% -> 34.5% late); MG: 16.6% of the rise from 12.2% of the orders (2.3% -> 20.4% late).",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T6.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T6.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 20.1,
+          "evidence": "T6.A1",
+          "column": "share_of_rise_pct",
+          "row": 0
+        },
+        {
+          "value": 18.9,
+          "evidence": "T6.A1",
+          "column": "share_of_rise_pct",
+          "row": 1
+        },
+        {
+          "value": 16.6,
+          "evidence": "T6.A1",
+          "column": "share_of_rise_pct",
+          "row": 2
+        },
+        {
+          "value": 42.4,
+          "evidence": "T6.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 0
+        },
+        {
+          "value": 9.4,
+          "evidence": "T6.A1",
+          "column": "focus_late_pct",
+          "row": 0
+        },
+        {
+          "value": 3.2,
+          "evidence": "T6.A1",
+          "column": "ref_late_pct",
+          "row": 0
+        },
+        {
+          "value": 12.3,
+          "evidence": "T6.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 1
+        },
+        {
+          "value": 34.5,
+          "evidence": "T6.A1",
+          "column": "focus_late_pct",
+          "row": 1
+        },
+        {
+          "value": 12.8,
+          "evidence": "T6.A1",
+          "column": "ref_late_pct",
+          "row": 1
+        },
+        {
+          "value": 12.2,
+          "evidence": "T6.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 2
+        },
+        {
+          "value": 20.4,
+          "evidence": "T6.A1",
+          "column": "focus_late_pct",
+          "row": 2
+        },
+        {
+          "value": 2.3,
+          "evidence": "T6.A1",
+          "column": "ref_late_pct",
+          "row": 2
+        },
+        {
+          "value": -3.0,
+          "evidence": "T6.A1",
+          "column": "share_of_rise_pct",
+          "row": 8
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T6.A1",
+        "T6.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Concentrated in RJ (share of the rise at least 1.5x share of orders). This says where, not why."
+      }
+    },
+    {
+      "task_id": "T7",
+      "statement": "The rise is concentrated in some segments (by seller state)",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T7",
+      "verdict": "measured",
+      "claim": "Where the rise sits, by seller state: SP: 81.5% of the rise from 73.5% of the orders (5.8% -> 20.5% late); RJ: 8.0% of the rise from 4.2% of the orders (6.1% -> 31.7% late); PR: 4.6% of the rise from 8.3% of the orders (4.3% -> 11.3% late).",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T7.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T7.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 81.5,
+          "evidence": "T7.A1",
+          "column": "share_of_rise_pct",
+          "row": 0
+        },
+        {
+          "value": 8.0,
+          "evidence": "T7.A1",
+          "column": "share_of_rise_pct",
+          "row": 1
+        },
+        {
+          "value": 4.6,
+          "evidence": "T7.A1",
+          "column": "share_of_rise_pct",
+          "row": 2
+        },
+        {
+          "value": 73.5,
+          "evidence": "T7.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 0
+        },
+        {
+          "value": 20.5,
+          "evidence": "T7.A1",
+          "column": "focus_late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.8,
+          "evidence": "T7.A1",
+          "column": "ref_late_pct",
+          "row": 0
+        },
+        {
+          "value": 4.2,
+          "evidence": "T7.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 1
+        },
+        {
+          "value": 31.7,
+          "evidence": "T7.A1",
+          "column": "focus_late_pct",
+          "row": 1
+        },
+        {
+          "value": 6.1,
+          "evidence": "T7.A1",
+          "column": "ref_late_pct",
+          "row": 1
+        },
+        {
+          "value": 8.3,
+          "evidence": "T7.A1",
+          "column": "share_of_focus_orders_pct",
+          "row": 2
+        },
+        {
+          "value": 11.3,
+          "evidence": "T7.A1",
+          "column": "focus_late_pct",
+          "row": 2
+        },
+        {
+          "value": 4.3,
+          "evidence": "T7.A1",
+          "column": "ref_late_pct",
+          "row": 2
+        },
+        {
+          "value": 0.6,
+          "evidence": "T7.A1",
+          "column": "share_of_rise_pct",
+          "row": 8
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T7.A1",
+        "T7.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Spread broadly: no segment's share of the rise is well above its share of orders."
+      }
+    },
+    {
+      "task_id": "T8",
+      "statement": "A surge in orders overloaded hand-over or transit",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T8",
+      "verdict": "refutes",
+      "claim": "225.9 orders per day vs 234.1 in the four weeks before (0.96x); mean hand-over 3.3 vs 3.5 days, mean transit 13.0 vs 13.4 days.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T8.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T8.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 225.9,
+          "evidence": "T8.A1",
+          "column": "orders_per_day",
+          "row": 0
+        },
+        {
+          "value": 234.1,
+          "evidence": "T8.A1",
+          "column": "orders_per_day",
+          "row": 1
+        },
+        {
+          "value": 3.3,
+          "evidence": "T8.A1",
+          "column": "mean_handover_days",
+          "row": 0
+        },
+        {
+          "value": 3.5,
+          "evidence": "T8.A1",
+          "column": "mean_handover_days",
+          "row": 1
+        },
+        {
+          "value": 13.0,
+          "evidence": "T8.A1",
+          "column": "mean_transit_days",
+          "row": 0
+        },
+        {
+          "value": 13.4,
+          "evidence": "T8.A1",
+          "column": "mean_transit_days",
+          "row": 1
+        },
+        {
+          "value": 0.96,
+          "evidence": "T8.A1",
+          "column": "orders_per_day",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T8.A1",
+        "T8.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Volume did not rise enough, or the chain did not slow with it."
+      }
+    },
+    {
+      "task_id": "T9",
+      "statement": "The symptom is a data artefact (missing or impossible dates, duplicates, definition)",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T9",
+      "verdict": "refutes",
+      "claim": "0 delivered orders have a missing date and 0 an impossible date order, out of 7,211 in scope; 208 not-delivered orders are left out. Late is 19.0% comparing calendar dates and 21.4% comparing raw timestamps (WhyChain uses calendar dates: the promise has no time of day).",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T9.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T9.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 7211,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 0
+        },
+        {
+          "value": 208,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 1
+        },
+        {
+          "value": 0,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 2
+        },
+        {
+          "value": 0,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 3
+        },
+        {
+          "value": 0,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 4
+        },
+        {
+          "value": 19.0,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 5
+        },
+        {
+          "value": 21.4,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 6
+        },
+        {
+          "value": 0.0,
+          "evidence": "T9.A1",
+          "column": "result",
+          "row": 7
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T9.A1",
+        "T9.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Anomalies are 0.0% of orders: too few to explain the rise."
+      }
+    },
+    {
+      "task_id": "T10",
+      "statement": "Customer reviews describe the problem",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T10",
+      "verdict": "measured",
+      "claim": "Review mentions per thousand orders (focus vs reference): delay 14.7 vs 4.1; strike 0.9 vs 0.8; not received 50.3 vs 22.8; post office 16.0 vs 11.8.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T10.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T10.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 14.7,
+          "evidence": "T10.A1",
+          "column": "focus_per_1000",
+          "row": 0
+        },
+        {
+          "value": 4.1,
+          "evidence": "T10.A1",
+          "column": "ref_per_1000",
+          "row": 0
+        },
+        {
+          "value": 0.9,
+          "evidence": "T10.A1",
+          "column": "focus_per_1000",
+          "row": 1
+        },
+        {
+          "value": 0.8,
+          "evidence": "T10.A1",
+          "column": "ref_per_1000",
+          "row": 1
+        },
+        {
+          "value": 50.3,
+          "evidence": "T10.A1",
+          "column": "focus_per_1000",
+          "row": 2
+        },
+        {
+          "value": 22.8,
+          "evidence": "T10.A1",
+          "column": "ref_per_1000",
+          "row": 2
+        },
+        {
+          "value": 16.0,
+          "evidence": "T10.A1",
+          "column": "focus_per_1000",
+          "row": 3
+        },
+        {
+          "value": 11.8,
+          "evidence": "T10.A1",
+          "column": "ref_per_1000",
+          "row": 3
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T10.A1",
+        "T10.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Counted directly from review text."
+      }
+    },
+    {
+      "task_id": "T11",
+      "statement": "Carnival holiday 2018 (2018-02-12 to 2018-02-14, Brazil) delayed deliveries",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T11",
+      "verdict": "refutes",
+      "claim": "Carnival holiday 2018 (2018-02-12 to 2018-02-14): carrier transit was 11.1 days just before it, against a normal 8.7; with the event, transit moved 0.6 days and the late rate 0.3 points against the prior trend.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T11.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T11.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 8.7,
+          "evidence": "T11.A1",
+          "column": "mean_transit_days",
+          "row": 0
+        },
+        {
+          "value": 3.2,
+          "evidence": "T11.A1",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 11.1,
+          "evidence": "T11.A1",
+          "column": "mean_transit_days",
+          "row": 1
+        },
+        {
+          "value": 7.6,
+          "evidence": "T11.A1",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 0.6,
+          "evidence": "T11.A1",
+          "column": "mean_transit_days",
+          "row": 2
+        },
+        {
+          "value": 0.3,
+          "evidence": "T11.A1",
+          "column": "late_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T11.A1",
+        "T11.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "The effect was already there before the event."
+      }
+    },
+    {
+      "task_id": "T12",
+      "statement": "Severe storm in Rio de Janeiro city (2018-02-15 to 2018-02-15, RJ) delayed deliveries",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T12",
+      "verdict": "refutes",
+      "claim": "Severe storm in Rio de Janeiro city (2018-02-15 to 2018-02-15): carrier transit was 11.1 days just before it, against a normal 8.7; with the event, transit moved 0.6 days and the late rate 0.3 points against the prior trend. Larger in RJ than elsewhere: no.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T12.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T12.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 8.7,
+          "evidence": "T12.A1",
+          "column": "mean_transit_days",
+          "row": 0
+        },
+        {
+          "value": 3.2,
+          "evidence": "T12.A1",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 11.1,
+          "evidence": "T12.A1",
+          "column": "mean_transit_days",
+          "row": 1
+        },
+        {
+          "value": 7.6,
+          "evidence": "T12.A1",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 0.6,
+          "evidence": "T12.A1",
+          "column": "mean_transit_days",
+          "row": 2
+        },
+        {
+          "value": 0.3,
+          "evidence": "T12.A1",
+          "column": "late_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T12.A1",
+        "T12.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "The effect was already there before the event."
+      }
+    },
+    {
+      "task_id": "T13",
+      "statement": "Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13, Brazil) delayed deliveries",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T13",
+      "verdict": "refutes",
+      "claim": "Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13): carrier transit was 14.1 days just before it, against a normal 8.7; with the event, transit moved -0.5 days and the late rate 0.0 points against the prior trend.",
+      "key_numbers": [
+        {
+          "value": 19.0,
+          "evidence": "T13.A2",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 5.6,
+          "evidence": "T13.A2",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": 8.7,
+          "evidence": "T13.A1",
+          "column": "mean_transit_days",
+          "row": 0
+        },
+        {
+          "value": 3.4,
+          "evidence": "T13.A1",
+          "column": "late_pct",
+          "row": 0
+        },
+        {
+          "value": 14.1,
+          "evidence": "T13.A1",
+          "column": "mean_transit_days",
+          "row": 1
+        },
+        {
+          "value": 18.4,
+          "evidence": "T13.A1",
+          "column": "late_pct",
+          "row": 1
+        },
+        {
+          "value": -0.5,
+          "evidence": "T13.A1",
+          "column": "mean_transit_days",
+          "row": 2
+        },
+        {
+          "value": 0.0,
+          "evidence": "T13.A1",
+          "column": "late_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T13.A1",
+        "T13.A2"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "The effect was already there before the event."
+      }
+    },
+    {
+      "task_id": "T14",
+      "statement": "What the written record (news briefs, contracts, email) says about the period, places and events in question",
+      "type": "hypothesis",
+      "agent_kind": "docs",
+      "agent": "Doc Analyst T14",
+      "verdict": "inconclusive",
+      "claim": "The written record reports three events overlapping March 2018: (1) Federal intervention in Rio de Janeiro public security, decreed 16 Feb 2018 and running until 31 Dec 2018, limited to public security with Army General Braga Netto in command; (2) Correios R$3 emergency surcharge on parcels to Rio city and metro area, announced 27 Feb 2018, due from 6 Mar 2018, suspended by a Procon-RJ injunction in March then reinstated by TRF2 appeals court in April, ended 16 Nov 2018; (3) Correios workers' national strike over health-plan changes, begun 12 Mar 2018, called off 13 Mar with return to work 14 Mar, though Rio de Janeiro and Sao Paulo unions still had assemblies pending. The documents describe who, what, where, and when for each event but do not establish any causal link to the late delivery",
+      "key_numbers": {},
+      "who_knew": "operations inbox (recipients of all three news briefs)",
+      "confidence": 0.9,
+      "evidence_ids": [
+        "T14.D1",
+        "T14.D2",
+        "T14.D3"
+      ],
+      "steps": 6,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "context_only": true
+    }
+  ],
+  "evidence": {
+    "T1.A1": {
+      "id": "T1.A1",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T1",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T2.A1": {
+      "id": "T2.A1",
+      "type": "analysis",
+      "tool": "value_at_stake",
+      "task_id": "T2",
+      "agent": "Analysis engine",
+      "title": "What the late orders are worth",
+      "columns": [
+        "measure",
+        "late",
+        "on_time"
+      ],
+      "rows": [
+        [
+          "orders",
+          1328,
+          5675
+        ],
+        [
+          "order value (BRL)",
+          187138,
+          766219
+        ],
+        [
+          "freight paid (BRL)",
+          35034,
+          132208
+        ],
+        [
+          "orders with a review",
+          1328,
+          5675
+        ],
+        [
+          "mean review stars",
+          2.1,
+          4.2
+        ],
+        [
+          "1- or 2-star reviews",
+          907,
+          607
+        ],
+        [
+          "1- or 2-star, % of reviews",
+          68.3,
+          10.7
+        ]
+      ],
+      "row_count": 7,
+      "summary": {
+        "currency": "BRL",
+        "late_orders": 1328,
+        "late_value": 187138,
+        "late_stars": 2.1,
+        "ontime_stars": 4.2
+      },
+      "method": "The focus orders, split into late and on time: their number, order value (the sum of item prices) and freight paid, and the stars their customers gave in reviews (an order with several reviews counts their mean). This is the value at stake, not the cost of fixing it, which the data doesn't hold.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T2.A2": {
+      "id": "T2.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T2",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T3.A1": {
+      "id": "T3.A1",
+      "type": "analysis",
+      "tool": "stages",
+      "task_id": "T3",
+      "agent": "Analysis engine",
+      "title": "Which delivery stage explains the rise",
+      "columns": [
+        "stage",
+        "meaning",
+        "focus_median_days",
+        "ref_median_days",
+        "focus_p80_days",
+        "ref_p80_days",
+        "focus_mean_days",
+        "ref_mean_days",
+        "contribution_pp",
+        "share_of_rise_pct",
+        "stage_moved"
+      ],
+      "rows": [
+        [
+          "handover",
+          "hand-over to the carrier (seller or warehouse)",
+          2.0,
+          2.0,
+          5.0,
+          5.0,
+          3.3,
+          3.4,
+          -0.21,
+          -1.6,
+          false
+        ],
+        [
+          "transit",
+          "carrier transit",
+          10.0,
+          8.0,
+          21.0,
+          15.0,
+          13.0,
+          10.0,
+          9.73,
+          72.7,
+          true
+        ],
+        [
+          "promise",
+          "promised delivery window",
+          22.0,
+          25.0,
+          28.0,
+          31.0,
+          22.7,
+          25.8,
+          3.58,
+          26.7,
+          true
+        ],
+        [
+          "other",
+          "everything else (mix of orders, interactions)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0.3,
+          2.2,
+          null
+        ]
+      ],
+      "row_count": 4,
+      "summary": {
+        "rise_pp": 13.4,
+        "explained_pp": 13.1,
+        "shares": {
+          "handover": -1.6,
+          "transit": 72.7,
+          "promise": 26.7
+        },
+        "top_stage": "transit",
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)"
+      },
+      "method": "For each stage, every focus order's days are replaced by the reference value at the same rank (within the same customer_state) and the late rate is recomputed. Exact Shapley values over the three stages split the rise so the contributions add up; 'other' is what no stage explains. 'stage_moved': the stage itself got slower (promises: shorter) by a quarter day on average, or a day in its typical or four-in-five time.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T3.A2": {
+      "id": "T3.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T3",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T4.A1": {
+      "id": "T4.A1",
+      "type": "analysis",
+      "tool": "stages",
+      "task_id": "T4",
+      "agent": "Analysis engine",
+      "title": "Which delivery stage explains the rise",
+      "columns": [
+        "stage",
+        "meaning",
+        "focus_median_days",
+        "ref_median_days",
+        "focus_p80_days",
+        "ref_p80_days",
+        "focus_mean_days",
+        "ref_mean_days",
+        "contribution_pp",
+        "share_of_rise_pct",
+        "stage_moved"
+      ],
+      "rows": [
+        [
+          "handover",
+          "hand-over to the carrier (seller or warehouse)",
+          2.0,
+          2.0,
+          5.0,
+          5.0,
+          3.3,
+          3.4,
+          -0.21,
+          -1.6,
+          false
+        ],
+        [
+          "transit",
+          "carrier transit",
+          10.0,
+          8.0,
+          21.0,
+          15.0,
+          13.0,
+          10.0,
+          9.73,
+          72.7,
+          true
+        ],
+        [
+          "promise",
+          "promised delivery window",
+          22.0,
+          25.0,
+          28.0,
+          31.0,
+          22.7,
+          25.8,
+          3.58,
+          26.7,
+          true
+        ],
+        [
+          "other",
+          "everything else (mix of orders, interactions)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0.3,
+          2.2,
+          null
+        ]
+      ],
+      "row_count": 4,
+      "summary": {
+        "rise_pp": 13.4,
+        "explained_pp": 13.1,
+        "shares": {
+          "handover": -1.6,
+          "transit": 72.7,
+          "promise": 26.7
+        },
+        "top_stage": "transit",
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)"
+      },
+      "method": "For each stage, every focus order's days are replaced by the reference value at the same rank (within the same customer_state) and the late rate is recomputed. Exact Shapley values over the three stages split the rise so the contributions add up; 'other' is what no stage explains. 'stage_moved': the stage itself got slower (promises: shorter) by a quarter day on average, or a day in its typical or four-in-five time.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T4.A2": {
+      "id": "T4.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T4",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T5.A1": {
+      "id": "T5.A1",
+      "type": "analysis",
+      "tool": "stages",
+      "task_id": "T5",
+      "agent": "Analysis engine",
+      "title": "Which delivery stage explains the rise",
+      "columns": [
+        "stage",
+        "meaning",
+        "focus_median_days",
+        "ref_median_days",
+        "focus_p80_days",
+        "ref_p80_days",
+        "focus_mean_days",
+        "ref_mean_days",
+        "contribution_pp",
+        "share_of_rise_pct",
+        "stage_moved"
+      ],
+      "rows": [
+        [
+          "handover",
+          "hand-over to the carrier (seller or warehouse)",
+          2.0,
+          2.0,
+          5.0,
+          5.0,
+          3.3,
+          3.4,
+          -0.21,
+          -1.6,
+          false
+        ],
+        [
+          "transit",
+          "carrier transit",
+          10.0,
+          8.0,
+          21.0,
+          15.0,
+          13.0,
+          10.0,
+          9.73,
+          72.7,
+          true
+        ],
+        [
+          "promise",
+          "promised delivery window",
+          22.0,
+          25.0,
+          28.0,
+          31.0,
+          22.7,
+          25.8,
+          3.58,
+          26.7,
+          true
+        ],
+        [
+          "other",
+          "everything else (mix of orders, interactions)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0.3,
+          2.2,
+          null
+        ]
+      ],
+      "row_count": 4,
+      "summary": {
+        "rise_pp": 13.4,
+        "explained_pp": 13.1,
+        "shares": {
+          "handover": -1.6,
+          "transit": 72.7,
+          "promise": 26.7
+        },
+        "top_stage": "transit",
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)"
+      },
+      "method": "For each stage, every focus order's days are replaced by the reference value at the same rank (within the same customer_state) and the late rate is recomputed. Exact Shapley values over the three stages split the rise so the contributions add up; 'other' is what no stage explains. 'stage_moved': the stage itself got slower (promises: shorter) by a quarter day on average, or a day in its typical or four-in-five time.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T5.A2": {
+      "id": "T5.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T5",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T6.A1": {
+      "id": "T6.A1",
+      "type": "analysis",
+      "tool": "segments",
+      "task_id": "T6",
+      "agent": "Analysis engine",
+      "title": "Where the rise sits, by customer state",
+      "columns": [
+        "customer_state",
+        "focus_orders",
+        "ref_orders",
+        "focus_late_pct",
+        "ref_late_pct",
+        "rate_effect_pp",
+        "mix_effect_pp",
+        "share_of_rise_pct",
+        "share_of_focus_orders_pct"
+      ],
+      "rows": [
+        [
+          "SP",
+          2971,
+          8568,
+          9.4,
+          3.2,
+          2.56,
+          0.13,
+          20.1,
+          42.4
+        ],
+        [
+          "RJ",
+          864,
+          2841,
+          34.5,
+          12.8,
+          2.78,
+          -0.25,
+          18.9,
+          12.3
+        ],
+        [
+          "MG",
+          856,
+          2550,
+          20.4,
+          2.3,
+          2.2,
+          0.02,
+          16.6,
+          12.2
+        ],
+        [
+          "RS",
+          407,
+          1162,
+          19.2,
+          5.9,
+          0.75,
+          0.04,
+          5.9,
+          5.8
+        ],
+        [
+          "BA",
+          235,
+          741,
+          31.5,
+          11.2,
+          0.69,
+          -0.03,
+          5.0,
+          3.4
+        ],
+        [
+          "ES",
+          133,
+          446,
+          41.4,
+          6.7,
+          0.69,
+          -0.05,
+          4.8,
+          1.9
+        ],
+        [
+          "PR",
+          369,
+          1005,
+          13.3,
+          2.6,
+          0.54,
+          0.04,
+          4.3,
+          5.3
+        ],
+        [
+          "CE",
+          93,
+          293,
+          50.5,
+          6.8,
+          0.59,
+          -0.02,
+          4.3,
+          1.3
+        ],
+        [
+          "(all segments: mix effect)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          -0.41,
+          -3.0,
+          null
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "dimension": "customer_state",
+        "rise_pp": 13.4,
+        "mix_share_pct": -3.0,
+        "concentrated_in": [
+          "RJ"
+        ],
+        "top": [
+          "SP",
+          "RJ",
+          "MG"
+        ]
+      },
+      "method": "Shift-share decomposition: rate effect = average weight x change in the segment's late rate; mix effect = average rate x change in its share of orders. They add up exactly to the overall change.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T6.A2": {
+      "id": "T6.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T6",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T7.A1": {
+      "id": "T7.A1",
+      "type": "analysis",
+      "tool": "segments",
+      "task_id": "T7",
+      "agent": "Analysis engine",
+      "title": "Where the rise sits, by seller state",
+      "columns": [
+        "seller_state",
+        "focus_orders",
+        "ref_orders",
+        "focus_late_pct",
+        "ref_late_pct",
+        "rate_effect_pp",
+        "mix_effect_pp",
+        "share_of_rise_pct",
+        "share_of_focus_orders_pct"
+      ],
+      "rows": [
+        [
+          "SP",
+          5150,
+          15184,
+          20.5,
+          5.8,
+          10.65,
+          0.26,
+          81.5,
+          73.5
+        ],
+        [
+          "RJ",
+          293,
+          887,
+          31.7,
+          6.1,
+          1.07,
+          0.0,
+          8.0,
+          4.2
+        ],
+        [
+          "PR",
+          584,
+          1568,
+          11.3,
+          4.3,
+          0.55,
+          0.07,
+          4.6,
+          8.3
+        ],
+        [
+          "MG",
+          411,
+          1708,
+          12.7,
+          4.0,
+          0.6,
+          -0.18,
+          3.1,
+          5.9
+        ],
+        [
+          "MA",
+          41,
+          9,
+          41.5,
+          0.0,
+          0.13,
+          0.11,
+          1.8,
+          0.6
+        ],
+        [
+          "RS",
+          109,
+          385,
+          7.3,
+          3.6,
+          0.06,
+          -0.01,
+          0.4,
+          1.6
+        ],
+        [
+          "GO",
+          31,
+          95,
+          12.9,
+          2.1,
+          0.05,
+          -0.0,
+          0.4,
+          0.4
+        ],
+        [
+          "DF",
+          50,
+          220,
+          14.0,
+          5.9,
+          0.07,
+          -0.03,
+          0.3,
+          0.7
+        ],
+        [
+          "(all segments: mix effect)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          0.08,
+          0.6,
+          null
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "dimension": "seller_state",
+        "rise_pp": 13.4,
+        "mix_share_pct": 0.6,
+        "concentrated_in": [],
+        "top": [
+          "SP",
+          "RJ",
+          "PR"
+        ]
+      },
+      "method": "Shift-share decomposition: rate effect = average weight x change in the segment's late rate; mix effect = average rate x change in its share of orders. They add up exactly to the overall change.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T7.A2": {
+      "id": "T7.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T7",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T8.A1": {
+      "id": "T8.A1",
+      "type": "analysis",
+      "tool": "volume",
+      "task_id": "T8",
+      "agent": "Analysis engine",
+      "title": "Order volume",
+      "columns": [
+        "group",
+        "orders",
+        "orders_per_day",
+        "mean_handover_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          225.9,
+          3.3,
+          13.0
+        ],
+        [
+          "4 weeks before",
+          6555,
+          234.1,
+          3.5,
+          13.4
+        ],
+        [
+          "focus / before",
+          null,
+          0.96,
+          null,
+          null
+        ]
+      ],
+      "row_count": 3,
+      "summary": {
+        "orders_per_day_ratio": 0.96,
+        "focus_orders_per_day": 225.9,
+        "ref_orders_per_day": 234.1,
+        "handover_change_days": -0.2,
+        "transit_change_days": -0.4,
+        "weekly_orders_vs_late_spearman": 0.73
+      },
+      "method": "Orders per day (per day with orders, by purchase date) in the focus vs the 4 weeks just before it (growth of the business is not a surge). A surge counts if volume is at least 25% higher AND hand-over (+0.5 day) or transit (+1 day) slowed with it.",
+      "verdict": "refutes",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T8.A2": {
+      "id": "T8.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T8",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T9.A1": {
+      "id": "T9.A1",
+      "type": "analysis",
+      "tool": "data_quality",
+      "task_id": "T9",
+      "agent": "Analysis engine",
+      "title": "Data quality and definitions",
+      "columns": [
+        "check",
+        "result"
+      ],
+      "rows": [
+        [
+          "orders in scope",
+          7211
+        ],
+        [
+          "not delivered (left out)",
+          208
+        ],
+        [
+          "delivered but a date is missing",
+          0
+        ],
+        [
+          "impossible date order",
+          0
+        ],
+        [
+          "duplicate order rows in the source",
+          0
+        ],
+        [
+          "late % comparing calendar dates",
+          19.0
+        ],
+        [
+          "late % comparing timestamps",
+          21.4
+        ],
+        [
+          "anomalies, % of orders in scope",
+          0.0
+        ]
+      ],
+      "row_count": 8,
+      "summary": {
+        "anomaly_share_pct": 0.0,
+        "definition_gap_pp": 2.4,
+        "not_delivered": 208
+      },
+      "method": "Counts delivered orders with missing or impossible dates (an artefact counts if over 2%), and compares the calendar-date definition of late with a raw timestamp comparison.",
+      "verdict": "refutes",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T9.A2": {
+      "id": "T9.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T9",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T10.A1": {
+      "id": "T10.A1",
+      "type": "analysis",
+      "tool": "text",
+      "task_id": "T10",
+      "agent": "Analysis engine",
+      "title": "What customers wrote",
+      "columns": [
+        "term",
+        "focus_mentions",
+        "focus_per_1000",
+        "ref_mentions",
+        "ref_per_1000",
+        "ratio"
+      ],
+      "rows": [
+        [
+          "delay",
+          103,
+          14.7,
+          87,
+          4.1,
+          3.59
+        ],
+        [
+          "strike",
+          6,
+          0.9,
+          16,
+          0.8,
+          1.14
+        ],
+        [
+          "not received",
+          352,
+          50.3,
+          483,
+          22.8,
+          2.21
+        ],
+        [
+          "post office",
+          112,
+          16.0,
+          250,
+          11.8,
+          1.36
+        ]
+      ],
+      "row_count": 4,
+      "summary": {
+        "samples": [
+          {
+            "review_id": "314617e3a6f2618f364509fffa147152",
+            "term": "delay",
+            "text": "N\u00e3o posso dar opini\u00e3o sobre produto pois n\u00e3o recebi, sobre a loja eu n\u00e3o recomendo, pois atrasa as entregas."
+          },
+          {
+            "review_id": "395c4d003d82c3e8cfccf53309aca72b",
+            "term": "delay",
+            "text": "A entrega est\u00e1 atrasada e sem previs\u00e3o de quando vai chegar"
+          },
+          {
+            "review_id": "d4553d96055a0b508e3b0af45738981e",
+            "term": "strike",
+            "text": "LIVRO SUPER BEM EMBALADO, CAPRICHOSAMENTE BEM PROTEGIDO DE QUALQUER PROBLEMA NA VIAGEM.\r\nS\u00d3 DEMOROU A ENTREGAR POR CONTA DA GREVE DOS CORREIOS MAS PELO SITE DO stark ERA POSS\u00cdVEL RASTREAR CERTINHO"
+          },
+          {
+            "review_id": "f4b4b2244f9a8dcbb941796a62bd8b4f",
+            "term": "strike",
+            "text": "Ainda n\u00e3o recebi o produto que comprei, acredito que deve ser devido \u00e0 greve dos correios. Pe\u00e7o que me envie o mais breve poss\u00edvel"
+          },
+          {
+            "review_id": "58044bca115705a48fe0e00a21390c54",
+            "term": "not received",
+            "text": "Sempre compro pela Internet e a entrega ocorre antes do prazo combinado, que acredito ser o prazo m\u00e1ximo. No stark o prazo m\u00e1ximo j\u00e1 se esgotou e ainda n\u00e3o recebi o produto."
+          },
+          {
+            "review_id": "43992f6d75ecc01ddd8c748b9362bc81",
+            "term": "not received",
+            "text": "o meu produto n\u00e3o chegou... segundo o rastreio est\u00e1 parado em Ribeir\u00e3o Preto sp..."
+          }
+        ]
+      },
+      "method": "Reviews of the focus and reference orders that contain each term (Portuguese), per 1,000 orders.",
+      "verdict": "measured",
+      "sql": "SELECT order_id, review_id, review_score,\n       COALESCE(review_comment_title, '') AS title, COALESCE(review_comment_message, '') AS message\nFROM feedback.reviews",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T10.A2": {
+      "id": "T10.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T10",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T11.A1": {
+      "id": "T11.A1",
+      "type": "analysis",
+      "tool": "event",
+      "task_id": "T11",
+      "agent": "Analysis engine",
+      "title": "Event timing: Carnival holiday 2018",
+      "columns": [
+        "handover_week",
+        "weeks_from_event",
+        "phase",
+        "parcels_handed_over",
+        "mean_transit_days",
+        "late_pct"
+      ],
+      "rows": [
+        [
+          "normal level (weeks 26 to 7 before, 10 abnormal weeks left out)",
+          null,
+          "summary",
+          null,
+          8.7,
+          3.2
+        ],
+        [
+          "just before (2 weeks)",
+          null,
+          "summary",
+          null,
+          11.1,
+          7.6
+        ],
+        [
+          "change with the event, vs prior trend",
+          null,
+          "summary",
+          null,
+          0.6,
+          0.3
+        ],
+        [
+          "2017-12-18",
+          -8,
+          "before",
+          1303,
+          11.7,
+          6.2
+        ],
+        [
+          "2017-12-25",
+          -7,
+          "before",
+          686,
+          10.4,
+          4.4
+        ],
+        [
+          "2018-01-01",
+          -6,
+          "before",
+          999,
+          9.8,
+          5.8
+        ],
+        [
+          "2018-01-08",
+          -5,
+          "before",
+          1612,
+          10.1,
+          3.7
+        ],
+        [
+          "2018-01-15",
+          -4,
+          "before",
+          1828,
+          10.1,
+          4.1
+        ],
+        [
+          "2018-01-22",
+          -3,
+          "before",
+          1586,
+          10.7,
+          7.6
+        ],
+        [
+          "2018-01-29",
+          -2,
+          "before",
+          1526,
+          11.5,
+          7.7
+        ],
+        [
+          "2018-02-05",
+          -1,
+          "in flight",
+          1708,
+          12.6,
+          6.0
+        ],
+        [
+          "2018-02-12",
+          0,
+          "event",
+          1338,
+          12.2,
+          11.6
+        ],
+        [
+          "2018-02-19",
+          1,
+          "after",
+          1730,
+          12.8,
+          14.2
+        ],
+        [
+          "2018-02-26",
+          2,
+          "after",
+          1850,
+          15.4,
+          22.7
+        ],
+        [
+          "2018-03-05",
+          3,
+          "after",
+          1712,
+          15.6,
+          27.4
+        ]
+      ],
+      "row_count": 15,
+      "summary": {
+        "event": "carnival_2018",
+        "name": "Carnival holiday 2018",
+        "start": "2018-02-12",
+        "end": "2018-02-14",
+        "region": "Brazil",
+        "normal_transit_days": 8.7,
+        "pre_event_transit_days": 11.1,
+        "normal_weeks_left_out": 10,
+        "normal_late_pct": 3.2,
+        "pre_event_late_pct": 7.6,
+        "elevated_before": true,
+        "transit_jump_vs_trend_days": 0.6,
+        "late_jump_vs_trend_pp": 0.3,
+        "effect_with_event": false,
+        "region_aligned": null
+      },
+      "method": "Weeks are the week a parcel was handed to the carrier. 'Normal' = median of weeks 26 to 7 before the event, leaving out abnormal weeks (late rate above 1.5x that of the data's typical week, and at least 2 points above it: 3.7% typical); 'before' = the two weeks before the in-flight week. The jump is measured against the trend of weeks 6 to 2 before, extrapolated, so a change that was already under way doesn't count. Supports: a jump of at least 1 day (or 10%) of transit, or 5 points of late rate, starting with the event. Partial: the jump happened, but the level was already raised before the event.",
+      "verdict": "refutes",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T11.A2": {
+      "id": "T11.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T11",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T12.A1": {
+      "id": "T12.A1",
+      "type": "analysis",
+      "tool": "event",
+      "task_id": "T12",
+      "agent": "Analysis engine",
+      "title": "Event timing: Severe storm in Rio de Janeiro city",
+      "columns": [
+        "handover_week",
+        "weeks_from_event",
+        "phase",
+        "parcels_handed_over",
+        "mean_transit_days",
+        "late_pct",
+        "RJ_mean_transit_days",
+        "rest_mean_transit_days"
+      ],
+      "rows": [
+        [
+          "normal level (weeks 26 to 7 before, 10 abnormal weeks left out)",
+          null,
+          "summary",
+          null,
+          8.7,
+          3.2,
+          null,
+          null
+        ],
+        [
+          "just before (2 weeks)",
+          null,
+          "summary",
+          null,
+          11.1,
+          7.6,
+          null,
+          null
+        ],
+        [
+          "change with the event, vs prior trend",
+          null,
+          "summary",
+          null,
+          0.6,
+          0.3,
+          null,
+          null
+        ],
+        [
+          "2017-12-18",
+          -8,
+          "before",
+          1303,
+          11.7,
+          6.2,
+          19.1,
+          10.4
+        ],
+        [
+          "2017-12-25",
+          -7,
+          "before",
+          686,
+          10.4,
+          4.4,
+          14.0,
+          10.0
+        ],
+        [
+          "2018-01-01",
+          -6,
+          "before",
+          999,
+          9.8,
+          5.8,
+          14.7,
+          9.1
+        ],
+        [
+          "2018-01-08",
+          -5,
+          "before",
+          1612,
+          10.1,
+          3.7,
+          14.8,
+          9.4
+        ],
+        [
+          "2018-01-15",
+          -4,
+          "before",
+          1828,
+          10.1,
+          4.1,
+          14.5,
+          9.5
+        ],
+        [
+          "2018-01-22",
+          -3,
+          "before",
+          1586,
+          10.7,
+          7.6,
+          16.1,
+          10.0
+        ],
+        [
+          "2018-01-29",
+          -2,
+          "before",
+          1526,
+          11.5,
+          7.7,
+          14.0,
+          11.2
+        ],
+        [
+          "2018-02-05",
+          -1,
+          "in flight",
+          1708,
+          12.6,
+          6.0,
+          15.1,
+          12.2
+        ],
+        [
+          "2018-02-12",
+          0,
+          "event",
+          1338,
+          12.2,
+          11.6,
+          17.3,
+          11.6
+        ],
+        [
+          "2018-02-19",
+          1,
+          "after",
+          1730,
+          12.8,
+          14.2,
+          18.4,
+          11.8
+        ],
+        [
+          "2018-02-26",
+          2,
+          "after",
+          1850,
+          15.4,
+          22.7,
+          26.3,
+          13.5
+        ],
+        [
+          "2018-03-05",
+          3,
+          "after",
+          1712,
+          15.6,
+          27.4,
+          25.6,
+          14.0
+        ]
+      ],
+      "row_count": 15,
+      "summary": {
+        "event": "rj_storm_2018_02_15",
+        "name": "Severe storm in Rio de Janeiro city",
+        "start": "2018-02-15",
+        "end": "2018-02-15",
+        "region": "RJ",
+        "normal_transit_days": 8.7,
+        "pre_event_transit_days": 11.1,
+        "normal_weeks_left_out": 10,
+        "normal_late_pct": 3.2,
+        "pre_event_late_pct": 7.6,
+        "elevated_before": true,
+        "transit_jump_vs_trend_days": 0.6,
+        "late_jump_vs_trend_pp": 0.3,
+        "effect_with_event": false,
+        "region_aligned": false
+      },
+      "method": "Weeks are the week a parcel was handed to the carrier. 'Normal' = median of weeks 26 to 7 before the event, leaving out abnormal weeks (late rate above 1.5x that of the data's typical week, and at least 2 points above it: 3.7% typical); 'before' = the two weeks before the in-flight week. The jump is measured against the trend of weeks 6 to 2 before, extrapolated, so a change that was already under way doesn't count. Supports: a jump of at least 1 day (or 10%) of transit, or 5 points of late rate, starting with the event, larger in the event's region than elsewhere. Partial: the jump happened, but the level was already raised before the event.",
+      "verdict": "refutes",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T12.A2": {
+      "id": "T12.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T12",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T13.A1": {
+      "id": "T13.A1",
+      "type": "analysis",
+      "tool": "event",
+      "task_id": "T13",
+      "agent": "Analysis engine",
+      "title": "Event timing: Correios workers' national strike over health plan (Mar 2018)",
+      "columns": [
+        "handover_week",
+        "weeks_from_event",
+        "phase",
+        "parcels_handed_over",
+        "mean_transit_days",
+        "late_pct"
+      ],
+      "rows": [
+        [
+          "normal level (weeks 26 to 7 before, 12 abnormal weeks left out)",
+          null,
+          "summary",
+          null,
+          8.7,
+          3.4
+        ],
+        [
+          "just before (2 weeks)",
+          null,
+          "summary",
+          null,
+          14.1,
+          18.4
+        ],
+        [
+          "change with the event, vs prior trend",
+          null,
+          "summary",
+          null,
+          -0.5,
+          0.0
+        ],
+        [
+          "2018-01-15",
+          -8,
+          "before",
+          1828,
+          10.1,
+          4.1
+        ],
+        [
+          "2018-01-22",
+          -7,
+          "before",
+          1586,
+          10.7,
+          7.6
+        ],
+        [
+          "2018-01-29",
+          -6,
+          "before",
+          1526,
+          11.5,
+          7.7
+        ],
+        [
+          "2018-02-05",
+          -5,
+          "before",
+          1708,
+          12.6,
+          6.0
+        ],
+        [
+          "2018-02-12",
+          -4,
+          "before",
+          1338,
+          12.2,
+          11.6
+        ],
+        [
+          "2018-02-19",
+          -3,
+          "before",
+          1730,
+          12.8,
+          14.2
+        ],
+        [
+          "2018-02-26",
+          -2,
+          "before",
+          1850,
+          15.4,
+          22.7
+        ],
+        [
+          "2018-03-05",
+          -1,
+          "in flight",
+          1712,
+          15.6,
+          27.4
+        ],
+        [
+          "2018-03-12",
+          0,
+          "event",
+          1533,
+          14.8,
+          24.3
+        ],
+        [
+          "2018-03-19",
+          1,
+          "after",
+          1731,
+          11.9,
+          15.9
+        ],
+        [
+          "2018-03-26",
+          2,
+          "after",
+          1360,
+          10.7,
+          11.0
+        ],
+        [
+          "2018-04-02",
+          3,
+          "after",
+          1719,
+          9.5,
+          9.9
+        ]
+      ],
+      "row_count": 15,
+      "summary": {
+        "event": "correios_strike_2018_03",
+        "name": "Correios workers' national strike over health plan (Mar 2018)",
+        "start": "2018-03-12",
+        "end": "2018-03-13",
+        "region": "Brazil",
+        "normal_transit_days": 8.7,
+        "pre_event_transit_days": 14.1,
+        "normal_weeks_left_out": 12,
+        "normal_late_pct": 3.4,
+        "pre_event_late_pct": 18.4,
+        "elevated_before": true,
+        "transit_jump_vs_trend_days": -0.5,
+        "late_jump_vs_trend_pp": 0.0,
+        "effect_with_event": false,
+        "region_aligned": null
+      },
+      "method": "Weeks are the week a parcel was handed to the carrier. 'Normal' = median of weeks 26 to 7 before the event, leaving out abnormal weeks (late rate above 1.5x that of the data's typical week, and at least 2 points above it: 3.7% typical); 'before' = the two weeks before the in-flight week. The jump is measured against the trend of weeks 6 to 2 before, extrapolated, so a change that was already under way doesn't count. Supports: a jump of at least 1 day (or 10%) of transit, or 5 points of late rate, starting with the event. Partial: the jump happened, but the level was already raised before the event.",
+      "verdict": "refutes",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T13.A2": {
+      "id": "T13.A2",
+      "type": "analysis",
+      "tool": "measure",
+      "task_id": "T13",
+      "agent": "Analysis engine",
+      "title": "Late deliveries: focus vs reference",
+      "columns": [
+        "group",
+        "orders",
+        "late_orders",
+        "late_pct",
+        "ci_low_pct",
+        "ci_high_pct",
+        "median_handover_days",
+        "median_transit_days",
+        "median_promised_days",
+        "mean_transit_days"
+      ],
+      "rows": [
+        [
+          "focus",
+          7003,
+          1328,
+          19.0,
+          18.1,
+          19.9,
+          2.0,
+          10.0,
+          22.0,
+          13.0
+        ],
+        [
+          "reference",
+          21209,
+          1182,
+          5.6,
+          5.3,
+          5.9,
+          2.0,
+          8.0,
+          25.0,
+          10.0
+        ],
+        [
+          "difference (focus - reference)",
+          null,
+          null,
+          13.4,
+          12.4,
+          14.4,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "month 2017-09 (in baseline)",
+          4149,
+          181,
+          4.4,
+          3.8,
+          5.0,
+          2.0,
+          7.0,
+          23.0,
+          8.6
+        ],
+        [
+          "month 2017-10 (in baseline)",
+          4478,
+          187,
+          4.2,
+          3.6,
+          4.8,
+          2.0,
+          7.0,
+          23.0,
+          8.4
+        ],
+        [
+          "month 2017-12 (in baseline)",
+          5513,
+          411,
+          7.5,
+          6.8,
+          8.2,
+          3.0,
+          9.0,
+          28.0,
+          11.7
+        ],
+        [
+          "month 2018-01 (in baseline)",
+          7069,
+          403,
+          5.7,
+          5.2,
+          6.3,
+          3.0,
+          8.0,
+          26.0,
+          10.5
+        ],
+        [
+          "month 2017-11 (left out: abnormal)",
+          7288,
+          904,
+          12.4,
+          11.7,
+          13.2,
+          3.0,
+          9.0,
+          23.0,
+          11.1
+        ],
+        [
+          "month 2018-02 (left out: abnormal)",
+          6555,
+          926,
+          14.1,
+          13.3,
+          15.0,
+          3.0,
+          11.0,
+          25.0,
+          13.4
+        ]
+      ],
+      "row_count": 9,
+      "summary": {
+        "focus_rate": 19.0,
+        "ref_rate": 5.6,
+        "rise_pp": 13.4,
+        "rise_low_pp": 12.4,
+        "rise_high_pp": 14.4,
+        "focus_orders": 7003,
+        "focus_late": 1328,
+        "ref_orders": 21209,
+        "focus": "orders placed March 2018",
+        "reference": "a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02)",
+        "baseline_units": [
+          "2017-09",
+          "2017-10",
+          "2017-12",
+          "2018-01"
+        ],
+        "excluded_units": [
+          "2017-11",
+          "2018-02"
+        ]
+      },
+      "method": "Late = delivered on a later calendar date than promised. Focus: orders placed March 2018. Compared with a normal baseline: months 2017-09, 2017-10, 2017-12, 2018-01 (left out as abnormal: 2017-11, 2018-02). 95% Wilson intervals; the difference uses a normal approximation.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T14.Q1": {
+      "id": "T14.Q1",
+      "type": "sql",
+      "task_id": "T14",
+      "agent": "Doc Analyst T14",
+      "purpose": "I need to search docs.documents and signals.events for events overlapping March 2018 in Brazil. First, let me query signals.events to see what external events are recorded, then query docs.documents for news briefs about that period.",
+      "sql": "SELECT event_id, name, type, region, start_date, end_date, summary FROM signals.events WHERE CAST(start_date AS DATE) <= DATE'2018-03-31' AND CAST(end_date AS DATE) >= DATE'2018-03-01'",
+      "columns": [
+        "event_id",
+        "name",
+        "type",
+        "region",
+        "start_date",
+        "end_date",
+        "summary"
+      ],
+      "rows": [
+        [
+          "rj_federal_intervention_2018",
+          "Federal intervention in Rio de Janeiro public security",
+          "security",
+          "RJ",
+          "2018-02-16",
+          "2018-12-31",
+          "Decree 9,288 of 16 Feb 2018 placed public security in Rio de Janeiro state under federal intervention until 31 Dec 2018, with Army General Walter Braga Netto in command of the state police and fire brigade."
+        ],
+        [
+          "correios_rj_emergency_fee_2018",
+          "Correios R$3 emergency surcharge on parcels to Rio metro area",
+          "policy",
+          "RJ",
+          "2018-03-06",
+          "2018-11-16",
+          "On 27 Feb 2018 Correios announced a R$3 surcharge per parcel to Rio city and its metro area, citing extreme violence against its staff and vehicles, due from 6 Mar. A Procon-RJ injunction suspended it in March, an appeals court reinstated it in April, and Correios ended it on 16 Nov 2018."
+        ],
+        [
+          "correios_strike_2018_03",
+          "Correios workers' national strike over health plan (Mar 2018)",
+          "strike",
+          "Brazil",
+          "2018-03-12",
+          "2018-03-13",
+          "Correios workers began an open-ended national strike on 12 Mar 2018 against health-plan changes. After a TST ruling the same day, the federation called it off on 13 Mar with return to work on 14 Mar; Rio de Janeiro and Sao Paulo unions still had assemblies pending."
+        ]
+      ],
+      "row_count": 3,
+      "truncated": false,
+      "harness": "zetaris",
+      "ms": 1116
+    },
+    "T14.Q2": {
+      "id": "T14.Q2",
+      "type": "sql",
+      "task_id": "T14",
+      "agent": "Doc Analyst T14",
+      "purpose": "I found 3 events overlapping March 2018 in Brazil/RJ. Now I need to read the corresponding documents in docs.documents to see what the written record says about these events. Let me query docs.documents for documents related to these events.",
+      "sql": "SELECT doc_id, doc_type, title, sent_at, sender, recipients FROM docs.documents WHERE lower(body) LIKE '%correios%' OR lower(body) LIKE '%strike%' OR lower(body) LIKE '%intervention%' OR lower(body) LIKE '%surcharge%' OR lower(body) LIKE '%emergency fee%'",
+      "columns": [
+        "doc_id",
+        "doc_type",
+        "title",
+        "sent_at",
+        "sender",
+        "recipients"
+      ],
+      "rows": [
+        [
+          "brief_correios_strike_2017_04",
+          "news_brief",
+          "Correios strike, April-May 2017",
+          "2017-04-26",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_esedex_discontinued_2017_06",
+          "news_brief",
+          "Correios ends e-Sedex",
+          "2017-06-19",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_rj_restricted_delivery_areas",
+          "news_brief",
+          "Delivery restrictions in Rio de Janeiro risk areas",
+          "2017-08-28",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_correios_strike_2017_09",
+          "news_brief",
+          "Correios strike, September-October 2017",
+          "2017-09-19",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_rj_cargo_theft_2017",
+          "news_brief",
+          "Cargo theft in Rio de Janeiro, 2017",
+          "2018-01-20",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_rj_federal_intervention_2018",
+          "news_brief",
+          "Federal intervention in Rio de Janeiro",
+          "2018-02-16",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_correios_rj_surcharge_2018",
+          "news_brief",
+          "Correios surcharge on Rio-bound parcels",
+          "2018-02-27",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_correios_tariff_2018_03",
+          "news_brief",
+          "Correios parcel price increase, March 2018",
+          "2018-03-06",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_correios_strike_2018_03",
+          "news_brief",
+          "Correios strike, March 2018",
+          "2018-03-12",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ],
+        [
+          "brief_truckers_strike_2018_05",
+          "news_brief",
+          "Truckers' strike, May 2018",
+          "2018-05-21",
+          "Compiled from public news (see Sources)",
+          "operations"
+        ]
+      ],
+      "row_count": 10,
+      "truncated": false,
+      "harness": "zetaris",
+      "ms": 965
+    },
+    "T14.D1": {
+      "id": "T14.D1",
+      "type": "doc",
+      "task_id": "T14",
+      "agent": "Doc Analyst T14",
+      "doc_id": "brief_rj_federal_intervention_2018",
+      "title": "Federal intervention in Rio de Janeiro",
+      "doc_type": "news_brief",
+      "sent_at": "2018-02-16",
+      "sender": "Compiled from public news (see Sources)",
+      "recipients": "operations",
+      "quote": "On 16 February 2018 President Michel Temer signed Decree 9,288, placing public security in Rio de Janeiro state under federal intervention until 31 December 2018."
+    },
+    "T14.D2": {
+      "id": "T14.D2",
+      "type": "doc",
+      "task_id": "T14",
+      "agent": "Doc Analyst T14",
+      "doc_id": "brief_correios_rj_surcharge_2018",
+      "title": "Correios surcharge on Rio-bound parcels",
+      "doc_type": "news_brief",
+      "sent_at": "2018-02-27",
+      "sender": "Compiled from public news (see Sources)",
+      "recipients": "operations",
+      "quote": "On 27 February 2018 Correios announced a R$3 emergency surcharge per parcel delivered to Rio de Janeiro city and its metropolitan region, citing extreme levels of violence and the cost of protecting staff, parcels and units."
+    },
+    "T14.D3": {
+      "id": "T14.D3",
+      "type": "doc",
+      "task_id": "T14",
+      "agent": "Doc Analyst T14",
+      "doc_id": "brief_correios_strike_2018_03",
+      "title": "Correios strike, March 2018",
+      "doc_type": "news_brief",
+      "sent_at": "2018-03-12",
+      "sender": "Compiled from public news (see Sources)",
+      "recipients": "operations",
+      "quote": "Correios workers began an open-ended national strike on Monday 12 March 2018 (from 22:00 on 11 March for night shifts). They opposed health-plan changes that introduced monthly fees and removed dependants, as well as outsourcing and privatization."
+    },
+    "A.A1": {
+      "id": "A.A1",
+      "type": "analysis",
+      "tool": "promise_buffer",
+      "task_id": "A",
+      "agent": "Analysis engine",
+      "title": "Promise buffer by customer state",
+      "columns": [
+        "customer_state",
+        "orders",
+        "median_promised_days",
+        "p80_delivery_days",
+        "buffer_days",
+        "late_orders",
+        "late_with_buffer",
+        "late_pct",
+        "late_pct_with_buffer",
+        "value_of_orders_avoided",
+        "those_with_1_2_star_review"
+      ],
+      "rows": [
+        [
+          "RJ",
+          864,
+          28.0,
+          37.0,
+          9,
+          298,
+          176,
+          34.5,
+          20.4,
+          14277,
+          88
+        ],
+        [
+          "BA",
+          235,
+          26.0,
+          32.0,
+          6,
+          74,
+          38,
+          31.5,
+          16.2,
+          5231,
+          18
+        ],
+        [
+          "MG",
+          856,
+          22.0,
+          24.0,
+          2,
+          175,
+          139,
+          20.4,
+          16.2,
+          5091,
+          7
+        ],
+        [
+          "CE",
+          93,
+          26.0,
+          39.6,
+          14,
+          47,
+          15,
+          50.5,
+          16.1,
+          7710,
+          20
+        ],
+        [
+          "ES",
+          133,
+          22.0,
+          30.0,
+          8,
+          55,
+          26,
+          41.4,
+          19.5,
+          5431,
+          17
+        ],
+        [
+          "PA",
+          67,
+          34.0,
+          51.0,
+          17,
+          34,
+          9,
+          50.7,
+          13.4,
+          3114,
+          19
+        ],
+        [
+          "MA",
+          49,
+          25.0,
+          35.0,
+          10,
+          25,
+          7,
+          51.0,
+          14.3,
+          3737,
+          12
+        ],
+        [
+          "MS",
+          57,
+          23.0,
+          30.0,
+          7,
+          23,
+          10,
+          40.4,
+          17.5,
+          2156,
+          6
+        ],
+        [
+          "SC",
+          247,
+          23.0,
+          24.0,
+          1,
+          48,
+          38,
+          19.4,
+          15.4,
+          824,
+          2
+        ],
+        [
+          "DF",
+          147,
+          21.0,
+          23.0,
+          2,
+          27,
+          18,
+          18.4,
+          12.2,
+          692,
+          2
+        ],
+        [
+          "GO",
+          141,
+          23.0,
+          26.0,
+          3,
+          28,
+          21,
+          19.9,
+          14.9,
+          419,
+          3
+        ],
+        [
+          "RS",
+          407,
+          27.0,
+          28.0,
+          1,
+          78,
+          71,
+          19.2,
+          17.4,
+          713,
+          2
+        ],
+        [
+          "AL",
+          27,
+          28.0,
+          31.8,
+          4,
+          9,
+          5,
+          33.3,
+          18.5,
+          394,
+          1
+        ],
+        [
+          "PI",
+          34,
+          25.0,
+          28.8,
+          4,
+          10,
+          6,
+          29.4,
+          17.6,
+          305,
+          3
+        ],
+        [
+          "RN",
+          38,
+          29.0,
+          31.6,
+          3,
+          7,
+          5,
+          18.4,
+          13.2,
+          236,
+          1
+        ]
+      ],
+      "row_count": 15,
+      "summary": {
+        "segments_needing_buffer": 17,
+        "late_avoided": 355,
+        "quantile": 0.8,
+        "dimension": "customer_state"
+      },
+      "method": "For each customer_state: the 80th percentile of actual delivery days (hand-over + transit) against the median promised days; the buffer is the gap in whole days. 'Late with buffer' recounts the same orders against promise + buffer.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true
+    },
+    "A.A3": {
+      "id": "A.A3",
+      "type": "analysis",
+      "tool": "transit_fix",
+      "task_id": "A",
+      "agent": "Analysis engine",
+      "title": "Transit back to normal, by area",
+      "columns": [
+        "customer_state",
+        "orders",
+        "mean_transit_days",
+        "ref_mean_transit_days",
+        "ref_p80_transit_days",
+        "late_orders",
+        "on_time_at_normal_transit",
+        "reference",
+        "value_of_those_orders",
+        "those_with_1_2_star_review"
+      ],
+      "rows": [
+        [
+          "SP",
+          2971,
+          7.1,
+          6.0,
+          9.0,
+          280,
+          219,
+          "same area",
+          33270,
+          140
+        ],
+        [
+          "RJ",
+          864,
+          21.1,
+          13.3,
+          19.0,
+          298,
+          211,
+          "same area",
+          26182,
+          170
+        ],
+        [
+          "MG",
+          856,
+          13.2,
+          8.7,
+          12.0,
+          175,
+          163,
+          "same area",
+          24151,
+          105
+        ],
+        [
+          "RS",
+          407,
+          16.8,
+          13.6,
+          19.0,
+          78,
+          68,
+          "same area",
+          8530,
+          48
+        ],
+        [
+          "BA",
+          235,
+          20.0,
+          15.9,
+          22.0,
+          74,
+          45,
+          "same area",
+          7361,
+          30
+        ],
+        [
+          "PR",
+          369,
+          12.0,
+          9.9,
+          14.0,
+          49,
+          42,
+          "same area",
+          5933,
+          25
+        ],
+        [
+          "ES",
+          133,
+          18.9,
+          12.4,
+          17.0,
+          55,
+          38,
+          "same area",
+          6887,
+          26
+        ],
+        [
+          "CE",
+          93,
+          25.8,
+          17.0,
+          21.0,
+          47,
+          35,
+          "same area",
+          7455,
+          21
+        ],
+        [
+          "SC",
+          247,
+          13.9,
+          12.9,
+          19.0,
+          48,
+          31,
+          "same area",
+          4093,
+          16
+        ],
+        [
+          "PA",
+          67,
+          34.3,
+          21.5,
+          28.2,
+          34,
+          28,
+          "same area",
+          3602,
+          23
+        ]
+      ],
+      "row_count": 10,
+      "summary": {
+        "dimension": "customer_state",
+        "saved": 1012
+      },
+      "method": "For each area where transit got slower: mean transit days in the focus vs its reference, and the late orders that would have arrived on time had each parcel's transit been at most the reference's 80th percentile (hand-over unchanged); those orders' value and how many left a 1- or 2-star review.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.order_status AS status,\n       o.order_purchase_timestamp AS purchase_ts, o.order_delivered_carrier_date AS handover_ts,\n       o.order_delivered_customer_date AS delivered_ts, o.order_estimated_delivery_date AS promised_ts,\n       c.customer_state, s.seller_state, i.seller_id, p.product_category_name_english AS category,\n       i.n_items, i.price, i.freight\nFROM oms.orders o\nJOIN oms.customers c ON c.customer_id = o.customer_id\nLEFT JOIN (SELECT order_id, MIN(seller_id) AS seller_id, MIN(product_id) AS product_id, COUNT(*) AS n_items,\n                  SUM(price) AS price, SUM(freight_value) AS freight\n           FROM sellers.order_items GROUP BY order_id) i ON i.order_id = o.order_id\nLEFT JOIN sellers.sellers s ON s.seller_id = i.seller_id\nLEFT JOIN sellers.products p ON p.product_id = i.product_id",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    }
+  },
+  "evaluations": [
+    {
+      "verdicts": [],
+      "decision": "accept",
+      "gaps": [],
+      "red_flags": [],
+      "summary": "Confirmed by the analysis engine: carrier transit got slower (72.7%), promised delivery windows got shorter (26.7%). Ruled out: sellers handed orders to the carrier later than normal, a surge in orders overloaded hand-over or transit, the symptom is a data artefact (missing or impossible dates, duplicates, definition), carnival holiday 2018 (2018-02-12 to 2018-02-14, brazil) delayed deliveries, severe storm in rio de janeiro city (2018-02-15 to 2018-02-15, rj) delayed deliveries, correios workers' national strike over health plan (mar 2018) (2018-03-12 to 2018-03-13, brazil) delayed deliveries. ",
+      "symptom_explained": 0.99,
+      "round": 1,
+      "forced_accept": false
+    }
+  ],
+  "verdicts": {
+    "T14": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "round": 1,
+      "numbers_check": {
+        "checked": 3,
+        "missing": [
+          "2"
+        ],
+        "support": {
+          "2": "missing",
+          "3": "key"
+        },
+        "key_numbers": {
+          "verified": 2,
+          "problems": []
+        }
+      },
+      "reason": "Context only: 3 quote(s) verified word for word. Dated events are judged by the event tests, not by documents."
+    },
+    "T1": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Measured directly by the analysis engine.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T2": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Measured directly by the analysis engine: the value at stake, not what a fix would cost.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T3": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": -0.016,
+      "reason": "Went the other way (share of the rise: -1.6%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T4": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.727,
+      "reason": "Explains 72.7% of the rise (cause threshold: 10%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T5": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.267,
+      "reason": "Explains 26.7% of the rise (cause threshold: 10%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T6": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Concentrated in RJ (share of the rise at least 1.5x share of orders). This says where, not why.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T7": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Spread broadly: no segment's share of the rise is well above its share of orders.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T8": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Volume did not rise enough, or the chain did not slow with it.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T9": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Anomalies are 0.0% of orders: too few to explain the rise.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T10": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Counted directly from review text.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T11": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "The effect was already there before the event.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T12": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "The effect was already there before the event.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T13": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "The effect was already there before the event.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    }
+  },
+  "actions": [
+    {
+      "id": "A1",
+      "title": "Add delivery-promise buffers where transit outruns the promise: RJ +9 days, BA +6 days, MG +2 days, CE +14 days, ES +8 days",
+      "steps": "Set each area's promised window so that four in five orders arrive within it. On the orders in question, this would have turned 255 late deliveries into on-time ones in these areas.",
+      "addresses": [
+        "T4"
+      ],
+      "orders_protected": 255,
+      "value_protected_inr": 37740,
+      "low_reviews": 150,
+      "est_cost_inr": null,
+      "currency": "BRL",
+      "evidence": [
+        "A.A1"
+      ],
+      "unsupported_figures": [],
+      "needs_approval": true,
+      "approval_reasons": [
+        "changes what customers are promised"
+      ],
+      "decision": "pending",
+      "time_to_effect": "next orders",
+      "policy_notes": ""
+    },
+    {
+      "id": "A2",
+      "title": "Get transit back to normal in SP, RJ, MG: 593 late orders would have arrived on time",
+      "steps": "SP: transit 7.1 days on average against 6.0 normally, over 2,971 orders; 219 of its 280 late orders would have been on time had four in five parcels arrived within 9 days; RJ: transit 21.1 days on average against 13.3 normally, over 864 orders; 211 of its 298 late orders would have been on time had four in five parcels arrived within 19 days; MG: transit 13.2 days on average against 8.7 normally, over 856 orders; 163 of its 175 late orders would have been on time had four in five parcels arrived within 12 days. Agree these recovery targets with the carriers serving the areas, and alert when an area's weekly average transit moves a day above normal.",
+      "addresses": [
+        "T4"
+      ],
+      "orders_protected": 593,
+      "value_protected_inr": 83603,
+      "low_reviews": 415,
+      "est_cost_inr": null,
+      "currency": "BRL",
+      "evidence": [
+        "A.A3",
+        "T4.A1"
+      ],
+      "unsupported_figures": [],
+      "needs_approval": false,
+      "approval_reasons": [],
+      "decision": "pending",
+      "time_to_effect": "next orders",
+      "policy_notes": ""
+    }
+  ],
+  "risks": [],
+  "brief": "## Summary\n- **What happened:** 1,328 of 7,003 delivered orders placed March 2018 were late (19.0%), against 5.6% for a normal baseline. [T1.A1] The 1,328 late orders were worth R$ 187,138 (order value), with R$ 35,034 of freight paid on them. Their customers gave them 2.1 stars on average, against 4.2 for the orders that arrived on time; 68.3% of their reviews were 1 or 2 stars, against 10.7%. [T2.A1][T2.A2]\n- **Why:** Carrier transit got slower (72.7% of the rise) and promised delivery windows got shorter (26.7% of the rise). Ruled out: Carnival holiday 2018; Severe storm in Rio de Janeiro city; Correios workers' national strike over health plan.\n- **What to do:** A2. Get transit back to normal in SP, RJ, MG (593 orders; R$ 83,603 of orders at stake, 415 with a 1- or 2-star review; within limits). A1. Add delivery-promise buffers where transit outruns the promise (255 orders; R$ 37,740 of orders at stake, 150 with a 1- or 2-star review; needs approval).\n\n## Answer\nLate deliveries jumped to 19.0% for March 2018 orders, up from a 5.6% baseline [T1.A1]. The rise was driven by slower carrier transit (72.7% of the increase) and shorter promised delivery windows (26.7% of the increase) [T4.A1][T5.A1].\n\n## Root causes\n1. **Carrier transit got slower** (72.7% of the rise). [T4.A1][T4.A2]\n2. **Promised delivery windows got shorter** (26.7% of the rise). [T5.A1][T5.A2]\n\n## Where it happened\n- Where the rise sits, by customer state: SP: 20.1% of the rise from 42.4% of the orders (3.2% -> 9.4% late); RJ: 18.9% of the rise from 12.3% of the orders (12.8% -> 34.5% late); MG: 16.6% of the rise from 12.2% of the orders (2.3% -> 20.4% late). [T6.A1][T6.A2]\n- Where the rise sits, by seller state: SP: 81.5% of the rise from 73.5% of the orders (5.8% -> 20.5% late); RJ: 8.0% of the rise from 4.2% of the orders (6.1% -> 31.7% late); PR: 4.6% of the rise from 8.3% of the orders (4.3% -> 11.3% late). [T7.A1][T7.A2]\n\n## Ruled out\n- **Sellers handed orders to the carrier later than normal**: Went the other way (share of the rise: -1.6%). [T3.A1][T3.A2]\n- **A surge in orders overloaded hand-over or transit**: Volume did not rise enough, or the chain did not slow with it. [T8.A1][T8.A2]\n- **The symptom is a data artefact (missing or impossible dates, duplicates, definition)**: Anomalies are 0.0% of orders: too few to explain the rise. [T9.A1][T9.A2]\n- **Carnival holiday 2018 (2018-02-12 to 2018-02-14, Brazil) delayed deliveries**: The effect was already there before the event. [T11.A1][T11.A2]\n- **Severe storm in Rio de Janeiro city (2018-02-15 to 2018-02-15, RJ) delayed deliveries**: The effect was already there before the event. [T12.A1][T12.A2]\n- **Correios workers' national strike over health plan (Mar 2018) (2018-03-12 to 2018-03-13, Brazil) delayed deliveries**: The effect was already there before the event. [T13.A1][T13.A2]\n\n## What customers and the written record say\n- Review mentions per thousand orders (focus vs reference): delay 14.7 vs 4.1; strike 0.9 vs 0.8; not received 50.3 vs 22.8; post office 16.0 vs 11.8. [T10.A1][T10.A2]\n- Federal intervention in Rio de Janeiro (2018-02-16): \"On 16 February 2018 President Michel Temer signed Decree 9,288, placing public security in Rio de Janeiro state under federal intervention until 31 December 2018.\" [T14.D1]\n- Correios surcharge on Rio-bound parcels (2018-02-27): \"On 27 February 2018 Correios announced a R$3 emergency surcharge per parcel delivered to Rio de Janeiro city and its metropolitan region, citing extreme levels of violence and the cost of protecting staff, parcels and units.\" [T14.D2]\n- Correios strike, March 2018 (2018-03-12): \"Correios workers began an open-ended national strike on Monday 12 March 2018 (from 22:00 on 11 March for night shifts). They opposed health-plan changes that introduced monthly fees and removed dependants, as well as outsourcing and privatization.\" [T14.D3]\n\n## Recommended actions\n| Action | Protects | Value at stake | Est. cost | Approval |\n|---|---|---|---|---|\n| A1. Add delivery-promise buffers where transit outruns the promise: RJ +9 days, BA +6 days, MG +2 days, CE +14 days, ES +8 days [A.A1] | 255 orders | R$ 37,740 (150 left a 1- or 2-star review) | not computed (no cost data) | needs approval: changes what customers are promised |\n| A2. Get transit back to normal in SP, RJ, MG: 593 late orders would have arrived on time [A.A3][T4.A1] | 593 orders | R$ 83,603 (415 left a 1- or 2-star review) | not computed (no cost data) | within limits |\n\n## How we know\n- **Carrier transit got slower** (72.7% of the rise): Carrier transit: typically 10.0 days against 8.0 at baseline; four in five orders within 21.0 days against 15.0 at baseline. Had this stage stayed as it was at baseline, 72.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened. [T4.A1][T4.A2]\n- **Promised delivery windows got shorter** (26.7% of the rise): Promised delivery window: typically 22.0 days against 25.0 at baseline; four in five orders within 28.0 days against 31.0 at baseline. Had this stage stayed as it was at baseline, 26.7% of the 13.4-point rise (from 5.6% to 19.0% late) would not have happened. [T5.A1][T5.A2]\n- **What the late orders are worth, and how their customers rated them**: The 1,328 late orders were worth R$ 187,138 (order value), with R$ 35,034 of freight paid on them. Their customers gave them 2.1 stars on average, against 4.2 for the orders that arrived on time; 68.3% of their reviews were 1 or 2 stars, against 10.7%. [T2.A1][T2.A2]\n- The confirmed stages (72.7% and 26.7%) together explain 99.4% of the measured rise; the rest is mix and interactions.\n- Every number above was computed by the analysis engine from the cited results, and checked against their cells. Verdicts follow fixed rules (see the README), not a model's judgement.\n\n## Ask why next\n- Why were deliveries to Rio de Janeiro late for orders placed March 2018? (The rise is concentrated in Rio de Janeiro: what made it worse there?)",
+  "headline": "1,328 of 7,003 delivered orders placed March 2018 were late (19.0%), against 5.6% for a normal baseline. Main causes: carrier transit got slower (72.7% of the rise) and promised delivery windows got shorter (26.7% of the rise).",
+  "lessons": [],
+  "brief_check": {
+    "checked": 113,
+    "unverified": []
+  },
+  "analysis": {
+    "primary": {
+      "mode": "time",
+      "label": "orders placed March 2018",
+      "start": "2018-03-01",
+      "end": "2018-04-01",
+      "filters": {},
+      "baseline": null
+    },
+    "scopes": [
+      {
+        "mode": "time",
+        "label": "orders placed March 2018",
+        "start": "2018-03-01",
+        "end": "2018-04-01",
+        "filters": {},
+        "baseline": null
+      }
+    ],
+    "named_events": [],
+    "context_events": []
+  }
+}

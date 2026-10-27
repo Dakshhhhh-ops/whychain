@@ -1,0 +1,3228 @@
+{
+  "run_id": "20261027-022755-6d02",
+  "status": "ok",
+  "dataset": "kaveri",
+  "harness": "zetaris",
+  "harness_notes": [],
+  "memory": {
+    "online": false,
+    "url": "http://localhost:8787",
+    "engines": {},
+    "embedder": null,
+    "scout": null,
+    "backend": "local-json"
+  },
+  "code": {
+    "commit": "160d41d",
+    "dirty": true
+  },
+  "llm": {
+    "calls": 7,
+    "by_provider": {
+      "nim": 7
+    },
+    "fallbacks": 0,
+    "tokens": 26973
+  },
+  "question": "Why are so many Pune orders at risk of missing their promised date next week?",
+  "round": 1,
+  "data_map": {
+    "sources": [
+      {
+        "source": "erp",
+        "what_it_holds": "ERP system of record: customers, SKUs, warehouses, sales orders and order lines",
+        "grain": "sales_orders: one row per order; order_lines: one row per order line; customers/skus/warehouses: one row per master entity",
+        "key_columns": [
+          "order_id",
+          "customer_id",
+          "warehouse_id",
+          "sku",
+          "line_no"
+        ]
+      },
+      {
+        "source": "wms",
+        "what_it_holds": "Warehouse management export: daily inventory snapshots per warehouse/SKU, reorder policies, inter-DC transfer lanes",
+        "grain": "inventory_snapshots: one row per warehouse-SKU-date; reorder_policy: one row per warehouse-SKU; transfer_lanes: one row per warehouse lane",
+        "key_columns": [
+          "snapshot_date",
+          "warehouse_id",
+          "sku"
+        ]
+      },
+      {
+        "source": "carrier",
+        "what_it_holds": "3PL carrier feed: shipments with dates/status, standard lanes, carrier master",
+        "grain": "shipments: one row per shipment (linked to an order); lanes: one row per carrier lane; carriers: one row per carrier",
+        "key_columns": [
+          "shipment_id",
+          "order_id",
+          "lane_id",
+          "carrier_id"
+        ]
+      },
+      {
+        "source": "procurement",
+        "what_it_holds": "Procurement export: purchase orders to suppliers, supplier master, expedite/air-freight options",
+        "grain": "purchase_orders: one row per PO; suppliers: one row per supplier; expedite_options: one row per supplier-mode-warehouse-category",
+        "key_columns": [
+          "po_id",
+          "supplier_id",
+          "sku",
+          "dest_warehouse"
+        ]
+      },
+      {
+        "source": "signals",
+        "what_it_holds": "External signals: port disruption status and weather alerts by region",
+        "grain": "port_status: one row per port; weather_alerts: one row per alert",
+        "key_columns": [
+          "port",
+          "alert_id"
+        ]
+      },
+      {
+        "source": "docs",
+        "what_it_holds": "Document repository: contracts, policies and emails (unstructured text)",
+        "grain": "one row per document",
+        "key_columns": [
+          "doc_id"
+        ]
+      }
+    ],
+    "joins": [
+      {
+        "left": "erp.sales_orders.order_id",
+        "right": "carrier.shipments.order_id",
+        "meaning": "an order's outbound shipment",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.sales_orders.order_id",
+        "right": "erp.order_lines.order_id",
+        "meaning": "lines belonging to an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.order_lines.sku",
+        "right": "erp.skus.sku",
+        "meaning": "SKU master attributes for an order line",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.sales_orders.customer_id",
+        "right": "erp.customers.customer_id",
+        "meaning": "customer master for an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.sales_orders.warehouse_id",
+        "right": "erp.warehouses.warehouse_id",
+        "meaning": "fulfilling warehouse master for an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.skus.supplier_id",
+        "right": "procurement.suppliers.supplier_id",
+        "meaning": "supplier master for a SKU",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.order_lines.sku",
+        "right": "procurement.purchase_orders.sku",
+        "meaning": "purchase orders for the same SKU",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.sales_orders.warehouse_id",
+        "right": "procurement.purchase_orders.dest_warehouse",
+        "meaning": "POs destined for the same warehouse as an order",
+        "match_rate": 1.0
+      },
+      {
+        "left": "wms.inventory_snapshots.warehouse_id",
+        "right": "wms.reorder_policy.warehouse_id",
+        "meaning": "reorder policy for a warehouse-SKU",
+        "match_rate": 1.0
+      },
+      {
+        "left": "wms.inventory_snapshots.sku",
+        "right": "wms.reorder_policy.sku",
+        "meaning": "reorder policy for a warehouse-SKU",
+        "match_rate": 1.0
+      },
+      {
+        "left": "wms.inventory_snapshots.warehouse_id",
+        "right": "wms.transfer_lanes.from_warehouse",
+        "meaning": "outbound transfer lane from a warehouse",
+        "match_rate": 1.0
+      },
+      {
+        "left": "wms.inventory_snapshots.warehouse_id",
+        "right": "wms.transfer_lanes.to_warehouse",
+        "meaning": "inbound transfer lane to a warehouse",
+        "match_rate": 1.0
+      },
+      {
+        "left": "carrier.shipments.lane_id",
+        "right": "carrier.lanes.lane_id",
+        "meaning": "standard transit days for a shipment lane",
+        "match_rate": 1.0
+      },
+      {
+        "left": "carrier.shipments.carrier_id",
+        "right": "carrier.carriers.carrier_id",
+        "meaning": "carrier master for a shipment",
+        "match_rate": 1.0
+      },
+      {
+        "left": "procurement.purchase_orders.supplier_id",
+        "right": "procurement.expedite_options.supplier_id",
+        "meaning": "expedite options for a PO's supplier",
+        "match_rate": 1.0
+      },
+      {
+        "left": "procurement.purchase_orders.port_of_entry",
+        "right": "signals.port_status.port",
+        "meaning": "port disruption status at a PO's port of entry",
+        "match_rate": 0.67
+      },
+      {
+        "left": "erp.customers.city",
+        "right": "signals.weather_alerts.region",
+        "meaning": "weather alerts in a customer's city/region",
+        "match_rate": 1.0
+      },
+      {
+        "left": "carrier.shipments.dest_city",
+        "right": "signals.weather_alerts.region",
+        "meaning": "weather alerts at a shipment's destination city",
+        "match_rate": 1.0
+      },
+      {
+        "left": "carrier.shipments.origin_warehouse",
+        "right": "erp.warehouses.warehouse_id",
+        "meaning": "warehouse master for a shipment's origin",
+        "match_rate": 1.0
+      },
+      {
+        "left": "carrier.shipments.dest_city",
+        "right": "erp.customers.city",
+        "meaning": "customer city matching a shipment destination city",
+        "match_rate": 1.0
+      },
+      {
+        "left": "erp.sales_orders.promised_date",
+        "right": "carrier.shipments.promised_delivery_date",
+        "meaning": "order promised date vs carrier promised delivery date (string-typed date comparison)",
+        "match_rate": 1.0
+      }
+    ],
+    "date_columns": [
+      {
+        "column": "erp.sales_orders.order_date",
+        "meaning": "date the customer order was placed"
+      },
+      {
+        "column": "erp.sales_orders.promised_date",
+        "meaning": "date promised to the customer"
+      },
+      {
+        "column": "erp.sales_orders.requested_ship_date",
+        "meaning": "date the customer requested shipment"
+      },
+      {
+        "column": "erp.sales_orders.created_at",
+        "meaning": "timestamp the order was created in ERP"
+      },
+      {
+        "column": "wms.inventory_snapshots.snapshot_date",
+        "meaning": "date of the inventory snapshot"
+      },
+      {
+        "column": "wms.reorder_policy.last_reviewed",
+        "meaning": "date reorder policy was last reviewed"
+      },
+      {
+        "column": "wms.reorder_policy.next_review",
+        "meaning": "date reorder policy is next due for review"
+      },
+      {
+        "column": "carrier.shipments.pickup_date",
+        "meaning": "date the carrier picked up the shipment (string)"
+      },
+      {
+        "column": "carrier.shipments.departed_date",
+        "meaning": "date the shipment departed origin (string)"
+      },
+      {
+        "column": "carrier.shipments.delivered_date",
+        "meaning": "date the shipment was delivered (string)"
+      },
+      {
+        "column": "carrier.shipments.carrier_eta",
+        "meaning": "carrier estimated arrival (string)"
+      },
+      {
+        "column": "carrier.shipments.promised_delivery_date",
+        "meaning": "carrier promised delivery date (string)"
+      },
+      {
+        "column": "procurement.purchase_orders.order_date",
+        "meaning": "date the purchase order was placed"
+      },
+      {
+        "column": "procurement.purchase_orders.expected_date",
+        "meaning": "date the PO was expected"
+      },
+      {
+        "column": "procurement.purchase_orders.supplier_eta",
+        "meaning": "supplier's estimated arrival date"
+      },
+      {
+        "column": "procurement.purchase_orders.received_date",
+        "meaning": "date goods were received"
+      },
+      {
+        "column": "signals.port_status.since",
+        "meaning": "date the port disruption started (string)"
+      },
+      {
+        "column": "signals.port_status.expected_normalisation",
+        "meaning": "expected date port returns to normal (string)"
+      },
+      {
+        "column": "signals.port_status.updated_at",
+        "meaning": "timestamp port status was last updated (string)"
+      },
+      {
+        "column": "signals.weather_alerts.valid_from",
+        "meaning": "weather alert start date (string)"
+      },
+      {
+        "column": "signals.weather_alerts.valid_to",
+        "meaning": "weather alert end date (string)"
+      }
+    ],
+    "status_values": [
+      {
+        "column": "erp.sales_orders.status",
+        "values": [
+          "DELIVERED",
+          "BACKORDERED",
+          "OPEN",
+          "SHIPPED",
+          "CANCELLED"
+        ],
+        "meaning": "order lifecycle status"
+      },
+      {
+        "column": "carrier.shipments.status",
+        "values": [
+          "DELIVERED",
+          "IN_TRANSIT"
+        ],
+        "meaning": "shipment status"
+      },
+      {
+        "column": "procurement.purchase_orders.status",
+        "values": [
+          "RECEIVED",
+          "IN_TRANSIT",
+          "CONFIRMED"
+        ],
+        "meaning": "purchase order status"
+      },
+      {
+        "column": "signals.port_status.status",
+        "values": [
+          "NORMAL",
+          "DISRUPTED"
+        ],
+        "meaning": "port operational status"
+      },
+      {
+        "column": "signals.weather_alerts.level",
+        "values": [
+          "YELLOW",
+          "ORANGE"
+        ],
+        "meaning": "weather alert severity level"
+      }
+    ],
+    "caveats": [
+      "carrier.shipments date columns (pickup_date, departed_date, delivered_date, carrier_eta, promised_delivery_date) are strings and must be cast before date arithmetic",
+      "signals.port_status date fields (since, expected_normalisation, updated_at) are strings",
+      "signals.weather_alerts valid_from/valid_to are strings",
+      "wms.inventory_snapshots is a daily snapshot table; using multiple dates without filtering to the latest snapshot per warehouse-SKU will double-count inventory",
+      "erp.order_values and line values are stored as decimal(38,18) and may need rounding for reporting",
+      "carrier.shipments.order_id may not cover all ERP orders (2300 shipments vs 2642 orders); left-join from orders will produce null shipments",
+      "carrier.lanes.lane_id matches carrier.shipments.lane_id values, but carrier_id in lanes may differ from shipments.carrier_id for the same lane_id",
+      "procurement.purchase_orders.expected_date and supplier_eta can differ; received_date is null until goods arrive",
+      "docs.documents contains unstructured text; body/sent_at may be null and require parsing",
+      "erp.sales_orders.external_ref may contain order references from other systems but is not a guaranteed foreign key"
+    ],
+    "fingerprint": "55a044c11064"
+  },
+  "memories": [],
+  "symptom": "Shortage: at risk, due in the coming week, PUN",
+  "tasks": [
+    {
+      "id": "T1",
+      "round": 1,
+      "type": "measure",
+      "statement": "Measure the symptom: open orders at the Pune DC due in the coming week",
+      "agent": "tool",
+      "tool": "supply_measure",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: supply_measure"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "type": "measure",
+      "statement": "The shortage is concentrated in particular suppliers",
+      "agent": "tool",
+      "tool": "shortage",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {
+        "dim": "supplier_id"
+      },
+      "checks": [
+        "analysis engine: shortage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "type": "measure",
+      "statement": "The shortage is concentrated in particular SKUs",
+      "agent": "tool",
+      "tool": "shortage",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {
+        "dim": "sku"
+      },
+      "checks": [
+        "analysis engine: shortage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Inbound purchase orders for the short SKUs are late",
+      "agent": "tool",
+      "tool": "inbound",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: inbound"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "A disrupted port is holding the late inbound orders",
+      "agent": "tool",
+      "tool": "port",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: port"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Demand for the short SKUs spiked above the planning baseline",
+      "agent": "tool",
+      "tool": "demand",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: demand"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Reorder points are too low for recent demand",
+      "agent": "tool",
+      "tool": "policy",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: policy"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Duplicate orders (the same external reference) inflate the numbers",
+      "agent": "tool",
+      "tool": "duplicates",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: duplicates"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "type": "hypothesis",
+      "agent": "docs",
+      "context_only": true,
+      "statement": "What the written record (contracts, policies, email) says about the shortage",
+      "checks": [
+        "search docs.documents for the suppliers, SKUs, places and dates in question"
+      ],
+      "priority": 2,
+      "addresses_gap": null
+    }
+  ],
+  "open_tasks": [
+    {
+      "id": "T1",
+      "round": 1,
+      "type": "measure",
+      "statement": "Measure the symptom: open orders at the Pune DC due in the coming week",
+      "agent": "tool",
+      "tool": "supply_measure",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: supply_measure"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "type": "measure",
+      "statement": "The shortage is concentrated in particular suppliers",
+      "agent": "tool",
+      "tool": "shortage",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {
+        "dim": "supplier_id"
+      },
+      "checks": [
+        "analysis engine: shortage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "type": "measure",
+      "statement": "The shortage is concentrated in particular SKUs",
+      "agent": "tool",
+      "tool": "shortage",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {
+        "dim": "sku"
+      },
+      "checks": [
+        "analysis engine: shortage"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Inbound purchase orders for the short SKUs are late",
+      "agent": "tool",
+      "tool": "inbound",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: inbound"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "A disrupted port is holding the late inbound orders",
+      "agent": "tool",
+      "tool": "port",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: port"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Demand for the short SKUs spiked above the planning baseline",
+      "agent": "tool",
+      "tool": "demand",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: demand"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Reorder points are too low for recent demand",
+      "agent": "tool",
+      "tool": "policy",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: policy"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "type": "hypothesis",
+      "statement": "Duplicate orders (the same external reference) inflate the numbers",
+      "agent": "tool",
+      "tool": "duplicates",
+      "scope": {
+        "kind": "at_risk",
+        "warehouses": [
+          "PUN"
+        ],
+        "categories": [],
+        "start": "2026-10-22",
+        "end": "2026-10-29",
+        "label": "due in the coming week"
+      },
+      "params": {},
+      "checks": [
+        "analysis engine: duplicates"
+      ],
+      "priority": 1,
+      "addresses_gap": null
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "type": "hypothesis",
+      "agent": "docs",
+      "context_only": true,
+      "statement": "What the written record (contracts, policies, email) says about the shortage",
+      "checks": [
+        "search docs.documents for the suppliers, SKUs, places and dates in question"
+      ],
+      "priority": 2,
+      "addresses_gap": null
+    }
+  ],
+  "findings": [
+    {
+      "task_id": "T1",
+      "statement": "Measure the symptom: open orders at the Pune DC due in the coming week",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T1",
+      "verdict": "measured",
+      "claim": "23 of the 29 open orders at the Pune DC due in the coming week have a line on backorder (79.3%): 1,730 units across 22 SKUs, worth INR 5,650,370 on backorder.",
+      "key_numbers": [
+        {
+          "value": 29,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 0
+        },
+        {
+          "value": 23,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 1
+        },
+        {
+          "value": 79.3,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 2
+        },
+        {
+          "value": 1730,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 3
+        },
+        {
+          "value": 5650370.0,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 4
+        },
+        {
+          "value": 22,
+          "evidence": "T1.A1",
+          "column": "result",
+          "row": 5
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T1.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Measured directly by the analysis engine."
+      }
+    },
+    {
+      "task_id": "T2",
+      "statement": "The shortage is concentrated in particular suppliers",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T2",
+      "verdict": "measured",
+      "claim": "Short units by supplier_id: S-14 (Voltix Power Components): 950 units, 54.9%; S-21 (Chronofit Wearables): 155 units, 9.0%; S-07 (SoundWave Acoustics Co.): 120 units, 6.9%.",
+      "key_numbers": [
+        {
+          "value": 950,
+          "evidence": "T2.A1",
+          "column": "units_short",
+          "row": 0
+        },
+        {
+          "value": 54.9,
+          "evidence": "T2.A1",
+          "column": "share_of_short_units_pct",
+          "row": 0
+        },
+        {
+          "value": 155,
+          "evidence": "T2.A1",
+          "column": "units_short",
+          "row": 1
+        },
+        {
+          "value": 9.0,
+          "evidence": "T2.A1",
+          "column": "share_of_short_units_pct",
+          "row": 1
+        },
+        {
+          "value": 120,
+          "evidence": "T2.A1",
+          "column": "units_short",
+          "row": 2
+        },
+        {
+          "value": 6.9,
+          "evidence": "T2.A1",
+          "column": "share_of_short_units_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T2.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Where the shortage sits. This says where, not why."
+      }
+    },
+    {
+      "task_id": "T3",
+      "statement": "The shortage is concentrated in particular SKUs",
+      "type": "measure",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T3",
+      "verdict": "measured",
+      "claim": "Short units by sku: CHG-1010 (CHG-1010): 160 units, 9.2%; CHG-1006 (CHG-1006): 150 units, 8.7%; PWB-1017 (PWB-1017): 135 units, 7.8%.",
+      "key_numbers": [
+        {
+          "value": 160,
+          "evidence": "T3.A1",
+          "column": "units_short",
+          "row": 0
+        },
+        {
+          "value": 9.2,
+          "evidence": "T3.A1",
+          "column": "share_of_short_units_pct",
+          "row": 0
+        },
+        {
+          "value": 150,
+          "evidence": "T3.A1",
+          "column": "units_short",
+          "row": 1
+        },
+        {
+          "value": 8.7,
+          "evidence": "T3.A1",
+          "column": "share_of_short_units_pct",
+          "row": 1
+        },
+        {
+          "value": 135,
+          "evidence": "T3.A1",
+          "column": "units_short",
+          "row": 2
+        },
+        {
+          "value": 7.8,
+          "evidence": "T3.A1",
+          "column": "share_of_short_units_pct",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T3.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": false,
+        "share_of_symptom": null,
+        "reason": "Where the shortage sits. This says where, not why."
+      }
+    },
+    {
+      "task_id": "T4",
+      "statement": "Inbound purchase orders for the short SKUs are late",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T4",
+      "verdict": "supports",
+      "claim": "58.4% of the short units are SKUs with a late inbound purchase order; most late units are from S-14 (Voltix Power Components), coming through Chennai. Latest: PO-40494 CHG-1001 475 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late); PO-40496 CHG-1003 150 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late); PO-40497 CHG-1004 275 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late).",
+      "key_numbers": [
+        {
+          "value": 58.4,
+          "evidence": "T4.A1",
+          "column": "port_status",
+          "row": 12
+        },
+        {
+          "value": 475,
+          "evidence": "T4.A1",
+          "column": "qty",
+          "row": 0
+        },
+        {
+          "value": 21,
+          "evidence": "T4.A1",
+          "column": "slip_days",
+          "row": 0
+        },
+        {
+          "value": 150,
+          "evidence": "T4.A1",
+          "column": "qty",
+          "row": 1
+        },
+        {
+          "value": 21,
+          "evidence": "T4.A1",
+          "column": "slip_days",
+          "row": 1
+        },
+        {
+          "value": 275,
+          "evidence": "T4.A1",
+          "column": "qty",
+          "row": 2
+        },
+        {
+          "value": 21,
+          "evidence": "T4.A1",
+          "column": "slip_days",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T4.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.5838150289017341,
+        "reason": "Involved in 58.4% of the short units (cause threshold: 25%)."
+      }
+    },
+    {
+      "task_id": "T5",
+      "statement": "A disrupted port is holding the late inbound orders",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T5",
+      "verdict": "supports",
+      "claim": "58.4% of the short units are SKUs whose late inbound orders come through a port the signals feed reports as disrupted. Disrupted ports: Chennai (DISRUPTED: Dock workers' strike).",
+      "key_numbers": [
+        {
+          "value": 58.4,
+          "evidence": "T5.A1",
+          "column": "port_status",
+          "row": 13
+        },
+        {
+          "value": 475,
+          "evidence": "T5.A1",
+          "column": "qty",
+          "row": 0
+        },
+        {
+          "value": 21,
+          "evidence": "T5.A1",
+          "column": "slip_days",
+          "row": 0
+        },
+        {
+          "value": 150,
+          "evidence": "T5.A1",
+          "column": "qty",
+          "row": 1
+        },
+        {
+          "value": 21,
+          "evidence": "T5.A1",
+          "column": "slip_days",
+          "row": 1
+        },
+        {
+          "value": 275,
+          "evidence": "T5.A1",
+          "column": "qty",
+          "row": 2
+        },
+        {
+          "value": 21,
+          "evidence": "T5.A1",
+          "column": "slip_days",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T5.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.5838150289017341,
+        "reason": "Involved in 58.4% of the short units (cause threshold: 25%)."
+      }
+    },
+    {
+      "task_id": "T6",
+      "statement": "Demand for the short SKUs spiked above the planning baseline",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T6",
+      "verdict": "supports",
+      "claim": "40.2% of the short units are SKUs whose recent demand is at least 1.5x the planning baseline: SPK-1059 at PUN: 9.3 a day vs 0.5 (18.57x); SPL-1047 at PUN: 7.9 a day vs 0.5 (15.71x); KBM-1066 at PUN: 5.0 a day vs 0.5 (10.0x).",
+      "key_numbers": [
+        {
+          "value": 40.2,
+          "evidence": "T6.A1",
+          "column": "promo_share_pct",
+          "row": 12
+        },
+        {
+          "value": 1.5,
+          "evidence": "T6.A1",
+          "column": "ratio",
+          "row": 12
+        },
+        {
+          "value": 9.3,
+          "evidence": "T6.A1",
+          "column": "recent_daily_units",
+          "row": 0
+        },
+        {
+          "value": 0.5,
+          "evidence": "T6.A1",
+          "column": "baseline_daily_units",
+          "row": 0
+        },
+        {
+          "value": 18.57,
+          "evidence": "T6.A1",
+          "column": "ratio",
+          "row": 0
+        },
+        {
+          "value": 7.9,
+          "evidence": "T6.A1",
+          "column": "recent_daily_units",
+          "row": 1
+        },
+        {
+          "value": 0.5,
+          "evidence": "T6.A1",
+          "column": "baseline_daily_units",
+          "row": 1
+        },
+        {
+          "value": 15.71,
+          "evidence": "T6.A1",
+          "column": "ratio",
+          "row": 1
+        },
+        {
+          "value": 5.0,
+          "evidence": "T6.A1",
+          "column": "recent_daily_units",
+          "row": 2
+        },
+        {
+          "value": 0.5,
+          "evidence": "T6.A1",
+          "column": "baseline_daily_units",
+          "row": 2
+        },
+        {
+          "value": 10.0,
+          "evidence": "T6.A1",
+          "column": "ratio",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T6.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.40173410404624277,
+        "reason": "Involved in 40.2% of the short units (cause threshold: 25%)."
+      }
+    },
+    {
+      "task_id": "T7",
+      "statement": "Reorder points are too low for recent demand",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T7",
+      "verdict": "supports",
+      "claim": "33.5% of the short units are SKUs whose reorder point is below what recent demand needs: CBL-1027 at PUN reorder point 10 vs 22 needed (last reviewed 2026-08-31); CHG-1004 at PUN reorder point 292 vs 540 needed (last reviewed 2026-08-31); EBD-1032 at PUN reorder point 167 vs 277 needed (last reviewed 2026-08-31).",
+      "key_numbers": [
+        {
+          "value": 33.5,
+          "evidence": "T7.A1",
+          "column": "assessment",
+          "row": 12
+        },
+        {
+          "value": 10,
+          "evidence": "T7.A1",
+          "column": "reorder_point",
+          "row": 0
+        },
+        {
+          "value": 22,
+          "evidence": "T7.A1",
+          "column": "reorder_point_needed",
+          "row": 0
+        },
+        {
+          "value": 292,
+          "evidence": "T7.A1",
+          "column": "reorder_point",
+          "row": 1
+        },
+        {
+          "value": 540,
+          "evidence": "T7.A1",
+          "column": "reorder_point_needed",
+          "row": 1
+        },
+        {
+          "value": 167,
+          "evidence": "T7.A1",
+          "column": "reorder_point",
+          "row": 2
+        },
+        {
+          "value": 277,
+          "evidence": "T7.A1",
+          "column": "reorder_point_needed",
+          "row": 2
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T7.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "confirmed",
+        "is_cause": true,
+        "share_of_symptom": 0.3352601156069364,
+        "reason": "Involved in 33.5% of the short units (cause threshold: 25%)."
+      }
+    },
+    {
+      "task_id": "T8",
+      "statement": "Duplicate orders (the same external reference) inflate the numbers",
+      "type": "hypothesis",
+      "agent_kind": "tool",
+      "agent": "Analysis engine T8",
+      "verdict": "refutes",
+      "claim": "1 of 29 orders in scope are extra copies of an earlier order with the same external reference (3.4%), mostly via channel PORTAL. The copies order 70 units, 4.0% as many as the 1,730 units short.",
+      "key_numbers": [
+        {
+          "value": 29,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 0
+        },
+        {
+          "value": 1,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 1
+        },
+        {
+          "value": 1,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 2
+        },
+        {
+          "value": 3.4,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 3
+        },
+        {
+          "value": 70,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 4
+        },
+        {
+          "value": 1730,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 5
+        },
+        {
+          "value": 4.0,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 6
+        },
+        {
+          "value": 1,
+          "evidence": "T8.A1",
+          "column": "result",
+          "row": 7
+        }
+      ],
+      "who_knew": null,
+      "confidence": 1.0,
+      "evidence_ids": [
+        "T8.A1"
+      ],
+      "steps": 1,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "fixed": {
+        "status": "rejected",
+        "is_cause": false,
+        "share_of_symptom": 0.04046242774566474,
+        "reason": "The copies order units equal to only 4.0% of the shortage (cause threshold: 25%)."
+      }
+    },
+    {
+      "task_id": "T9",
+      "statement": "What the written record (contracts, policies, email) says about the shortage",
+      "type": "hypothesis",
+      "agent_kind": "docs",
+      "agent": "Doc Analyst T9",
+      "verdict": "supports",
+      "claim": "The documents report that a Chennai port strike (beginning Oct 9, indefinite) is holding Voltix vessel MV Coral Breeze at anchorage, delaying Pune DC purchase orders PO-40494 through PO-40499. Revised ETA (Oct 14 email) puts Pune DC arrival at about Nov 3, after the promised dates for next week (Oct 22-28). The Pune weather alert (Oct 19-22) explicitly states the DC remains fully operational, so weather is not the cause.",
+      "key_numbers": {},
+      "who_knew": "procurement@kaveri.example (receiving Voltix strike and ETA emails); facilities.pune@kaveri.example (sending Pune weather alert)",
+      "confidence": 0.95,
+      "evidence_ids": [
+        "T9.D1",
+        "T9.D2",
+        "T9.D3"
+      ],
+      "steps": 5,
+      "sql_errors_recovered": 0,
+      "quotes_rejected": 0,
+      "round": 1,
+      "context_only": true
+    }
+  ],
+  "evidence": {
+    "T1.A1": {
+      "id": "T1.A1",
+      "type": "analysis",
+      "tool": "supply_measure",
+      "task_id": "T1",
+      "agent": "Analysis engine",
+      "title": "The symptom: orders and units short",
+      "columns": [
+        "measure",
+        "result"
+      ],
+      "rows": [
+        [
+          "orders in scope",
+          29
+        ],
+        [
+          "orders with a backordered line",
+          23
+        ],
+        [
+          "share of orders at risk (%)",
+          79.3
+        ],
+        [
+          "units on backorder",
+          1730
+        ],
+        [
+          "value on backorder",
+          5650370.0
+        ],
+        [
+          "SKUs short",
+          22
+        ]
+      ],
+      "row_count": 6,
+      "summary": {
+        "orders": 29,
+        "at_risk": 23,
+        "units": 1730,
+        "label": "open orders at the Pune DC due in the coming week"
+      },
+      "method": "Order lines of the open orders at the Pune DC due in the coming week, as of 2026-10-21. A line is short when part of it is on backorder (not allocated from stock).",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.external_ref, o.customer_id, o.warehouse_id, o.channel, o.order_date, o.created_at,\n       o.promised_date, o.status, o.promo_code, c.city, l.sku, l.qty, l.allocated_qty, l.backordered_qty,\n       l.line_value, s.name AS sku_name, s.category, s.supplier_id\nFROM erp.sales_orders o\nJOIN erp.order_lines l ON l.order_id = o.order_id\nJOIN erp.customers c ON c.customer_id = o.customer_id\nJOIN erp.skus s ON s.sku = l.sku",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T2.A1": {
+      "id": "T2.A1",
+      "type": "analysis",
+      "tool": "shortage",
+      "task_id": "T2",
+      "agent": "Analysis engine",
+      "title": "Where the shortage sits, by supplier_id",
+      "columns": [
+        "supplier_id",
+        "name",
+        "units_short",
+        "orders",
+        "share_of_short_units_pct"
+      ],
+      "rows": [
+        [
+          "S-14",
+          "Voltix Power Components",
+          950,
+          16,
+          54.9
+        ],
+        [
+          "S-21",
+          "Chronofit Wearables",
+          155,
+          2,
+          9.0
+        ],
+        [
+          "S-07",
+          "SoundWave Acoustics Co.",
+          120,
+          1,
+          6.9
+        ],
+        [
+          "S-03",
+          "Unicable Industries",
+          115,
+          1,
+          6.6
+        ],
+        [
+          "S-12",
+          "Auralis Audio",
+          95,
+          1,
+          5.5
+        ],
+        [
+          "S-16",
+          "Keystone Input Devices",
+          95,
+          3,
+          5.5
+        ],
+        [
+          "S-02",
+          "Kiran Peripherals Pvt Ltd",
+          90,
+          1,
+          5.2
+        ],
+        [
+          "S-11",
+          "Bharat Wire & Cable",
+          90,
+          1,
+          5.2
+        ]
+      ],
+      "row_count": 8,
+      "summary": {
+        "dimension": "supplier_id",
+        "top": "S-14",
+        "top_share": 54.9
+      },
+      "method": "Backordered units in scope, grouped; shares of all backordered units.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.external_ref, o.customer_id, o.warehouse_id, o.channel, o.order_date, o.created_at,\n       o.promised_date, o.status, o.promo_code, c.city, l.sku, l.qty, l.allocated_qty, l.backordered_qty,\n       l.line_value, s.name AS sku_name, s.category, s.supplier_id\nFROM erp.sales_orders o\nJOIN erp.order_lines l ON l.order_id = o.order_id\nJOIN erp.customers c ON c.customer_id = o.customer_id\nJOIN erp.skus s ON s.sku = l.sku",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T3.A1": {
+      "id": "T3.A1",
+      "type": "analysis",
+      "tool": "shortage",
+      "task_id": "T3",
+      "agent": "Analysis engine",
+      "title": "Where the shortage sits, by sku",
+      "columns": [
+        "sku",
+        "name",
+        "units_short",
+        "orders",
+        "share_of_short_units_pct"
+      ],
+      "rows": [
+        [
+          "CHG-1010",
+          "CHG-1010",
+          160,
+          2,
+          9.2
+        ],
+        [
+          "CHG-1006",
+          "CHG-1006",
+          150,
+          2,
+          8.7
+        ],
+        [
+          "PWB-1017",
+          "PWB-1017",
+          135,
+          5,
+          7.8
+        ],
+        [
+          "EBD-1032",
+          "EBD-1032",
+          120,
+          1,
+          6.9
+        ],
+        [
+          "CBL-1025",
+          "CBL-1025",
+          115,
+          1,
+          6.6
+        ],
+        [
+          "CHG-1007",
+          "CHG-1007",
+          105,
+          2,
+          6.1
+        ],
+        [
+          "SPK-1059",
+          "SPK-1059",
+          95,
+          1,
+          5.5
+        ],
+        [
+          "SWT-1072",
+          "SWT-1072",
+          95,
+          1,
+          5.5
+        ]
+      ],
+      "row_count": 8,
+      "summary": {
+        "dimension": "sku",
+        "top": "CHG-1010",
+        "top_share": 9.2
+      },
+      "method": "Backordered units in scope, grouped; shares of all backordered units.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.external_ref, o.customer_id, o.warehouse_id, o.channel, o.order_date, o.created_at,\n       o.promised_date, o.status, o.promo_code, c.city, l.sku, l.qty, l.allocated_qty, l.backordered_qty,\n       l.line_value, s.name AS sku_name, s.category, s.supplier_id\nFROM erp.sales_orders o\nJOIN erp.order_lines l ON l.order_id = o.order_id\nJOIN erp.customers c ON c.customer_id = o.customer_id\nJOIN erp.skus s ON s.sku = l.sku",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T4.A1": {
+      "id": "T4.A1",
+      "type": "analysis",
+      "tool": "inbound",
+      "task_id": "T4",
+      "agent": "Analysis engine",
+      "title": "Inbound purchase orders for the short SKUs",
+      "columns": [
+        "po_id",
+        "supplier_id",
+        "supplier",
+        "sku",
+        "qty",
+        "expected_date",
+        "supplier_eta",
+        "slip_days",
+        "port_of_entry",
+        "port_status"
+      ],
+      "rows": [
+        [
+          "PO-40494",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1001",
+          475,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40496",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1003",
+          150,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40497",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1004",
+          275,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40499",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1006",
+          500,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40500",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1007",
+          825,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40503",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1010",
+          325,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40504",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1011",
+          450,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40505",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1012",
+          350,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40506",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1013",
+          410,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40507",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1014",
+          325,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40508",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1015",
+          180,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40510",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1017",
+          630,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "(share of short units with a late inbound order)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          58.4
+        ],
+        [
+          "(share of short units whose late order is held at a disrupted port)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          58.4
+        ]
+      ],
+      "row_count": 14,
+      "summary": {
+        "late_share": 0.5838150289017341,
+        "port_share": 0.5838150289017341,
+        "top_supplier": "S-14",
+        "top_supplier_name": "Voltix Power Components",
+        "top_port": "Chennai",
+        "port_status": {
+          "Chennai": "DISRUPTED: Dock workers' strike"
+        },
+        "late_skus": [
+          "CHG-1001",
+          "CHG-1003",
+          "CHG-1004",
+          "CHG-1006",
+          "CHG-1007",
+          "CHG-1010",
+          "PWB-1011",
+          "PWB-1012",
+          "PWB-1013",
+          "PWB-1014",
+          "PWB-1015",
+          "PWB-1017",
+          "SWT-1073"
+        ]
+      },
+      "method": "Open purchase orders for the short SKUs, to the same warehouses. Late = supplier ETA at least 3 days after the expected date, or past the expected date and not received. Ports are matched to the signals feed.",
+      "verdict": "measured",
+      "sql": "SELECT po_id, supplier_id, sku, dest_warehouse, qty, po_type, order_date, expected_date, supplier_eta,\n       received_date, status, port_of_entry FROM procurement.purchase_orders",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T5.A1": {
+      "id": "T5.A1",
+      "type": "analysis",
+      "tool": "inbound",
+      "task_id": "T5",
+      "agent": "Analysis engine",
+      "title": "Inbound purchase orders for the short SKUs",
+      "columns": [
+        "po_id",
+        "supplier_id",
+        "supplier",
+        "sku",
+        "qty",
+        "expected_date",
+        "supplier_eta",
+        "slip_days",
+        "port_of_entry",
+        "port_status"
+      ],
+      "rows": [
+        [
+          "PO-40494",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1001",
+          475,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40496",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1003",
+          150,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40497",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1004",
+          275,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40499",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1006",
+          500,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40500",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1007",
+          825,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40503",
+          "S-14",
+          "Voltix Power Components",
+          "CHG-1010",
+          325,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40504",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1011",
+          450,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40505",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1012",
+          350,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40506",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1013",
+          410,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40507",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1014",
+          325,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40508",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1015",
+          180,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "PO-40510",
+          "S-14",
+          "Voltix Power Components",
+          "PWB-1017",
+          630,
+          "2026-10-13",
+          "2026-11-03",
+          21,
+          "Chennai",
+          "DISRUPTED"
+        ],
+        [
+          "(share of short units with a late inbound order)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          58.4
+        ],
+        [
+          "(share of short units whose late order is held at a disrupted port)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          58.4
+        ]
+      ],
+      "row_count": 14,
+      "summary": {
+        "late_share": 0.5838150289017341,
+        "port_share": 0.5838150289017341,
+        "top_supplier": "S-14",
+        "top_supplier_name": "Voltix Power Components",
+        "top_port": "Chennai",
+        "port_status": {
+          "Chennai": "DISRUPTED: Dock workers' strike"
+        },
+        "late_skus": [
+          "CHG-1001",
+          "CHG-1003",
+          "CHG-1004",
+          "CHG-1006",
+          "CHG-1007",
+          "CHG-1010",
+          "PWB-1011",
+          "PWB-1012",
+          "PWB-1013",
+          "PWB-1014",
+          "PWB-1015",
+          "PWB-1017",
+          "SWT-1073"
+        ]
+      },
+      "method": "Open purchase orders for the short SKUs, to the same warehouses. Late = supplier ETA at least 3 days after the expected date, or past the expected date and not received. Ports are matched to the signals feed.",
+      "verdict": "measured",
+      "sql": "SELECT po_id, supplier_id, sku, dest_warehouse, qty, po_type, order_date, expected_date, supplier_eta,\n       received_date, status, port_of_entry FROM procurement.purchase_orders",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T6.A1": {
+      "id": "T6.A1",
+      "type": "analysis",
+      "tool": "demand",
+      "task_id": "T6",
+      "agent": "Analysis engine",
+      "title": "Recent demand vs the planning baseline",
+      "columns": [
+        "warehouse_id",
+        "sku",
+        "recent_daily_units",
+        "baseline_daily_units",
+        "ratio",
+        "promo_share_pct",
+        "promo_codes"
+      ],
+      "rows": [
+        [
+          "PUN",
+          "SPK-1059",
+          9.3,
+          0.5,
+          18.57,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "SPL-1047",
+          7.9,
+          0.5,
+          15.71,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "KBM-1066",
+          5.0,
+          0.5,
+          10.0,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "CBL-1027",
+          3.2,
+          0.6,
+          5.18,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "KBM-1069",
+          3.6,
+          0.8,
+          4.76,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "SWT-1073",
+          3.2,
+          0.8,
+          4.29,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "PWB-1015",
+          13.9,
+          5.8,
+          2.42,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "CHG-1004",
+          21.8,
+          9.1,
+          2.39,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "EBD-1032",
+          12.5,
+          5.8,
+          2.17,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "CBL-1025",
+          13.6,
+          7.0,
+          1.94,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "CHG-1010",
+          14.3,
+          10.4,
+          1.38,
+          0.0,
+          null
+        ],
+        [
+          "PUN",
+          "CHG-1003",
+          6.1,
+          4.6,
+          1.31,
+          0.0,
+          null
+        ],
+        [
+          "(share of short units in SKUs with demand at or above the threshold ratio)",
+          null,
+          null,
+          null,
+          1.5,
+          40.2,
+          null
+        ]
+      ],
+      "row_count": 13,
+      "summary": {
+        "spike_share": 0.40173410404624277,
+        "spike_skus": [
+          "CBL-1025",
+          "CBL-1027",
+          "CHG-1004",
+          "EBD-1032",
+          "KBM-1066",
+          "KBM-1069",
+          "PWB-1015",
+          "SPK-1059",
+          "SPL-1047",
+          "SWT-1073"
+        ],
+        "promos": []
+      },
+      "method": "Units ordered per day for the short SKUs over the 14 days to the end of the window, against the planning baseline in the reorder policy, and the share of those units on a promotion code.",
+      "verdict": "measured",
+      "sql": "SELECT warehouse_id, sku, avg_daily_demand_baseline, safety_stock, reorder_point, last_reviewed\nFROM wms.reorder_policy",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T7.A1": {
+      "id": "T7.A1",
+      "type": "analysis",
+      "tool": "policy",
+      "task_id": "T7",
+      "agent": "Analysis engine",
+      "title": "Reorder points vs recent demand",
+      "columns": [
+        "warehouse_id",
+        "sku",
+        "reorder_point",
+        "recent_daily_units",
+        "lead_time_days",
+        "reorder_point_needed",
+        "last_reviewed",
+        "assessment"
+      ],
+      "rows": [
+        [
+          "PUN",
+          "CBL-1027",
+          10,
+          3.2,
+          5,
+          22,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "CHG-1004",
+          292,
+          21.8,
+          21,
+          540,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "EBD-1032",
+          167,
+          12.5,
+          18,
+          277,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "KBM-1066",
+          10,
+          5.0,
+          8,
+          45,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "KBM-1069",
+          15,
+          3.6,
+          8,
+          36,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "PWB-1015",
+          184,
+          13.9,
+          21,
+          344,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "SPK-1059",
+          17,
+          9.3,
+          22,
+          209,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "SPL-1047",
+          16,
+          7.9,
+          20,
+          162,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "SWT-1073",
+          26,
+          3.2,
+          23,
+          81,
+          "2026-08-31",
+          "stale"
+        ],
+        [
+          "PUN",
+          "CBL-1025",
+          119,
+          13.6,
+          6,
+          144,
+          "2026-08-31",
+          "ok"
+        ],
+        [
+          "PUN",
+          "CHG-1001",
+          488,
+          6.8,
+          21,
+          280,
+          "2026-08-31",
+          "ok"
+        ],
+        [
+          "PUN",
+          "CHG-1003",
+          148,
+          6.1,
+          21,
+          170,
+          "2026-08-31",
+          "ok"
+        ],
+        [
+          "(share of short units where the reorder point is below what recent demand needs)",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          33.5
+        ]
+      ],
+      "row_count": 13,
+      "summary": {
+        "stale_share": 0.3352601156069364,
+        "stale": [
+          "PUN/CBL-1027",
+          "PUN/CHG-1004",
+          "PUN/EBD-1032",
+          "PUN/KBM-1066",
+          "PUN/KBM-1069",
+          "PUN/PWB-1015",
+          "PUN/SPK-1059",
+          "PUN/SPL-1047",
+          "PUN/SWT-1073"
+        ]
+      },
+      "method": "Reorder point vs what recent demand needs over the supplier's contract lead time plus safety stock (stale when below 80% of it).",
+      "verdict": "measured",
+      "sql": "SELECT warehouse_id, sku, avg_daily_demand_baseline, safety_stock, reorder_point, last_reviewed\nFROM wms.reorder_policy",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T8.A1": {
+      "id": "T8.A1",
+      "type": "analysis",
+      "tool": "duplicates",
+      "task_id": "T8",
+      "agent": "Analysis engine",
+      "title": "Duplicate orders (same external reference)",
+      "columns": [
+        "check",
+        "result"
+      ],
+      "rows": [
+        [
+          "orders in scope",
+          29
+        ],
+        [
+          "orders sharing an external reference with another order",
+          1
+        ],
+        [
+          "extra copies (beyond the first order of each reference)",
+          1
+        ],
+        [
+          "share of orders in scope that are extra copies (%)",
+          3.4
+        ],
+        [
+          "units ordered on the extra copies",
+          70
+        ],
+        [
+          "units short in scope",
+          1730
+        ],
+        [
+          "extra-copy units as a share of the short units (%)",
+          4.0
+        ],
+        [
+          "extra copies via channel PORTAL",
+          1
+        ]
+      ],
+      "row_count": 8,
+      "summary": {
+        "extra": 1,
+        "share": 0.034482758620689655,
+        "units": 70,
+        "unit_share": 0.04046242774566474,
+        "channel": "PORTAL",
+        "extra_order_ids": [
+          "SO-102444"
+        ]
+      },
+      "method": "Orders that share an external reference (the customer's own order number) with another order; every copy after the first is counted as an extra.",
+      "verdict": "measured",
+      "sql": "SELECT o.order_id, o.external_ref, o.customer_id, o.warehouse_id, o.channel, o.order_date, o.created_at,\n       o.promised_date, o.status, o.promo_code, c.city, l.sku, l.qty, l.allocated_qty, l.backordered_qty,\n       l.line_value, s.name AS sku_name, s.category, s.supplier_id\nFROM erp.sales_orders o\nJOIN erp.order_lines l ON l.order_id = o.order_id\nJOIN erp.customers c ON c.customer_id = o.customer_id\nJOIN erp.skus s ON s.sku = l.sku",
+      "notes": [],
+      "truncated": false,
+      "reproduced": true,
+      "harness": "zetaris"
+    },
+    "T9.Q1": {
+      "id": "T9.Q1",
+      "type": "sql",
+      "task_id": "T9",
+      "agent": "Doc Analyst T9",
+      "purpose": "I need to search docs.documents for any mention of Pune, suppliers, SKUs, dates around next week (2026-10-22 to 2026-10-28), or shortage-related terms. Let me start with a broad search for Pune-related documents.",
+      "sql": "SELECT doc_id, doc_type, title, sent_at, sender, recipients FROM docs.documents WHERE lower(body) LIKE '%pune%'",
+      "columns": [
+        "doc_id",
+        "doc_type",
+        "title",
+        "sent_at",
+        "sender",
+        "recipients"
+      ],
+      "rows": [
+        [
+          "customer_CU-1001_shree_ganesh_master_agreement",
+          "contract",
+          "Master Supply Agreement: Shree Ganesh Electronics Retail (CU-1001)",
+          null,
+          null,
+          null
+        ],
+        [
+          "supplier_S-14_voltix_supply_agreement",
+          "contract",
+          "Supply Agreement: Voltix Power Components (Supplier S-14)",
+          null,
+          null,
+          null
+        ],
+        [
+          "2026-10-09_voltix_port_strike_notice",
+          "email",
+          "URGENT: Chennai port strike, vessel MV Coral Breeze held at anchorage",
+          "2026-10-09 19:05",
+          "Li Wei <li.wei@voltix-power.example>",
+          "procurement@kaveri.example"
+        ],
+        [
+          "2026-10-14_voltix_eta_update",
+          "email",
+          "RE: Chennai port strike: revised ETA",
+          "2026-10-14 10:22",
+          "Li Wei <li.wei@voltix-power.example>",
+          "procurement@kaveri.example"
+        ],
+        [
+          "2026-10-19_facilities_weather_alert",
+          "email",
+          "IMD orange alert: heavy rain in Pune, 19\u201322 October",
+          "2026-10-19 07:30",
+          "Facilities Pune <facilities.pune@kaveri.example>",
+          "all-pune@kaveri.example"
+        ]
+      ],
+      "row_count": 5,
+      "truncated": false,
+      "harness": "zetaris",
+      "ms": 617
+    },
+    "T9.D1": {
+      "id": "T9.D1",
+      "type": "doc",
+      "task_id": "T9",
+      "agent": "Doc Analyst T9",
+      "doc_id": "2026-10-09_voltix_port_strike_notice",
+      "title": "URGENT: Chennai port strike, vessel MV Coral Breeze held at anchorage",
+      "doc_type": "email",
+      "sent_at": "2026-10-09 19:05",
+      "sender": "Li Wei <li.wei@voltix-power.example>",
+      "recipients": "procurement@kaveri.example",
+      "quote": "Dock workers at Chennai port began an indefinite strike this morning. Our vessel MV Coral Breeze, carrying your festive pre-build containers, is held at anchorage and cannot berth. Affected POs include, for Pune DC: PO-40494, PO-40495, PO-40496, PO-40497, PO-40498, PO-40499"
+    },
+    "T9.D2": {
+      "id": "T9.D2",
+      "type": "doc",
+      "task_id": "T9",
+      "agent": "Doc Analyst T9",
+      "doc_id": "2026-10-14_voltix_eta_update",
+      "title": "RE: Chennai port strike: revised ETA",
+      "doc_type": "email",
+      "sent_at": "2026-10-14 10:22",
+      "sender": "Li Wei <li.wei@voltix-power.example>",
+      "recipients": "procurement@kaveri.example",
+      "quote": "Our forwarder expects berthing to resume around 28 October once negotiations close, with container release by 30 October. Revised DC arrival: Chennai about 31 October, Pune and Mumbai about 3 November."
+    },
+    "T9.D3": {
+      "id": "T9.D3",
+      "type": "doc",
+      "task_id": "T9",
+      "agent": "Doc Analyst T9",
+      "doc_id": "2026-10-19_facilities_weather_alert",
+      "title": "IMD orange alert: heavy rain in Pune, 19\u201322 October",
+      "doc_type": "email",
+      "sent_at": "2026-10-19 07:30",
+      "sender": "Facilities Pune <facilities.pune@kaveri.example>",
+      "recipients": "all-pune@kaveri.example",
+      "quote": "The DC remains fully operational and dock schedules are unchanged."
+    },
+    "A.P1": {
+      "id": "A.P1",
+      "type": "optimization",
+      "task_id": "A",
+      "agent": "Risk & Action",
+      "purpose": "cover S-14 shortages at PUN within 7 days",
+      "outcome": "verified_optimal",
+      "verified": true,
+      "objective_inr": 125921,
+      "certificate": true,
+      "certified_with": "OR-Tools GLOP dual prices",
+      "checks": [
+        {
+          "name": "solver_status",
+          "passed": true,
+          "detail": "optimal"
+        },
+        {
+          "name": "all_variables_reported",
+          "passed": true,
+          "detail": "42 of 42 values"
+        },
+        {
+          "name": "plan_values_finite",
+          "passed": true,
+          "detail": "every value is a finite number"
+        },
+        {
+          "name": "variable_bounds",
+          "passed": true,
+          "detail": "no route carries a negative quantity"
+        },
+        {
+          "name": "integrality",
+          "passed": true,
+          "detail": "whole units (supplies and demands are whole, so an optimal corner is too)"
+        },
+        {
+          "name": "plan_covers_allowed_pairs_only",
+          "passed": true,
+          "detail": "every shipment uses a route built from the data"
+        },
+        {
+          "name": "plan_supply_respected",
+          "passed": true,
+          "detail": "no source sends more than it has"
+        },
+        {
+          "name": "plan_demand_met",
+          "passed": true,
+          "detail": "every destination receives exactly its need"
+        },
+        {
+          "name": "plan_objective_from_data",
+          "passed": true,
+          "detail": "cost recomputed from the data: 125,921.22"
+        },
+        {
+          "name": "plan_optimality_certificate",
+          "passed": true,
+          "detail": "dual objective 125,921.22 vs plan cost 125,921.22 (gap 1.5e-11); smallest reduced cost 0; largest source price 0"
+        }
+      ],
+      "stats": {
+        "variables": 42,
+        "constraints": 56,
+        "nonzeros": 84,
+        "is_mip": false
+      },
+      "summary": {
+        "skus": 14,
+        "need_units": 5035,
+        "truck_units": 4414,
+        "trucks": [
+          {
+            "lane": "MUM\u2192PUN",
+            "from": "MUM",
+            "to": "PUN",
+            "units": 4414,
+            "trucks": 3,
+            "capacity": 1800.0,
+            "cost_inr": 42000.0,
+            "transit_days": 1
+          }
+        ],
+        "truck_cost_inr": 42000.0,
+        "air_units": 621,
+        "air_cost_inr": 91590,
+        "unfilled_units": 0,
+        "unfilled_by_dc": {},
+        "covered_share": 1.0
+      },
+      "columns": [
+        "sku",
+        "name",
+        "mode",
+        "route",
+        "to_dc",
+        "units",
+        "unit_cost_inr",
+        "cost_inr",
+        "arrives_in_days"
+      ],
+      "rows": [
+        [
+          "PWB-1017",
+          "Voltix 25000mAh 65W",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          770,
+          7.78,
+          5989,
+          1
+        ],
+        [
+          "CHG-1007",
+          "Voltix 45W PD Charger",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          665,
+          7.78,
+          5172,
+          1
+        ],
+        [
+          "CHG-1010",
+          "Voltix Magnetic Wireless Charger",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          525,
+          7.78,
+          4083,
+          1
+        ],
+        [
+          "CHG-1001",
+          "Voltix 20W USB-C Charger",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          415,
+          7.78,
+          3228,
+          1
+        ],
+        [
+          "CHG-1006",
+          "Voltix 3-in-1 Wireless Stand",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          410,
+          7.78,
+          3189,
+          1
+        ],
+        [
+          "PWB-1018",
+          "Voltix 10000mAh Kids",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          405,
+          7.78,
+          3150,
+          1
+        ],
+        [
+          "PWB-1013",
+          "Voltix 10000mAh Magnetic",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          325,
+          7.78,
+          2528,
+          1
+        ],
+        [
+          "CHG-1009",
+          "Voltix Universal Travel Adapter",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          250,
+          7.78,
+          1944,
+          1
+        ],
+        [
+          "PWB-1011",
+          "Voltix 10000mAh Slim",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          195,
+          7.78,
+          1517,
+          1
+        ],
+        [
+          "CHG-1003",
+          "Voltix 65W GaN Charger",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          140,
+          7.78,
+          1089,
+          1
+        ],
+        [
+          "PWB-1014",
+          "Voltix 30000mAh Laptop",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          138,
+          7.78,
+          1073,
+          1
+        ],
+        [
+          "PWB-1012",
+          "Voltix 20000mAh PD",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          125,
+          7.78,
+          972,
+          1
+        ],
+        [
+          "CHG-1004",
+          "Voltix 36W Car Charger",
+          "truck",
+          "MUM\u2192PUN",
+          "PUN",
+          51,
+          7.78,
+          397,
+          1
+        ],
+        [
+          "PWB-1015",
+          "Voltix 5000mAh Mini",
+          "air",
+          "air\u2192MUM\u2192PUN",
+          "PUN",
+          340,
+          147.78,
+          50244,
+          7
+        ],
+        [
+          "PWB-1011",
+          "Voltix 10000mAh Slim",
+          "air",
+          "air\u2192MUM\u2192PUN",
+          "PUN",
+          150,
+          147.78,
+          22167,
+          7
+        ],
+        [
+          "PWB-1014",
+          "Voltix 30000mAh Laptop",
+          "air",
+          "air\u2192MUM\u2192PUN",
+          "PUN",
+          127,
+          147.78,
+          18768,
+          7
+        ],
+        [
+          "CHG-1004",
+          "Voltix 36W Car Charger",
+          "air",
+          "air\u2192MUM\u2192PUN",
+          "PUN",
+          4,
+          102.78,
+          411,
+          7
+        ]
+      ],
+      "insights": [
+        "One more unit of demand at PUN:PWB-1015 would worsen the total cost by 3,519; one less would improve the total cost by 147.778. The effect differs by direction because the optimal plan sits on a corner.",
+        "One more unit of supply AIR:PWB-1015 would not change the total cost; one less would worsen the total cost by 3,371.22. The effect differs by direction because the optimal plan sits on a corner.",
+        "One more unit of demand at PUN:PWB-1011 would worsen the total cost by 147.778; one less would improve the total cost by 147.778.",
+        "One more unit of demand at PUN:PWB-1014 would worsen the total cost by 147.778; one less would improve the total cost by 147.778.",
+        "One more unit of supply MUM:PWB-1014 would improve the total cost by 140; one less would worsen the total cost by 140.",
+        "One more unit of supply MUM:PWB-1011 would improve the total cost by 140; one less would worsen the total cost by 140."
+      ],
+      "queries": {
+        "need": "SELECT o.warehouse_id, ol.sku, SUM(ol.backordered_qty) AS units FROM erp.order_lines ol JOIN erp.sales_orders o ON o.order_id = ol.order_id JOIN erp.skus s ON s.sku = ol.sku WHERE o.status = 'BACKORDERED' AND ol.backordered_qty > 0 AND s.supplier_id IN ('S-14') AND CAST(o.promised_date AS DATE) <= date_add(DATE'2026-10-21', 7) AND o.warehouse_id IN ('PUN') GROUP BY o.warehouse_id, ol.sku",
+        "spare": "SELECT i.warehouse_id, i.sku, i.on_hand, COALESCE(a.allocated, 0) AS allocated, CAST(CEIL(r.avg_daily_demand_baseline * 14) AS INT) AS cover FROM wms.inventory_snapshots i JOIN erp.skus s ON s.sku = i.sku JOIN wms.reorder_policy r ON r.sku = i.sku AND r.warehouse_id = i.warehouse_id LEFT JOIN (SELECT o.warehouse_id, ol.sku, SUM(ol.allocated_qty) AS allocated FROM erp.order_lines ol JOIN erp.sales_orders o ON o.order_id = ol.order_id WHERE o.status IN ('OPEN', 'BACKORDERED') GROUP BY o.warehouse_id, ol.sku) a ON a.warehouse_id = i.warehouse_id AND a.sku = i.sku WHERE CAST(i.snapshot_date AS DATE) = DATE'2026-10-21' AND s.supplier_id IN ('S-14')",
+        "lanes": "SELECT from_warehouse, to_warehouse, transit_days, cost_per_truck_inr, units_per_truck FROM wms.transfer_lanes",
+        "air": "SELECT s.sku, e.arrive_warehouse, e.lead_days, e.surcharge_inr_per_unit, e.min_units FROM erp.skus s JOIN procurement.expedite_options e ON e.supplier_id = s.supplier_id AND e.category = s.category WHERE e.mode = 'AIR' AND s.supplier_id IN ('S-14')",
+        "skus": "SELECT s.sku, s.name, s.list_price FROM erp.skus s WHERE s.supplier_id IN ('S-14')"
+      },
+      "deadline_days": 7,
+      "cover_days": 14,
+      "scope": {
+        "supplier_id": "S-14"
+      },
+      "to_warehouses": [
+        "PUN"
+      ],
+      "needs": [
+        [
+          "PUN",
+          "CHG-1001",
+          415
+        ],
+        [
+          "PUN",
+          "CHG-1003",
+          140
+        ],
+        [
+          "PUN",
+          "CHG-1004",
+          55
+        ],
+        [
+          "PUN",
+          "CHG-1006",
+          410
+        ],
+        [
+          "PUN",
+          "CHG-1007",
+          665
+        ],
+        [
+          "PUN",
+          "CHG-1009",
+          250
+        ],
+        [
+          "PUN",
+          "CHG-1010",
+          525
+        ],
+        [
+          "PUN",
+          "PWB-1011",
+          345
+        ],
+        [
+          "PUN",
+          "PWB-1012",
+          125
+        ],
+        [
+          "PUN",
+          "PWB-1013",
+          325
+        ],
+        [
+          "PUN",
+          "PWB-1014",
+          265
+        ],
+        [
+          "PUN",
+          "PWB-1015",
+          340
+        ],
+        [
+          "PUN",
+          "PWB-1017",
+          770
+        ],
+        [
+          "PUN",
+          "PWB-1018",
+          405
+        ]
+      ],
+      "spares": [
+        [
+          "CHN",
+          "PWB-1012",
+          236
+        ],
+        [
+          "MUM",
+          "CHG-1001",
+          1380
+        ],
+        [
+          "MUM",
+          "CHG-1002",
+          679
+        ],
+        [
+          "MUM",
+          "CHG-1003",
+          1216
+        ],
+        [
+          "MUM",
+          "CHG-1004",
+          51
+        ],
+        [
+          "MUM",
+          "CHG-1005",
+          680
+        ],
+        [
+          "MUM",
+          "CHG-1006",
+          669
+        ],
+        [
+          "MUM",
+          "CHG-1007",
+          1680
+        ],
+        [
+          "MUM",
+          "CHG-1008",
+          463
+        ],
+        [
+          "MUM",
+          "CHG-1009",
+          405
+        ],
+        [
+          "MUM",
+          "CHG-1010",
+          1616
+        ],
+        [
+          "MUM",
+          "PWB-1011",
+          195
+        ],
+        [
+          "MUM",
+          "PWB-1012",
+          460
+        ],
+        [
+          "MUM",
+          "PWB-1013",
+          435
+        ],
+        [
+          "MUM",
+          "PWB-1014",
+          138
+        ],
+        [
+          "MUM",
+          "PWB-1016",
+          2036
+        ],
+        [
+          "MUM",
+          "PWB-1017",
+          1645
+        ],
+        [
+          "MUM",
+          "PWB-1018",
+          623
+        ],
+        [
+          "PUN",
+          "CHG-1002",
+          140
+        ],
+        [
+          "PUN",
+          "CHG-1005",
+          114
+        ],
+        [
+          "PUN",
+          "CHG-1008",
+          321
+        ]
+      ],
+      "notes": [],
+      "row_count": 17,
+      "harness": "zetaris"
+    }
+  },
+  "evaluations": [
+    {
+      "verdicts": [],
+      "decision": "accept",
+      "gaps": [],
+      "red_flags": [],
+      "summary": "Confirmed by the analysis engine: inbound purchase orders for the short skus are late (58.4%), a disrupted port is holding the late inbound orders (58.4%), demand for the short skus spiked above the planning baseline (40.2%), reorder points are too low for recent demand (33.5%). Ruled out: duplicate orders (the same external reference) inflate the numbers. ",
+      "symptom_explained": null,
+      "round": 1,
+      "forced_accept": false
+    }
+  ],
+  "verdicts": {
+    "T9": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "round": 1,
+      "numbers_check": {
+        "checked": 0,
+        "missing": [],
+        "support": {},
+        "key_numbers": {
+          "verified": 0,
+          "problems": []
+        }
+      },
+      "reason": "Context only: 3 quote(s) verified word for word. Dated events are judged by the event tests, not by documents."
+    },
+    "T1": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Measured directly by the analysis engine.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T2": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Where the shortage sits. This says where, not why.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T3": {
+      "status": "confirmed",
+      "is_cause": false,
+      "share_of_symptom": null,
+      "reason": "Where the shortage sits. This says where, not why.",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T4": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.5838150289017341,
+      "reason": "Involved in 58.4% of the short units (cause threshold: 25%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T5": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.5838150289017341,
+      "reason": "Involved in 58.4% of the short units (cause threshold: 25%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T6": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.40173410404624277,
+      "reason": "Involved in 40.2% of the short units (cause threshold: 25%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T7": {
+      "status": "confirmed",
+      "is_cause": true,
+      "share_of_symptom": 0.3352601156069364,
+      "reason": "Involved in 33.5% of the short units (cause threshold: 25%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    },
+    "T8": {
+      "status": "rejected",
+      "is_cause": false,
+      "share_of_symptom": 0.04046242774566474,
+      "reason": "The copies order units equal to only 4.0% of the shortage (cause threshold: 25%).",
+      "round": 1,
+      "numbers_check": null,
+      "decided_by": "code"
+    }
+  },
+  "actions": [
+    {
+      "id": "A1",
+      "title": "Transfer stock to cover the S-14 shortage: MUM\u2192PUN 4,414 units, plus 621 units by air",
+      "steps": "Proven-optimal plan (linear program, duality certificate): 4,414 units by truck and 621 by air, covering 100% of the 5,035 units of S-14's SKUs backordered at PUN with a promised date on or before 2026-10-28. That includes orders already past their promised date, which still need the stock, not only the ones due next week. It fully covers 62 of the 62 orders short in that scope. The cost is transport only (trucks and air surcharge); units that can't arrive in time are lost sales, not a cost of this action.",
+      "addresses": [
+        "T4"
+      ],
+      "orders_protected": 62,
+      "value_protected_inr": 22822365,
+      "est_cost_inr": 133590,
+      "currency": "INR",
+      "evidence": [
+        "A.P1"
+      ],
+      "unsupported_figures": [],
+      "needs_approval": false,
+      "approval_reasons": [],
+      "decision": "pending",
+      "time_to_effect": "this week",
+      "policy_notes": ""
+    },
+    {
+      "id": "A2",
+      "title": "Chase the late purchase orders from Voltix Power Components and plan around Chennai",
+      "steps": "Ask the supplier for revised ETAs; reroute through an open port or by air where the transfer plan doesn't cover the need.",
+      "addresses": [
+        "T4"
+      ],
+      "orders_protected": null,
+      "value_protected_inr": null,
+      "est_cost_inr": null,
+      "currency": "INR",
+      "evidence": [
+        "T4.A1"
+      ],
+      "unsupported_figures": [],
+      "needs_approval": false,
+      "approval_reasons": [],
+      "decision": "pending",
+      "time_to_effect": "this week",
+      "policy_notes": ""
+    },
+    {
+      "id": "A3",
+      "title": "Raise reorder points to recent demand: CBL-1027 at PUN 10 -> 22; CHG-1004 at PUN 292 -> 540; EBD-1032 at PUN 167 -> 277; KBM-1066 at PUN 10 -> 45; KBM-1069 at PUN 15 -> 36",
+      "steps": "Recompute reorder points from recent daily demand over the supplier lead time plus safety stock, and review them monthly.",
+      "addresses": [
+        "T7"
+      ],
+      "orders_protected": null,
+      "value_protected_inr": null,
+      "est_cost_inr": null,
+      "currency": "INR",
+      "evidence": [
+        "T7.A1",
+        "T6.A1"
+      ],
+      "unsupported_figures": [],
+      "needs_approval": false,
+      "approval_reasons": [],
+      "decision": "pending",
+      "time_to_effect": "this week",
+      "policy_notes": ""
+    }
+  ],
+  "risks": [],
+  "brief": "## Summary\n- **What happened:** 23 of the 29 open orders at the Pune DC due in the coming week have a line on backorder (79.3%): 1,730 units across 22 SKUs, worth INR 5,650,370 on backorder. [T1.A1]\n- **Why:** Inbound purchase orders for the short SKUs are late, held up at Chennai by a dock workers' strike (58.4% of the short units), demand for the short SKUs spiked above the planning baseline (40.2% of the short units) and reorder points are too low for recent demand (33.5% of the short units).\n- **What to do:** A1. Transfer stock to cover the S-14 shortage (62 orders; INR 22,822,365 of orders at stake; costs INR 133,590; within limits). A2. Chase the late purchase orders from Voltix Power Components and plan around Chennai (within limits).\n\n## Answer\n23 of the 29 open Pune orders due next week have a line on backorder (79.3%), totaling 1,730 units across 22 SKUs worth INR 5,650,370 [T1.A1]. Most short units are delayed because late inbound purchase orders are stuck at Chennai due to a dock workers' strike (58.4%) [T4.A1][T5.A1], while demand spiked above the planning baseline for 40.2% of the short units [T6.A1].\n\n## Root causes\n1. **Inbound purchase orders for the short SKUs are late** (58.4% of the short units), held up at Chennai by a dock workers' strike. [T4.A1]\n2. **Demand for the short SKUs spiked above the planning baseline** (40.2% of the short units). [T6.A1]\n3. **Reorder points are too low for recent demand** (33.5% of the short units). [T7.A1]\n\n## Ruled out\n- **Duplicate orders (the same external reference) inflate the numbers**: The copies order units equal to only 4.0% of the shortage (cause threshold: 25%). [T8.A1]\n\n## What customers and the written record say\n- URGENT: Chennai port strike, vessel MV Coral Breeze held at anchorage (2026-10-09): \"Dock workers at Chennai port began an indefinite strike this morning. Our vessel MV Coral Breeze, carrying your festive pre-build containers, is held at anchorage and cannot berth. Affected POs include, for Pune DC: PO-40494, PO-40495, PO-40496, PO-40497, PO-40498, PO-40499\" [T9.D1]\n- RE: Chennai port strike: revised ETA (2026-10-14): \"Our forwarder expects berthing to resume around 28 October once negotiations close, with container release by 30 October. Revised DC arrival: Chennai about 31 October, Pune and Mumbai about 3 November.\" [T9.D2]\n- IMD orange alert: heavy rain in Pune, 19\u201322 October (2026-10-19): \"The DC remains fully operational and dock schedules are unchanged.\" [T9.D3]\n\n## Recommended actions\n| Action | Protects | Value at stake | Est. cost | Approval |\n|---|---|---|---|---|\n| A1. Transfer stock to cover the S-14 shortage: MUM\u2192PUN 4,414 units, plus 621 units by air [A.P1] | 62 orders | INR 22,822,365 | INR 133,590 | within limits |\n| A2. Chase the late purchase orders from Voltix Power Components and plan around Chennai [T4.A1] | \u2014 | \u2014 | not computed (no cost data) | within limits |\n| A3. Raise reorder points to recent demand: CBL-1027 at PUN 10 -> 22; CHG-1004 at PUN 292 -> 540; EBD-1032 at PUN 167 -> 277; KBM-1066 at PUN 10 -> 45; KBM-1069 at PUN 15 -> 36 [T7.A1][T6.A1] | \u2014 | \u2014 | not computed (no cost data) | within limits |\n\n## How we know\n- **Inbound purchase orders for the short SKUs are late** (58.4% of the short units): 58.4% of the short units are SKUs with a late inbound purchase order; most late units are from S-14 (Voltix Power Components), coming through Chennai. Latest: PO-40494 CHG-1001 475 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late); PO-40496 CHG-1003 150 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late); PO-40497 CHG-1004 275 units, ETA 2026-11-03 vs expected 2026-10-13 (21 days late). [T4.A1]\n   - Why they are late: 58.4% of the short units are SKUs whose late inbound orders come through a port the signals feed reports as disrupted. Disrupted ports: Chennai (DISRUPTED: Dock workers' strike). [T5.A1]\n- **Demand for the short SKUs spiked above the planning baseline** (40.2% of the short units): 40.2% of the short units are SKUs whose recent demand is at least 1.5x the planning baseline: SPK-1059 at PUN: 9.3 a day vs 0.5 (18.57x); SPL-1047 at PUN: 7.9 a day vs 0.5 (15.71x); KBM-1066 at PUN: 5.0 a day vs 0.5 (10.0x). [T6.A1]\n- **Reorder points are too low for recent demand** (33.5% of the short units): 33.5% of the short units are SKUs whose reorder point is below what recent demand needs: CBL-1027 at PUN reorder point 10 vs 22 needed (last reviewed 2026-08-31); CHG-1004 at PUN reorder point 292 vs 540 needed (last reviewed 2026-08-31); EBD-1032 at PUN reorder point 167 vs 277 needed (last reviewed 2026-08-31). [T7.A1]\n- Each check reports the share of the short units it is involved in (for duplicates: the units the extra copies order). Shares overlap: one SKU can be both late inbound and under a stale reorder point.\n- Every number above was computed by the analysis engine from the cited results, and checked against their cells. Verdicts follow fixed rules (see the README), not a model's judgement.",
+  "headline": "23 of the 29 open orders at the Pune DC due in the coming week have a line on backorder (79.3%). Main causes: inbound purchase orders for the short SKUs are late, held up at Chennai by a dock workers' strike (58.4% of the short units), and demand for the short SKUs spiked above the planning baseline (40.2% of the short units).",
+  "lessons": [],
+  "brief_check": {
+    "checked": 74,
+    "unverified": []
+  },
+  "analysis": {
+    "kind": "supply",
+    "spec": {
+      "kind": "at_risk",
+      "warehouses": [
+        "PUN"
+      ],
+      "categories": [],
+      "start": "2026-10-22",
+      "end": "2026-10-29",
+      "label": "due in the coming week"
+    },
+    "named_events": []
+  }
+}

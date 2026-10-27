@@ -27,6 +27,8 @@ cp .env.example .env                                              # set NVIDIA_A
 python -m datagen.olist --no-postgres && python -m datagen.generate && (cd frontend && npm ci && npm run build) && python -m whychain.api
 ```
 
+**See a finished investigation without installing anything:** read the two sample briefs on GitHub, [March 2018 on real Olist data](runs/20261028-004653-0e90/brief.md) and [Pune orders at risk on the simulated distributor](runs/20261027-022755-6d02/brief.md) (both run through Zetaris). After the quick start, the app replays either one with no API keys and no Docker: open `http://localhost:8000/runs/20261028-004653-0e90?replay=1`. On macOS or Linux, `./start.sh` starts the full stack (`start.cmd` on Windows).
+
 Then open http://localhost:8000 and click **March 2018 delay spike**. The full setup, with Zetaris, Postgres and the Meterless bridge, is under [Setup](#setup-clean-machine).
 
 **Results.** In the final test pass, at one commit with every query through Zetaris, WhyChain found the root cause in **18 of 18** questions, avoided the red herring in 15 of 15 and proposed the right action in 8 of 8. Four of those questions were held out and passed. All ground truth was written by the author (the simulated company's causes were planted), so these are development checks, not independent validation; across every question's first run so far, 9 of 10 passed and 1 failed (KH2). Details: [docs/RESULTS.md](docs/RESULTS.md).
