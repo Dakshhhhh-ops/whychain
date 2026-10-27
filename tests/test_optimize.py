@@ -53,9 +53,9 @@ def test_both_solvers_prove_the_same_plan_optimal():
                    ("UNFILLED", "X", 100.0), ("UNFILLED", "Y", 100.0)])
     ok, x, obj, y, u = t.solve_glop()
     assert ok and obj == 10.0 and t.certificate(x, y, u).passed
-    ok2, x2, obj2, y2, u2 = t.solve_highs()
+    ok2, x2, obj2, y2, u2 = t.solve_clp()
     assert ok2 and abs(obj2 - 10.0) < 1e-9
-    assert t.certificate(x, y2, u2).passed          # GLOP's plan, proven with HiGHS's prices
+    assert t.certificate(x, y2, u2).passed          # GLOP's plan, proven with CLP's prices
     res = t.solve()
     assert res.verified and sum(s.quantity for s in res.shipments) == 10
 

@@ -14,7 +14,7 @@
 **Update, 22 Oct ~01:30 IST:**
 - NVIDIA NIM key added. All agents run on **Nemotron 3.5 Super**: thinking on for Planner, Evaluator and Reporter, off for data and document work. NIM JSON mode, retries, and repairs for malformed replies are in place. Ollama is disabled (not enough RAM).
 - Real runs work end to end, taking about 8–12 minutes. The second real run ranked the Chennai port strike first (~74% of at-risk orders) after one Evaluator send-back.
-- **Stock-transfer optimizer.** The Risk & Action agent and the Action Executor call `optimize`, which builds a transportation LP from live data and returns a **proven-optimal** rebalancing plan with a duality certificate. Evidence ids are `A.P1` and `X.P1`. If the first solver's dual prices are loose, the certificate is retried with HiGHS's.
+- **Stock-transfer optimizer.** The Risk & Action agent and the Action Executor call `optimize`, which builds a transportation LP from live data and returns a **proven-optimal** rebalancing plan with a duality certificate. Evidence ids are `A.P1` and `X.P1`. If the first solver's dual prices are loose, the certificate is retried with a second solver's (CLP).
 - New data tables: `wms.transfer_lanes`, `procurement.expedite_options`.
 - Tests: 8 passing (wiring, optimizer, executor repairs, action executor).
 

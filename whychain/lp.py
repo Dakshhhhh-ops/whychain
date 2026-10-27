@@ -13,7 +13,7 @@ recomputed from the data, and a **duality certificate**. With the dual prices y_
 sum(y_d * demand_d) + sum(u_s * supply_s) must equal the plan's cost. By weak duality no feasible plan can cost less
 than that dual objective, so the plan is optimal. The proof uses only the data and the prices: it doesn't trust the
 solver. OR-Tools GLOP solves first; if its dual prices don't close the proof (they can be loose on degenerate
-problems), HiGHS solves again and its prices are tried.
+problems), COIN-OR CLP (also shipped with OR-Tools) solves again and its prices are tried.
 """
 from __future__ import annotations
 
@@ -69,10 +69,19 @@ class Transport:
     # ------------------------------------------------------------------ solvers
     def solve_glop(self, demand=None, supply=None):
         """(status ok, x per route, objective, destination prices, source prices) with OR-Tools GLOP."""
+        return self._solve_with("GLOP", demand, supply)
+
+    def solve_clp(self):
+        """The same model with COIN-OR CLP (shipped with OR-Tools), for a second set of dual prices."""
+        return self._solve_with("CLP")
+
+    def _solve_with(self, solver: str, demand=None, supply=None):
         from ortools.linear_solver import pywraplp
 
         demand, supply = demand or self.destinations, supply or self.sources
-        m = pywraplp.Solver.CreateSolver("GLOP")
+        m = pywraplp.Solver.CreateSolver(solver)
+        if m is None:
+            return False, None, None, None, None
         x = [m.NumVar(0.0, m.infinity(), f"x{i}") for i in range(len(self.routes))]
         dst = {d: m.Constraint(v, v, f"d:{d}") for d, v in demand.items()}
         src = {s: m.Constraint(-m.infinity(), v, f"s:{s}") for s, v in supply.items()}
@@ -83,46 +92,10 @@ class Transport:
         for i, (_, _, c) in enumerate(self.routes):
             obj.SetCoefficient(x[i], c)
         obj.SetMinimization()
-        ok = m.Solve() == pywraplp.Solver.OPTIMAL
-        if not ok:
+        if m.Solve() != pywraplp.Solver.OPTIMAL:
             return False, None, None, None, None
         return (True, [v.solution_value() for v in x], obj.Value(),
                 {d: c.dual_value() for d, c in dst.items()}, {s: c.dual_value() for s, c in src.items()})
-
-    def solve_highs(self):
-        """The same model with HiGHS, for a second set of dual prices."""
-        import highspy
-        import numpy as np
-
-        h = highspy.Highs()
-        h.setOptionValue("output_flag", False)
-        dests, srcs = list(self.destinations), list(self.sources)
-        row = {("d", d): i for i, d in enumerate(dests)} | {("s", s): len(dests) + i for i, s in enumerate(srcs)}
-        lp = highspy.HighsLp()
-        n = len(self.routes)
-        lp.num_col_, lp.num_row_ = n, len(row)
-        lp.col_cost_ = np.array([c for _, _, c in self.routes], dtype=float)
-        lp.col_lower_ = np.zeros(n)
-        lp.col_upper_ = np.full(n, highspy.kHighsInf)
-        lp.row_lower_ = np.array([self.destinations[d] for d in dests] + [-highspy.kHighsInf] * len(srcs))
-        lp.row_upper_ = np.array([self.destinations[d] for d in dests] + [self.sources[s] for s in srcs])
-        starts, index, value = [], [], []
-        for s, d, _ in self.routes:
-            starts.append(len(index))
-            index += [row[("d", d)], row[("s", s)]]
-            value += [1.0, 1.0]
-        lp.a_matrix_.format_ = highspy.MatrixFormat.kColwise
-        lp.a_matrix_.start_ = np.array(starts + [len(index)], dtype=np.int32)
-        lp.a_matrix_.index_ = np.array(index, dtype=np.int32)
-        lp.a_matrix_.value_ = np.array(value, dtype=float)
-        h.passModel(lp)
-        h.run()
-        if h.getModelStatus() != highspy.HighsModelStatus.kOptimal:
-            return False, None, None, None, None
-        sol = h.getSolution()
-        duals = list(sol.row_dual)
-        return (True, list(sol.col_value), h.getInfo().objective_function_value,
-                {d: duals[row[("d", d)]] for d in dests}, {s: duals[row[("s", s)]] for s in srcs})
 
     # ------------------------------------------------------------------ checks
     def certificate(self, x: list[float], y: dict, u: dict) -> Check:
@@ -201,18 +174,18 @@ class Transport:
         if ok:
             cert = self.certificate(x, y, u)
             certified_with = "OR-Tools GLOP dual prices" if cert.passed else None
-            if not cert.passed:  # loose prices on a degenerate problem: HiGHS solves again
-                ok2, x2, obj2, y2, u2 = self.solve_highs()
+            if not cert.passed:  # loose prices on a degenerate problem: CLP solves again
+                ok2, x2, obj2, y2, u2 = self.solve_clp()
                 if ok2:
                     alt = self.certificate(x, y2, u2)
                     if alt.passed:
-                        cert, certified_with = alt, "HiGHS dual prices (second solver)"
-                    else:  # HiGHS's own plan and prices
+                        cert, certified_with = alt, "CLP dual prices (second solver)"
+                    else:  # CLP's own plan and prices
                         alt2 = self.certificate(x2, y2, u2)
                         if alt2.passed and abs(obj2 - obj) <= 1e-6 * max(1.0, abs(obj)):
                             x, obj, y, u = x2, obj2, y2, u2
                             checks = self.checks(True, x, obj)
-                            cert, certified_with = alt2, "HiGHS (second solver)"
+                            cert, certified_with = alt2, "CLP (second solver)"
             checks.append(cert)
         verified = bool(checks) and all(c.passed for c in checks)
         shipments = [Shipment(s, d, round(q), c) for (s, d, c), q in zip(self.routes, x or []) if q > 1e-6] \

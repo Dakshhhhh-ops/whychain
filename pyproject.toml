@@ -20,8 +20,6 @@ dependencies = [
     "fastapi>=0.115",
     # the stock-transfer linear program (whychain/lp.py)
     "ortools>=9.10",
-    "highspy>=1.7",
-    "numpy>=1.26",
     "uvicorn>=0.30",
 ]
 

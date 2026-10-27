@@ -133,7 +133,7 @@ flowchart LR
 | Models | NVIDIA NIM: Nemotron 3.5 Super (JSON mode, or reasoning on for planning and judging), Nemotron 3 Ultra (fallback), Nemotron 3 Embed (memory recall). Meterless Nightshift: Nemotron 3 Nano 4B on the local GPU (private documents) |
 | Analysis | pandas; counterfactual late rates per delivery stage, exact Shapley attribution, shift-share decomposition, event tests against the prior trend, coded verdict rules |
 | Data | Zetaris (Spark SQL over a Postgres JDBC datasource and Lightning file tables, read in place); DuckDB with sqlglot dialect translation as the fallback; Postgres in Docker |
-| Optimization | Transportation linear program; OR-Tools GLOP and HiGHS; duality certificate (below) |
+| Optimization | Transportation linear program; OR-Tools GLOP, with COIN-OR CLP as the second solver; duality certificate (below) |
 | Memory and routing | Meterless H-MEM, World Model and Scout Intent in TypeScript (Node 20, tsx) behind an HTTP bridge |
 | API | FastAPI with Server-Sent Events for live runs, served by uvicorn |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, react-markdown, react-router 7 |
@@ -155,7 +155,7 @@ $$\min \sum_r c_r x_r \quad \text{s.t.} \quad \sum_{r \to d} x_r = \text{need}_d
 | Air routes | Supplier air-freight surcharge and lead time (`procurement.expedite_options`) |
 | Can't arrive in time | A unit with no route that meets the deadline costs its list price (lost sale), so the plan reports it instead of hiding it |
 
-**Solve and certify.** OR-Tools GLOP solves the LP, and the plan is re-checked against the original rows. A **duality certificate** (dual feasibility, and primal and dual objectives equal) proves no cheaper plan exists. On degenerate problems GLOP's dual prices can be valid but loose; the certificate is then recomputed from HiGHS's dual prices, and if neither closes the proof, the plan is withheld rather than shown unproven. An LP has no fixed cost per truck, so lanes carrying less than 15% of a truck's capacity are dropped and the problem is re-solved. The Action Executor's transfer order *is* the certified plan, row for row.
+**Solve and certify.** OR-Tools GLOP solves the LP, and the plan is re-checked against the original rows. A **duality certificate** (dual feasibility, and primal and dual objectives equal) proves no cheaper plan exists. On degenerate problems GLOP's dual prices can be valid but loose; the certificate is then recomputed from CLP's dual prices, and if neither closes the proof, the plan is withheld rather than shown unproven. An LP has no fixed cost per truck, so lanes carrying less than 15% of a truck's capacity are dropped and the problem is re-solved. The Action Executor's transfer order *is* the certified plan, row for row.
 
 ## Sponsor technology: designed role and actual status
 
